@@ -1,0 +1,815 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import { CashMovement } from './entities/cash-movement.entity';
+import { CashMovementAccount, CashMovementSourceType, CashMovementType } from '../../entities/enums';
+import { NumberingSeriesService } from '../settings/numbering-series.controller';
+import { Company } from '../settings/entities/company.entity';
+
+/** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
+const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
+
+export interface RecordCashMovementInput {
+  companyId: string;
+  branchId?: string | null;
+  movementDate: string;
+  type: CashMovementType;
+  account: CashMovementAccount;
+  amount: number;
+  sourceType: CashMovementSourceType;
+  sourceId?: string | null;
+  category?: string | null;
+  partyCustomerId?: string | null;
+  partySupplierId?: string | null;
+  partnerId?: string | null;
+  description?: string | null;
+  createdById: string;
+}
+
+/**
+ * Every module that moves cash (sales payments, purchase payments, manual income/expense) goes
+ * through this service instead of the old JournalPostingService — one row per actual movement,
+ * no debit/credit account pairs to keep balanced. This is what makes the Treasury ledger, the
+ * Dashboard's cash/bank KPIs, and the expense/profit reports all agree by construction.
+ */
+@Injectable()
+export class CashMovementsService {
+  constructor(
+    @InjectRepository(CashMovement) private readonly repo: Repository<CashMovement>,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly numberingSeriesService: NumberingSeriesService,
+  ) {}
+
+  async record(input: RecordCashMovementInput, manager?: EntityManager): Promise<CashMovement> {
+    const documentNumber =
+      (await this.numberingSeriesService.tryGetNextNumber(input.companyId, 'CASH_MOVEMENT')) ??
+      `CM-${Date.now()}`;
+    const repo = manager ? manager.getRepository(CashMovement) : this.repo;
+    const row = repo.create({
+      documentNumber,
+      movementDate: input.movementDate,
+      type: input.type,
+      account: input.account,
+      amount: input.amount,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId ?? null,
+      category: input.category ?? null,
+      partyCustomerId: input.partyCustomerId ?? null,
+      partySupplierId: input.partySupplierId ?? null,
+      partnerId: input.partnerId ?? null,
+      description: input.description ?? null,
+      companyId: input.companyId,
+      branchId: input.branchId ?? null,
+      createdById: input.createdById,
+    });
+    return repo.save(row);
+  }
+
+  /**
+   * Removes any cash movement recorded for a given source document — used when the source
+   * itself is being edited or deleted and needs to reverse its own cash-flow side effect first
+   * (e.g. a purchase receipt's paid-amount debit). Reversing by delete-then-recreate rather than
+   * patching the amount in place is what lets the caller treat "payment added/removed/changed
+   * between edits" uniformly instead of as three separate cases.
+   */
+  async removeBySource(
+    companyId: string,
+    sourceType: CashMovementSourceType,
+    sourceId: string,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(CashMovement) : this.repo;
+    await repo.delete({ companyId, sourceType, sourceId });
+  }
+
+  /**
+   * Moves the business's own money between its Cash and Bank accounts — an EXPENSE row on the
+   * source account paired with an INCOME row on the destination, both dated/amounted identically
+   * and linked via sourceId (same pattern as a capital injection's linked CASH/BANK pair). Neither
+   * row is revenue or a real expense, so sourceType TRANSFER keeps them out of every P&L report
+   * (getExpenseReport/getProfitReport only ever look at sourceType MANUAL) while still appearing
+   * in the combined Treasury ledger, where the two legs net to zero — exactly right, since an
+   * internal transfer can't change the combined balance, only its Cash/Bank split.
+   */
+  async createTransfer(
+    companyId: string,
+    input: {
+      movementDate: string;
+      fromAccount: CashMovementAccount;
+      toAccount: CashMovementAccount;
+      amount: number;
+      description?: string | null;
+      branchId?: string | null;
+    },
+    createdById: string,
+  ): Promise<{ from: CashMovement; to: CashMovement }> {
+    if (input.fromAccount === input.toAccount) {
+      throw new BadRequestException('Source and destination accounts must be different');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const from = await this.record(
+        {
+          companyId,
+          branchId: input.branchId ?? null,
+          movementDate: input.movementDate,
+          type: CashMovementType.EXPENSE,
+          account: input.fromAccount,
+          amount: input.amount,
+          sourceType: CashMovementSourceType.TRANSFER,
+          description: input.description ?? null,
+          createdById,
+        },
+        manager,
+      );
+      const to = await this.record(
+        {
+          companyId,
+          branchId: input.branchId ?? null,
+          movementDate: input.movementDate,
+          type: CashMovementType.INCOME,
+          account: input.toAccount,
+          amount: input.amount,
+          sourceType: CashMovementSourceType.TRANSFER,
+          sourceId: from.id,
+          description: input.description ?? null,
+          createdById,
+        },
+        manager,
+      );
+      return { from, to };
+    });
+  }
+
+  /**
+   * Current balance of one treasury account (CASH or BANK), optionally as of a given date.
+   * A capital injection's BANK-tagged row is normally a partner-equity attribution memo of money
+   * already counted via its linked CASH row (see PartnersTreasuryController.createCapitalInjection)
+   * — it was never real bank-account money on its own, so it's excluded from the BANK balance,
+   * otherwise every contribution would double-count once as real liquidity (via CASH) and again as
+   * if it were a second, separate bank deposit (via BANK). That memo row always carries a sourceId
+   * pointing back to its CASH twin. Printing Press's single-row contributions (caller picks CASH or
+   * BANK, no twin, so sourceId is null) are real money in whichever account was chosen and must NOT
+   * be excluded — hence gating the exclusion on sourceId rather than just sourceType.
+   *
+   * `branchId` (Printing Press only — the Dashboard's Branch filter) narrows the balance to
+   * movements tagged with that branch (manual expenses, purchase receipt payments, capital
+   * injections, dividends, transfers, sales invoice/payment receipts — see each recording call
+   * site for how branchId is derived there). Omitted/undefined means every branch combined.
+   */
+  async getBalance(
+    companyId: string,
+    account: CashMovementAccount,
+    asOfDate?: string,
+    branchId?: string,
+    manager?: EntityManager,
+  ): Promise<number> {
+    const qb = (manager ?? this.dataSource)
+      .createQueryBuilder()
+      .select(`COALESCE(SUM(CASE WHEN m.type = 'INCOME' THEN m.amount ELSE -m.amount END), 0)`, 'balance')
+      .from('cash_movements', 'm')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere('m.account = :account', { account });
+    if (account === CashMovementAccount.BANK) {
+      qb.andWhere(`NOT (m."sourceType" = 'CAPITAL_INJECTION' AND m."sourceId" IS NOT NULL)`);
+    }
+    if (asOfDate) qb.andWhere('m."movementDate" <= :asOfDate', { asOfDate });
+    if (branchId) qb.andWhere('m."branchId" = :branchId', { branchId });
+    const row = await qb.getRawOne();
+    return Number(row?.balance ?? 0);
+  }
+
+  /**
+   * Printing Press only: blocks any purchase/expense payment that would drive a treasury account
+   * (Cash or Bank) negative. `excludeAmount` lets a caller editing an existing movement in place
+   * (not yet deleted/replaced at call time) add back that movement's own old amount before
+   * comparing, so replacing a payment doesn't falsely count itself as an extra draw on the balance.
+   */
+  async assertSufficientBalance(
+    companyId: string,
+    account: CashMovementAccount,
+    amount: number,
+    branchId?: string | null,
+    manager?: EntityManager,
+    excludeAmount = 0,
+  ): Promise<void> {
+    if (amount <= 0) return;
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code !== PRINTING_PRESS_COMPANY_CODE) return;
+
+    const balance = await this.getBalance(companyId, account, undefined, branchId ?? undefined, manager);
+    const available = balance + excludeAmount;
+    if (amount > available) {
+      if (account === CashMovementAccount.CASH) {
+        throw new BadRequestException(
+          `عفواً، المبلغ المدفوع أكبر من الرصيد المتاح في الخزينة. الرصيد المالي المتاح حالياً هو ${available.toFixed(2)} د.ك`,
+        );
+      }
+      throw new BadRequestException('عفواً، المبلغ المدفوع أكبر من الرصيد المتاح في البنك');
+    }
+  }
+
+  /**
+   * The Treasury ledger: every movement across both Cash and Bank, newest first, each carrying
+   * the combined running balance immediately after it happened. A capital injection's BANK-tagged
+   * memo row (sourceId set, pointing at its linked CASH row) is excluded here for the same reason
+   * as getBalance() above — it's a partner-equity memo of money the linked CASH row already
+   * represents as a real movement, not a second one; showing both would list (and sum) the same
+   * contribution twice. Printing Press's single-row contributions (no sourceId) are real,
+   * standalone movements and must stay visible.
+   */
+  async getLedger(companyId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('m."movementDate"', 'date')
+      .addSelect('m."sourceType"', 'sourceType')
+      .addSelect('m."documentNumber"', 'documentNumber')
+      .addSelect('m.account', 'account')
+      .addSelect('m.type', 'type')
+      .addSelect('m.amount', 'amount')
+      .addSelect('m.category', 'category')
+      .addSelect('m.description', 'description')
+      .addSelect('c.name', 'customerName')
+      .addSelect('s."companyName"', 'supplierName')
+      .from('cash_movements', 'm')
+      .leftJoin('customers', 'c', 'c.id = m."partyCustomerId"')
+      .leftJoin('suppliers', 's', 's.id = m."partySupplierId"')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere(`NOT (m.account = 'BANK' AND m."sourceType" = 'CAPITAL_INJECTION' AND m."sourceId" IS NOT NULL)`)
+      .orderBy('m."createdAt"', 'ASC');
+
+    if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });
+    if (dateTo) qb.andWhere('m."movementDate" <= :dateTo', { dateTo });
+    if (branchId) qb.andWhere('m."branchId" = :branchId', { branchId });
+
+    const rows = await qb.getRawMany();
+
+    let runningBalance = 0;
+    const entries = rows.map((row) => {
+      const amount = Number(row.amount);
+      const debit = row.type === 'INCOME' ? amount : 0;
+      const credit = row.type === 'EXPENSE' ? amount : 0;
+      runningBalance += debit - credit;
+      return {
+        date: row.date,
+        movementType: row.sourceType,
+        documentNumber: row.documentNumber,
+        partyName: row.customerName ?? row.supplierName ?? row.category ?? null,
+        paymentAccount: row.account,
+        debit,
+        credit,
+        description: row.description,
+        runningBalance,
+      };
+    });
+
+    return entries.reverse();
+  }
+
+  /**
+   * Expense report: manually-recorded operating expenses (rent, electricity, ...) plus payroll
+   * postings (see PayrollService.approve() — one row per branch, sourceType PAYROLL, category
+   * "رواتب الموظفين"), grouped by category. Deliberately excludes EXPENSE movements from supplier
+   * payments/purchase receipts — those are balance-sheet cash-out-for-inventory movements, not
+   * P&L expenses; their cost only hits the P&L via costOfGoodsSold on the units actually sold
+   * (see getProfitReport). Counting the full purchase payment here as well would double-count
+   * inventory not yet sold. `branchId` (Printing Press only) narrows this to expenses recorded
+   * against one branch.
+   */
+  async getExpenseReport(companyId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select(`COALESCE(m.category, m."sourceType")`, 'label')
+      .addSelect('COALESCE(SUM(m.amount), 0)', 'total')
+      .from('cash_movements', 'm')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere(`m.type = 'EXPENSE'`)
+      .andWhere(`m."sourceType" IN ('MANUAL', 'PAYROLL')`)
+      .groupBy(`COALESCE(m.category, m."sourceType")`)
+      .orderBy('total', 'DESC');
+
+    if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });
+    if (dateTo) qb.andWhere('m."movementDate" <= :dateTo', { dateTo });
+    if (branchId) qb.andWhere('m."branchId" = :branchId', { branchId });
+
+    const rows = await qb.getRawMany();
+    const totalExpenses = rows.reduce((s, r) => s + Number(r.total), 0);
+    return {
+      dateFrom: dateFrom ?? null,
+      dateTo: dateTo ?? null,
+      rows: rows.map((r) => ({ label: r.label, total: Number(r.total) })),
+      totalExpenses,
+    };
+  }
+
+  /**
+   * The Operating Expenses / Salaries screens' transaction log: every EXPENSE cash movement of one
+   * source type (MANUAL for manually-recorded rent/electricity/etc., PAYROLL for the per-branch
+   * rows PayrollService.approve() posts), newest first, with the recording user's name resolved
+   * for display. Unlike getExpenseReport() (which aggregates by category for the Reports screen),
+   * this returns one row per movement for a page that lists and lets you review each entry.
+   */
+  async getExpenseTransactions(
+    companyId: string,
+    dateFrom?: string,
+    dateTo?: string,
+    sourceType: CashMovementSourceType = CashMovementSourceType.MANUAL,
+  ) {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('m.id', 'id')
+      .addSelect('m."movementDate"', 'date')
+      .addSelect('m."documentNumber"', 'documentNumber')
+      .addSelect('m.category', 'category')
+      .addSelect('m.amount', 'amount')
+      .addSelect('m.account', 'account')
+      .addSelect('m."branchId"', 'branchId')
+      .addSelect('m.description', 'description')
+      .addSelect('u."fullName"', 'createdByName')
+      .from('cash_movements', 'm')
+      .leftJoin('users', 'u', 'u.id = m."createdById"')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere(`m.type = 'EXPENSE'`)
+      .andWhere('m."sourceType" = :sourceType', { sourceType })
+      .orderBy('m."createdAt"', 'DESC');
+
+    if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });
+    if (dateTo) qb.andWhere('m."movementDate" <= :dateTo', { dateTo });
+
+    const rows = await qb.getRawMany();
+    return rows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      documentNumber: r.documentNumber,
+      category: r.category,
+      amount: Number(r.amount),
+      account: r.account,
+      branchId: r.branchId,
+      description: r.description,
+      createdByName: r.createdByName ?? '—',
+    }));
+  }
+
+  /** Fetches one manually-recorded expense (MANUAL/EXPENSE) row, scoped to its company, or throws. */
+  private async getManualExpenseOrFail(companyId: string, id: string): Promise<CashMovement> {
+    const row = await this.repo.findOne({
+      where: { id, companyId, sourceType: CashMovementSourceType.MANUAL, type: CashMovementType.EXPENSE },
+    });
+    if (!row) throw new NotFoundException('Expense not found');
+    return row;
+  }
+
+  /**
+   * Edits a manually-recorded expense in place. Balances/totals everywhere (Treasury ledger,
+   * Dashboard cash/bank KPIs, expense & profit reports) are computed live from this table, so
+   * updating the row here is the entire fix — nothing else needs to be touched.
+   */
+  async updateManualExpense(
+    companyId: string,
+    id: string,
+    input: {
+      movementDate: string;
+      account: CashMovementAccount;
+      amount: number;
+      category: string;
+      description?: string | null;
+      branchId?: string | null;
+    },
+  ): Promise<CashMovement> {
+    const row = await this.getManualExpenseOrFail(companyId, id);
+    // The row being replaced hasn't been saved/removed yet, so its own old amount is still
+    // counted in the balance queried below — add it back only if it was drawn from the same
+    // account the edit keeps it on, otherwise the old amount never touched this account's balance.
+    const excludeAmount = row.account === input.account ? Number(row.amount) : 0;
+    await this.assertSufficientBalance(
+      companyId,
+      input.account,
+      input.amount,
+      input.branchId ?? row.branchId,
+      undefined,
+      excludeAmount,
+    );
+
+    row.movementDate = input.movementDate;
+    row.account = input.account;
+    row.amount = input.amount;
+    row.category = input.category;
+    row.description = input.description ?? null;
+    if (input.branchId !== undefined) row.branchId = input.branchId;
+    return this.repo.save(row);
+  }
+
+  /** Deletes a manually-recorded expense. Same reasoning as updateManualExpense — live SUM queries mean removing the row alone reverses its effect on every balance/total. */
+  async deleteManualExpense(companyId: string, id: string): Promise<void> {
+    const row = await this.getManualExpenseOrFail(companyId, id);
+    await this.repo.remove(row);
+  }
+
+  /**
+   * Fetches one partner's capital injection, scoped to its company, or throws. Legacy (non-Press)
+   * contributions always store the partner-attributed row as BANK, linked via sourceId to its own
+   * CASH row that mirrors the same amount into the Bank Balance — that BANK row is what the
+   * Partners > Contributions history table displays as one line, so it's the unit edit/delete
+   * operates on, with its linked CASH row kept in sync automatically. Printing Press's single-row
+   * contributions carry the partner's chosen account (CASH or BANK) directly with no linked twin,
+   * so the account is deliberately not filtered on here — id + companyId + sourceType + type
+   * already uniquely identify the row either way.
+   */
+  private async getCapitalInjectionOrFail(companyId: string, id: string): Promise<CashMovement> {
+    const row = await this.repo.findOne({
+      where: {
+        id,
+        companyId,
+        sourceType: CashMovementSourceType.CAPITAL_INJECTION,
+        type: CashMovementType.INCOME,
+      },
+    });
+    if (!row) throw new NotFoundException('Capital injection not found');
+    return row;
+  }
+
+  /**
+   * Edits one partner's contribution row in place. For a legacy double-row entry (sourceId set),
+   * the account stays BANK and the partner attribution stays put — only date/amount/description
+   * are meant to change, and its linked CASH row (found via sourceId) is updated with the same new
+   * values in the same transaction so the Bank Balance stays in lockstep with the Partners'
+   * Balance. For a Printing Press single-row entry (no sourceId), the caller may also move the
+   * contribution to the other account. Every balance built from this table (partner balances, both
+   * KPIs, the Treasury ledger) is a live SUM, so saving the row(s) is the entire fix.
+   */
+  async updateCapitalInjection(
+    companyId: string,
+    id: string,
+    input: {
+      movementDate: string;
+      amount: number;
+      description?: string | null;
+      partnerId?: string;
+      account?: CashMovementAccount;
+      branchId?: string;
+    },
+  ): Promise<CashMovement> {
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(CashMovement);
+      const row = await repo.findOne({
+        where: {
+          id,
+          companyId,
+          sourceType: CashMovementSourceType.CAPITAL_INJECTION,
+          type: CashMovementType.INCOME,
+        },
+      });
+      if (!row) throw new NotFoundException('Capital injection not found');
+
+      row.movementDate = input.movementDate;
+      row.amount = input.amount;
+      row.description = input.description ?? null;
+      if (input.partnerId) row.partnerId = input.partnerId;
+      if (!row.sourceId && input.account) row.account = input.account;
+      if (!row.sourceId && input.branchId !== undefined) row.branchId = input.branchId;
+      await repo.save(row);
+
+      if (row.sourceId) {
+        const linkedCash = await repo.findOne({ where: { id: row.sourceId, companyId } });
+        if (linkedCash) {
+          linkedCash.movementDate = input.movementDate;
+          linkedCash.amount = input.amount;
+          linkedCash.description = input.description ?? null;
+          await repo.save(linkedCash);
+        }
+      }
+
+      return row;
+    });
+  }
+
+  /** Deletes one partner's contribution row and its linked CASH row (if any) together, so the Bank Balance and Partners' Balance both reverse by the same amount. */
+  async deleteCapitalInjection(companyId: string, id: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(CashMovement);
+      const row = await repo.findOne({
+        where: {
+          id,
+          companyId,
+          sourceType: CashMovementSourceType.CAPITAL_INJECTION,
+          type: CashMovementType.INCOME,
+        },
+      });
+      if (!row) throw new NotFoundException('Capital injection not found');
+
+      if (row.sourceId) {
+        const linkedCash = await repo.findOne({ where: { id: row.sourceId, companyId } });
+        if (linkedCash) await repo.remove(linkedCash);
+      }
+      await repo.remove(row);
+    });
+  }
+
+  /** Printing Press never issues stock for its catalog sales (see SalesInvoicesService.create()),
+   * so sales_invoices.costOfGoodsSold is always 0 there — a sales-based COGS figure is meaningless
+   * for a press. Its real "cost of goods sold" is what it spent buying raw materials (paper, ink,
+   * ...) in the period, i.e. the same total already shown on the Expenses screen's "إجمالي
+   * مشتريات المواد الخام" tab (see ExpensesPage.tsx) — reused here instead of recomputed.
+   * `branchId` (Printing Press only) narrows this to one branch's own purchases, via the branch
+   * chosen on the Purchase Invoice form (PurchaseReceipt.branchId). */
+  private async getRawMaterialPurchasesTotal(
+    companyId: string,
+    dateFrom: string,
+    dateTo: string,
+    branchId?: string,
+  ): Promise<number> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('COALESCE(SUM(r."totalAmount"), 0)', 'total')
+      .from('purchase_receipts', 'r')
+      .where('r."companyId" = :companyId', { companyId })
+      .andWhere('r."receiptDate" >= :dateFrom', { dateFrom })
+      .andWhere('r."receiptDate" <= :dateTo', { dateTo });
+    if (branchId) qb.andWhere('r."branchId" = :branchId', { branchId });
+    const row = await qb.getRawOne();
+    return Number(row?.total ?? 0);
+  }
+
+  /**
+   * Printing Performance Report's "إجمالي المواد المستهلكة" card and material-consumption ratio —
+   * summed straight from approved Monthly Stock Audits (see StockAuditsService), the same
+   * `(systemQuantity - finalQuantity) * unitCost` per line the Stock Audit screen itself shows as
+   * "إجمالي المستهلك" (see StockAuditsService.findAll()'s totalConsumedValue). Only APPROVED
+   * audits count — a still-pending (CONFIRMED) audit hasn't actually adjusted stock yet, so its
+   * figures are only a preview, not real consumption. A line left uncounted
+   * (`actualQuantity IS NULL`) contributes nothing. `branchId` (Printing Press only) narrows this
+   * to one branch via the audit's warehouse — the same Warehouse.branchId link the Stock Audit
+   * screen's own branch column/filter already uses. Returns 0 (never null/NaN) when no matching
+   * audit exists for the period/branch.
+   */
+  private async getConsumedMaterialsTotal(
+    companyId: string,
+    dateFrom: string,
+    dateTo: string,
+    branchId?: string,
+  ): Promise<number> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select(
+        `COALESCE(SUM((l."systemQuantity" - COALESCE(l."adjustedQuantity", l."actualQuantity")) * l."unitCost"), 0)`,
+        'total',
+      )
+      .from('stock_audit_lines', 'l')
+      .innerJoin('stock_audits', 'a', 'a.id = l."auditId"')
+      .innerJoin('warehouses', 'w', 'w.id = a."warehouseId"')
+      .where('a."companyId" = :companyId', { companyId })
+      .andWhere(`a.status = 'APPROVED'`)
+      .andWhere('l."actualQuantity" IS NOT NULL')
+      .andWhere('a."auditDate" >= :dateFrom', { dateFrom })
+      .andWhere('a."auditDate" <= :dateTo', { dateTo });
+    if (branchId) qb.andWhere('w."branchId" = :branchId', { branchId });
+    const row = await qb.getRawOne();
+    return Number(row?.total ?? 0);
+  }
+
+  /**
+   * Profit report: Sales revenue - COGS - operating expenses = Net profit. For every company
+   * except Printing Press, COGS comes from sales_invoices (see getRawMaterialPurchasesTotal for
+   * why Press is different). Net profit deliberately stays dividend-agnostic (dividends are a
+   * distribution OF profit, not a cost incurred to earn it) — this is exactly the figure the
+   * Partners/Dividends screen validates a payout against, so it can never be circular.
+   * `expenseBreakdown` is a separate, purely informational rollup for the Reports screen's Expense
+   * Report tab: COGS + operating expenses — dividends are deliberately excluded, since a profit
+   * distribution is not an expense.
+   *
+   * `branchId` (Printing Press only — the Financial Reports screen's Branch filter) narrows all
+   * three figures to one branch: Revenue via the invoice's sales representative's branch (the only
+   * branch signal actually populated on sales_invoices today — the same join
+   * SalesInvoicesService.getSalesLines() already uses for the Sales Report's branch filter),
+   * COGS via PurchaseReceipt.branchId (set on the Purchase Invoice form), and operating expenses
+   * via CashMovement.branchId (set on the Treasury Expenses form). Omitted/undefined means every
+   * branch combined — identical to today's behavior.
+   */
+  async getProfitReport(companyId: string, dateFrom: string, dateTo: string, branchId?: string) {
+    const salesQb = this.dataSource
+      .createQueryBuilder()
+      .select('COALESCE(SUM(i.subtotal), 0)', 'revenue')
+      .addSelect('COALESCE(SUM(i."costOfGoodsSold"), 0)', 'cogs')
+      .from('sales_invoices', 'i')
+      .leftJoin('sales_representatives', 'rep', 'rep.id = i."salesRepresentativeId"')
+      .where('i."companyId" = :companyId', { companyId })
+      .andWhere('i."invoiceDate" >= :dateFrom', { dateFrom })
+      .andWhere('i."invoiceDate" <= :dateTo', { dateTo });
+    if (branchId) salesQb.andWhere('rep."branchId" = :branchId', { branchId });
+    const salesRow = await salesQb.getRawOne();
+
+    const { totalExpenses, rows: expenseRows } = await this.getExpenseReport(companyId, dateFrom, dateTo, branchId);
+    const distributedDividends = await this.getDistributedDividendsTotal(companyId, dateFrom, dateTo);
+
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
+    const revenue = Number(salesRow?.revenue ?? 0);
+    const cogs = isPress
+      ? await this.getRawMaterialPurchasesTotal(companyId, dateFrom, dateTo, branchId)
+      : Number(salesRow?.cogs ?? 0);
+    const consumedMaterials = isPress ? await this.getConsumedMaterialsTotal(companyId, dateFrom, dateTo, branchId) : 0;
+    const grossProfit = revenue - cogs;
+    const netProfit = grossProfit - totalExpenses;
+
+    return {
+      dateFrom,
+      dateTo,
+      revenue,
+      cogs,
+      consumedMaterials,
+      grossProfit,
+      expenses: expenseRows,
+      totalExpenses,
+      netProfit,
+      distributedDividends,
+      expenseBreakdown: {
+        cogs,
+        operatingExpenses: totalExpenses,
+        total: cogs + totalExpenses,
+      },
+    };
+  }
+
+  /** Q1: Jan1–Mar31, Q2: Apr1–Jun30, Q3: Jul1–Sep30, Q4: Oct1–Dec31. Mirrors
+   * partners-treasury.controller.ts's exported quarterDateRange() — duplicated as a private
+   * method here rather than imported, since that file imports CashMovementsService itself and an
+   * import the other way would create a circular dependency between the two. */
+  private quarterDateRange(year: number, quarter: number): { dateFrom: string; dateTo: string } {
+    const startMonth = (quarter - 1) * 3 + 1;
+    const endMonth = startMonth + 2;
+    const lastDay = new Date(year, endMonth, 0).getDate();
+    return {
+      dateFrom: `${year}-${String(startMonth).padStart(2, '0')}-01`,
+      dateTo: `${year}-${String(endMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+    };
+  }
+
+  /** The year the company actually started operating, for the Printing Performance Report's trend
+   * chart below — mirrors SalesRepresentativesService.getEarliestActivityYear() exactly (same
+   * reasoning: company-wide, not report-specific, so it can't flicker based on the branch filter). */
+  private async getEarliestActivityYear(companyId: string): Promise<number> {
+    const earliestInvoiceRow = await this.dataSource
+      .createQueryBuilder()
+      .select('MIN(i."invoiceDate")', 'minDate')
+      .from('sales_invoices', 'i')
+      .where('i."companyId" = :companyId', { companyId })
+      .getRawOne();
+    if (earliestInvoiceRow?.minDate) return new Date(earliestInvoiceRow.minDate).getFullYear();
+
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    return company?.createdAt ? new Date(company.createdAt).getFullYear() : new Date().getFullYear();
+  }
+
+  /**
+   * Printing Performance Report's trend chart: net profit and material-consumption ratio (approved
+   * Monthly Stock Audits' consumed materials ÷ revenue — see getConsumedMaterialsTotal()) per
+   * quarter. Same period set as SalesRepresentativesService's getQuarterlyTrend() — this quarter's
+   * own same-year quarters, the same quarter the prior two years, and the immediately preceding
+   * quarter — and the same "never show a year before the company's first activity" guard via
+   * getEarliestActivityYear(). Every period's figures come straight from getProfitReport(), so this
+   * chart can never disagree with the Profit Report tab for the same period.
+   */
+  async getPrintingPerformanceTrend(companyId: string, year: number, quarter: number, branchId?: string) {
+    if (quarter < 1 || quarter > 4) return { periods: [], earliestYear: year };
+
+    const earliestYear = await this.getEarliestActivityYear(companyId);
+
+    const periods: { year: number; quarter: number }[] = [];
+    const addPeriod = (y: number, q: number) => {
+      if (y < earliestYear) return;
+      if (!periods.some((p) => p.year === y && p.quarter === q)) periods.push({ year: y, quarter: q });
+    };
+    // Always the full 4 quarters of the selected year — not just up to the currently-selected
+    // quarter — so the chart's X-axis stays a complete, continuous year (a not-yet-reached quarter
+    // simply has no invoices yet, so its own getProfitReport() call naturally returns 0).
+    for (let q = 1; q <= 4; q++) addPeriod(year, q);
+    addPeriod(year - 1, quarter);
+    addPeriod(year - 2, quarter);
+    addPeriod(quarter > 1 ? year : year - 1, quarter > 1 ? quarter - 1 : 4);
+
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const results = await Promise.all(
+      periods.map(async (p) => {
+        const { dateFrom, dateTo } = this.quarterDateRange(p.year, p.quarter);
+        const report = await this.getProfitReport(companyId, dateFrom, dateTo, branchId);
+        const materialCostRatio = report.revenue > 0 ? (report.consumedMaterials / report.revenue) * 100 : 0;
+        return { year: p.year, quarter: p.quarter, netProfit: round2(report.netProfit), materialCostRatio: round2(materialCostRatio) };
+      }),
+    );
+    return { periods: results, earliestYear };
+  }
+
+  /**
+   * COGS detail records for the unified Expenses screen's "تكلفة البضاعة المباعة" tab — one row
+   * per sales invoice in the period, each carrying the cost snapshot already stored on it
+   * (SalesInvoicesService sets `costOfGoodsSold` at invoice creation from the weighted-average
+   * stock cost of every line). No separate calculation happens here — this just lists what
+   * getProfitReport()'s `cogs` total is actually made of.
+   */
+  async getCogsTransactions(companyId: string, dateFrom?: string, dateTo?: string) {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('i.id', 'id')
+      .addSelect('i."invoiceDate"', 'date')
+      .addSelect('i."documentNumber"', 'documentNumber')
+      .addSelect('c.name', 'customerName')
+      .addSelect('i."costOfGoodsSold"', 'cogs')
+      .from('sales_invoices', 'i')
+      .leftJoin('customers', 'c', 'c.id = i."customerId"')
+      .where('i."companyId" = :companyId', { companyId })
+      .orderBy('i."createdAt"', 'DESC');
+
+    if (dateFrom) qb.andWhere('i."invoiceDate" >= :dateFrom', { dateFrom });
+    if (dateTo) qb.andWhere('i."invoiceDate" <= :dateTo', { dateTo });
+
+    const rows = await qb.getRawMany();
+    return rows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      documentNumber: r.documentNumber,
+      customerName: r.customerName ?? '—',
+      cogs: Number(r.cogs),
+    }));
+  }
+
+  /** Sum of dividend payouts (sourceType DIVIDEND) recorded within a date range — used both for the Reports breakdown and to cap how much more a quarter can still distribute. */
+  /** Company-wide dividend total for the period, or one partner's slice of it when `partnerId` is given. */
+  async getDistributedDividendsTotal(
+    companyId: string,
+    dateFrom: string,
+    dateTo: string,
+    partnerId?: string,
+  ): Promise<number> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('COALESCE(SUM(m.amount), 0)', 'total')
+      .from('cash_movements', 'm')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere(`m."sourceType" = 'DIVIDEND'`)
+      .andWhere('m."movementDate" >= :dateFrom', { dateFrom })
+      .andWhere('m."movementDate" <= :dateTo', { dateTo });
+    if (partnerId) qb.andWhere('m."partnerId" = :partnerId', { partnerId });
+    const row = await qb.getRawOne();
+    return Number(row?.total ?? 0);
+  }
+
+  /** Capital injections log for the Partners > Contributions screen — optionally scoped to one contributing partner. */
+  async getCapitalInjections(companyId: string, dateFrom?: string, dateTo?: string, partnerId?: string) {
+    return this.getManualTransactionsBySourceType(companyId, 'CAPITAL_INJECTION', dateFrom, dateTo, partnerId);
+  }
+
+  /** Dividend payouts log for the Partners > Dividends screen — optionally scoped to one partner's share of each payout. */
+  async getDividendTransactions(companyId: string, dateFrom?: string, dateTo?: string, partnerId?: string) {
+    return this.getManualTransactionsBySourceType(companyId, 'DIVIDEND', dateFrom, dateTo, partnerId);
+  }
+
+  private async getManualTransactionsBySourceType(
+    companyId: string,
+    sourceType: 'CAPITAL_INJECTION' | 'DIVIDEND',
+    dateFrom?: string,
+    dateTo?: string,
+    partnerId?: string,
+  ) {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('m.id', 'id')
+      .addSelect('m."movementDate"', 'date')
+      .addSelect('m."documentNumber"', 'documentNumber')
+      .addSelect('m.amount', 'amount')
+      .addSelect('m.account', 'account')
+      .addSelect('m."branchId"', 'branchId')
+      .addSelect('m.description', 'description')
+      .addSelect('m."partnerId"', 'partnerId')
+      .addSelect('p.name', 'partnerName')
+      .addSelect('u."fullName"', 'createdByName')
+      .from('cash_movements', 'm')
+      .leftJoin('users', 'u', 'u.id = m."createdById"')
+      .leftJoin('partners', 'p', 'p.id = m."partnerId"')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere('m."sourceType" = :sourceType', { sourceType })
+      .orderBy('m."createdAt"', 'DESC');
+
+    if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });
+    if (dateTo) qb.andWhere('m."movementDate" <= :dateTo', { dateTo });
+    if (partnerId) qb.andWhere('m."partnerId" = :partnerId', { partnerId });
+    // Each capital injection also creates a linked, unattributed CASH row mirroring the amount
+    // into the Bank Balance (see createCapitalInjection) — exclude it here so the Contributions
+    // history shows only the one partner-attributed line per share, not a duplicate.
+    if (sourceType === 'CAPITAL_INJECTION') qb.andWhere('m."partnerId" IS NOT NULL');
+
+    const rows = await qb.getRawMany();
+    return rows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      documentNumber: r.documentNumber,
+      amount: Number(r.amount),
+      account: r.account,
+      branchId: r.branchId,
+      description: r.description,
+      partnerId: r.partnerId,
+      partnerName: r.partnerName ?? '—',
+      createdByName: r.createdByName ?? '—',
+    }));
+  }
+}

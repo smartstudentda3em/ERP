@@ -1,0 +1,218 @@
+import { MouseEvent, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiClient, unwrap } from '../../lib/api-client';
+import { formatAmount } from '../../lib/number-format';
+import { useAuthStore } from '../../store/auth-store';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
+import { Input, FormField, Select } from '../../components/ui/Input';
+import { DataTable, Column } from '../../components/ui/DataTable';
+import { Badge } from '../../components/ui/Badge';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
+
+interface Branch {
+  id: string;
+  nameEn: string;
+  nameAr?: string | null;
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  jobTitle: string;
+  branchId: string;
+  branch?: Branch | null;
+  baseSalary: number;
+  isActive: boolean;
+}
+
+const emptyForm = { name: '', jobTitle: '', branchId: '', baseSalary: '', isActive: true };
+
+export function EmployeesPage() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const toast = useToast();
+  const companyId = useAuthStore((s) => s.user?.companyId);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [error, setError] = useState<string | null>(null);
+
+  const branchesQuery = useQuery({
+    queryKey: ['branches', companyId],
+    queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
+    enabled: !!companyId,
+  });
+
+  const employeesQuery = useQuery({
+    queryKey: ['hr-employees', companyId],
+    queryFn: () => unwrap<Employee[]>(apiClient.get('/hr/employees')),
+    enabled: !!companyId,
+  });
+
+  // Single-branch companies (Stationery/AC today) never make the user pick — same auto-select
+  // convention used system-wide for single-option dropdowns.
+  const branches = branchesQuery.data ?? [];
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const payload = { ...form, baseSalary: Number(form.baseSalary) || 0 };
+      return editingId ? apiClient.patch(`/hr/employees/${editingId}`, payload) : apiClient.post('/hr/employees', payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr-employees'] });
+      setModalOpen(false);
+      setEditingId(null);
+      setForm(emptyForm);
+      setError(null);
+    },
+    onError: (err: any) => {
+      setError(err?.response?.data?.message ?? t('common.saveFailed'));
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/hr/employees/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr-employees'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message ?? t('common.saveFailed'));
+    },
+  });
+
+  function openCreate() {
+    setEditingId(null);
+    setForm({ ...emptyForm, branchId: branches.length === 1 ? branches[0].id : '' });
+    setError(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(e: MouseEvent, employee: Employee) {
+    e.stopPropagation();
+    setEditingId(employee.id);
+    setForm({
+      name: employee.name,
+      jobTitle: employee.jobTitle,
+      branchId: employee.branchId,
+      baseSalary: String(employee.baseSalary),
+      isActive: employee.isActive,
+    });
+    setError(null);
+    setModalOpen(true);
+  }
+
+  async function handleDelete(e: MouseEvent, employee: Employee) {
+    e.stopPropagation();
+    const ok = await confirm({ message: t('common.confirmDelete', { name: employee.name }) });
+    if (ok) deleteMutation.mutate(employee.id);
+  }
+
+  const columns: Column<Employee>[] = [
+    { header: t('hr.employeeName'), accessor: (r) => r.name, width: '22%' },
+    { header: t('hr.jobTitle'), accessor: (r) => r.jobTitle, width: '18%' },
+    { header: t('fields.branch'), accessor: (r) => r.branch?.nameAr || r.branch?.nameEn || '—', width: '18%' },
+    { header: t('hr.baseSalary'), accessor: (r) => formatAmount(r.baseSalary), align: 'right', width: '15%' },
+    {
+      header: t('common.status'),
+      accessor: (r) =>
+        r.isActive ? <Badge color="green">{t('common.active')}</Badge> : <Badge color="red">{t('common.inactive')}</Badge>,
+      width: '10%',
+    },
+    {
+      header: t('common.actions'),
+      accessor: (r) => (
+        <div className="flex justify-center gap-3">
+          <button type="button" className="text-primary-600 hover:underline" onClick={(e) => openEdit(e, r)}>
+            {t('common.edit')}
+          </button>
+          <button
+            type="button"
+            className="text-red-600 hover:underline"
+            onClick={(e) => handleDelete(e, r)}
+            disabled={deleteMutation.isPending}
+          >
+            {t('common.delete')}
+          </button>
+        </div>
+      ),
+      align: 'center',
+      width: '17%',
+    },
+  ];
+
+  return (
+    <div>
+      <PageHeader title={t('nav.employees')} actions={<Button onClick={openCreate}>+ {t('common.create')}</Button>} />
+
+      <DataTable columns={columns} data={employeesQuery.data ?? []} keyField={(r) => r.id} isLoading={employeesQuery.isLoading} />
+
+      <Modal
+        open={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingId(null);
+        }}
+        title={editingId ? t('common.edit') : t('common.create')}
+      >
+        <form
+          className="grid grid-cols-2 gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveMutation.mutate();
+          }}
+        >
+          <FormField label={t('hr.employeeName')}>
+            <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </FormField>
+          <FormField label={t('hr.jobTitle')}>
+            <Input required value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} />
+          </FormField>
+          <FormField label={t('fields.branch')}>
+            <Select required value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}>
+              <option value="" disabled>
+                {t('common.select')}
+              </option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nameAr || b.nameEn}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+          <FormField label={t('hr.baseSalary')}>
+            <Input
+              type="number"
+              min={0}
+              required
+              value={form.baseSalary}
+              onChange={(e) => setForm({ ...form, baseSalary: e.target.value })}
+            />
+          </FormField>
+          <FormField label={t('common.status')}>
+            <Select
+              value={form.isActive ? '1' : '0'}
+              onChange={(e) => setForm({ ...form, isActive: e.target.value === '1' })}
+            >
+              <option value="1">{t('common.active')}</option>
+              <option value="0">{t('common.inactive')}</option>
+            </Select>
+          </FormField>
+          {error && <p className="col-span-2 text-sm text-red-600">{error}</p>}
+          <div className="col-span-2 mt-2 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={saveMutation.isPending}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}

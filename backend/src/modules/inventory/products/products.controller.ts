@@ -1,0 +1,93 @@
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import { Permissions } from '../../../common/decorators/permissions.decorator';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { ProductsService } from './products.service';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  CreateCatalogProductDto,
+  UpdateCatalogProductDto,
+} from './dto/product.dto';
+
+@ApiTags('Inventory - Products')
+@Controller('inventory/products')
+export class ProductsController {
+  constructor(private readonly service: ProductsService) {}
+
+  // Declared before the generic ':id' routes below so 'catalog' is never swallowed as an id param.
+  @Get('catalog')
+  @Permissions('inventory.product.view')
+  findAllCatalog(@CurrentUser('companyId') companyId: string) {
+    return this.service.findCatalogForCompany(companyId);
+  }
+
+  @Post('catalog')
+  @Permissions('inventory.product.create')
+  createCatalogItem(@Body() dto: CreateCatalogProductDto, @CurrentUser('companyId') companyId: string) {
+    return this.service.createCatalogItem(dto, companyId);
+  }
+
+  @Patch('catalog/:id')
+  @Permissions('inventory.product.edit')
+  updateCatalogItem(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCatalogProductDto,
+    @CurrentUser('companyId') companyId: string,
+  ) {
+    return this.service.updateCatalogItem(id, companyId, dto);
+  }
+
+  @Get()
+  @Permissions('inventory.product.view')
+  findAll(@CurrentUser('companyId') companyId: string, @Query('search') search?: string) {
+    return this.service.findAllForCompany(companyId, search);
+  }
+
+  @Get('low-stock')
+  @Permissions('inventory.product.view')
+  lowStock(@CurrentUser('companyId') companyId: string) {
+    return this.service.lowStockForCompany(companyId);
+  }
+
+  // Declared before ':id' for the same reason as 'catalog' above.
+  @Get('sellable-raw-materials')
+  @Permissions('inventory.product.view')
+  findSellableRawMaterials(@CurrentUser('companyId') companyId: string) {
+    return this.service.findSellableRawMaterialsForCompany(companyId);
+  }
+
+  @Get('barcode/:barcode')
+  @Permissions('inventory.product.view')
+  findByBarcode(@Param('barcode') barcode: string, @CurrentUser('companyId') companyId: string) {
+    return this.service.findByBarcodeForCompany(barcode, companyId);
+  }
+
+  @Get(':id')
+  @Permissions('inventory.product.view')
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('companyId') companyId: string) {
+    return this.service.findOneScoped(id, companyId);
+  }
+
+  @Post()
+  @Permissions('inventory.product.create')
+  create(@Body() dto: CreateProductDto, @CurrentUser('companyId') companyId: string) {
+    return this.service.createForCompany(dto, companyId);
+  }
+
+  @Patch(':id')
+  @Permissions('inventory.product.edit')
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateProductDto,
+    @CurrentUser('companyId') companyId: string,
+  ) {
+    return this.service.updateScoped(id, companyId, dto);
+  }
+
+  @Delete(':id')
+  @Permissions('inventory.product.delete')
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('companyId') companyId: string) {
+    return this.service.removeScoped(id, companyId);
+  }
+}

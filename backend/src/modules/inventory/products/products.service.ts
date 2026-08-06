@@ -1,0 +1,220 @@
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { BaseCrudService } from '../../../common/services/base-crud.service';
+import { Product } from './entities/product.entity';
+import { CreateProductDto, UpdateProductDto, CreateCatalogProductDto, UpdateCatalogProductDto } from './dto/product.dto';
+import { StockMovement } from '../stock-movements/entities/stock-movement.entity';
+import { ProductType } from '../../../entities/enums';
+import { Unit } from '../../settings/entities/unit.entity';
+import { PackageType } from '../../settings/entities/package-type.entity';
+import { ProductCategory } from '../../settings/entities/product-category.entity';
+
+interface PackagingFields {
+  packageTypeId?: string | null;
+  unitsPerPackage?: number | null;
+  packagePurchasePrice?: number | null;
+}
+
+@Injectable()
+export class ProductsService extends BaseCrudService<Product> {
+  constructor(
+    @InjectRepository(Product) repo: Repository<Product>,
+    @InjectRepository(StockMovement) private readonly stockMovementRepo: Repository<StockMovement>,
+    @InjectRepository(Unit) private readonly unitRepo: Repository<Unit>,
+    @InjectRepository(PackageType) private readonly packageTypeRepo: Repository<PackageType>,
+    @InjectRepository(ProductCategory) private readonly categoryRepo: Repository<ProductCategory>,
+  ) {
+    super(repo);
+  }
+
+  /**
+   * Derives the per-base-unit purchase price from the package purchase price. Packaging is
+   * mandatory on every product, so this always resolves on create(); update() merges in the
+   * existing record's packaging fields first so a partial update (e.g. only packageSellingPrice)
+   * still recomputes correctly against whatever packaging was already saved.
+   */
+  private computePackageDerivedPurchasePrice(fields: PackagingFields): number | undefined {
+    if (fields.packageTypeId && fields.unitsPerPackage && fields.packagePurchasePrice != null) {
+      return Math.round((fields.packagePurchasePrice / fields.unitsPerPackage) * 10000) / 10000;
+    }
+    return undefined;
+  }
+
+  /** Scoped to the caller's company — an id that belongs to another company 404s exactly like an id that doesn't exist at all, so ids can't be probed cross-company. */
+  async findOneScoped(id: string, companyId: string): Promise<Product> {
+    const product = await super.findOne(id);
+    if (product.companyId !== companyId) throw new NotFoundException('Product not found');
+    return product;
+  }
+
+  /** Raw materials only — the Printing Press "المنتجات" catalog (ProductType.CATALOG_ITEM) has its
+   * own separate list (findCatalogForCompany) and never appears here, for this or any company. */
+  findAllForCompany(companyId: string, search?: string): Promise<Product[]> {
+    return search?.trim()
+      ? this.search(companyId, search)
+      : super.findAll({ companyId, productType: ProductType.RAW_MATERIAL } as any);
+  }
+
+  /** Printing Press "المنتجات" catalog only — every other company never has CATALOG_ITEM rows. */
+  findCatalogForCompany(companyId: string): Promise<Product[]> {
+    return this.repo.find({
+      where: { companyId, productType: ProductType.CATALOG_ITEM } as any,
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /** Raw materials explicitly flagged "قابلة للبيع المباشر" — merged into the Printing Press sales
+   * invoice/quotation item picker alongside catalog items (see SalesLineEditor). Every other
+   * company simply never sets isSellable, so this always returns empty for them. */
+  findSellableRawMaterialsForCompany(companyId: string): Promise<Product[]> {
+    return this.repo.find({
+      where: { companyId, productType: ProductType.RAW_MATERIAL, isSellable: true } as any,
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  async createForCompany(dto: CreateProductDto, companyId: string): Promise<Product> {
+    if (dto.sku) {
+      const existing = await this.repo.findOne({ where: { companyId, sku: dto.sku } });
+      if (existing) throw new ConflictException('SKU already exists');
+    }
+    const derivedPurchasePrice = this.computePackageDerivedPurchasePrice(dto);
+    const finalDto = derivedPurchasePrice !== undefined ? { ...dto, purchasePrice: derivedPurchasePrice } : dto;
+    // No stock movement can exist yet for a brand-new product, so the average cost starts out
+    // equal to the entered purchase price (0 only if no purchase price was ever given) rather
+    // than the misleading 0 you'd get by leaving it untouched until the first real receipt.
+    return super.create({ ...finalDto, companyId, averageCost: derivedPurchasePrice ?? 0 } as any);
+  }
+
+  async updateScoped(id: string, companyId: string, dto: UpdateProductDto): Promise<Product> {
+    const existing = await this.findOneScoped(id, companyId);
+    const merged: PackagingFields = {
+      packageTypeId: dto.packageTypeId !== undefined ? dto.packageTypeId : existing.packageTypeId,
+      unitsPerPackage: dto.unitsPerPackage !== undefined ? dto.unitsPerPackage : existing.unitsPerPackage,
+      packagePurchasePrice:
+        dto.packagePurchasePrice !== undefined ? dto.packagePurchasePrice : existing.packagePurchasePrice,
+    };
+    const derivedPurchasePrice = this.computePackageDerivedPurchasePrice(merged);
+    const finalDto: Record<string, unknown> =
+      derivedPurchasePrice !== undefined ? { ...dto, purchasePrice: derivedPurchasePrice } : { ...dto };
+
+    // Once a real purchase/sale movement has posted, StockService owns averageCost exclusively
+    // (weighted-average costing) — a product edit must never overwrite that. Only while the
+    // product has never moved does editing the purchase price keep averageCost in sync with it.
+    if (derivedPurchasePrice !== undefined) {
+      const movementCount = await this.stockMovementRepo.count({ where: { productId: id } });
+      if (movementCount === 0) {
+        finalDto.averageCost = derivedPurchasePrice;
+      }
+    }
+
+    return super.update(id, finalDto as any);
+  }
+
+  async removeScoped(id: string, companyId: string): Promise<void> {
+    const product = await this.findOneScoped(id, companyId);
+    await this.repo.remove(product);
+  }
+
+  findByBarcodeForCompany(barcode: string, companyId: string) {
+    return this.repo.findOne({ where: { barcode, companyId } });
+  }
+
+  /**
+   * Matches partially and case-insensitively (ILIKE %term%) across SKU, barcode, name, brand, and
+   * category — the exact five fields the Products screen's search bar covers, deliberately
+   * excluding anything warehouse/stock-related. `sku`/`barcode` are already indexed via their
+   * unique constraints; `nameEn`, `categoryId`, `brandId` carry their own indexes (see the entity)
+   * so this stays fast as the catalog grows.
+   */
+  async search(companyId: string, term: string): Promise<Product[]> {
+    const q = `%${term.trim()}%`;
+    return this.repo
+      .createQueryBuilder('p')
+      .leftJoin('brands', 'b', 'b.id = p."brandId"')
+      .leftJoin('product_categories', 'c', 'c.id = p."categoryId"')
+      .where('p."companyId" = :companyId', { companyId })
+      .andWhere('p."productType" = :pt', { pt: ProductType.RAW_MATERIAL })
+      .andWhere(
+        '(p.sku ILIKE :q OR p.barcode ILIKE :q OR p."nameEn" ILIKE :q OR b."nameEn" ILIKE :q OR c."nameEn" ILIKE :q)',
+        { q },
+      )
+      .orderBy('p."createdAt"', 'ASC')
+      .getMany();
+  }
+
+  async lowStockForCompany(companyId: string) {
+    return this.repo
+      .createQueryBuilder('p')
+      .leftJoin('stock_levels', 'sl', 'sl."productId" = p.id')
+      .select('p.*')
+      .addSelect('COALESCE(SUM(sl."quantityOnHand"), 0)', 'totalOnHand')
+      .where('p."isActive" = true')
+      .andWhere('p."companyId" = :companyId', { companyId })
+      .groupBy('p.id')
+      .having('COALESCE(SUM(sl."quantityOnHand"), 0) <= p."reorderLevel"')
+      .getRawMany();
+  }
+
+  /**
+   * Catalog items carry no real category/unit/packaging — those columns are mandatory on the
+   * shared `products` table purely for the raw-materials side, so this finds (or lazily creates,
+   * first time only) one hidden placeholder row per company to satisfy them, invisible to the
+   * "المنتجات" screen's user-facing 4-field form.
+   */
+  private async resolveCatalogDefaults(
+    companyId: string,
+  ): Promise<{ categoryId: string; unitId: string; packageTypeId: string }> {
+    let category = await this.categoryRepo.findOne({ where: { companyId, code: 'CATALOG' } });
+    if (!category) {
+      category = await this.categoryRepo.save(
+        this.categoryRepo.create({ companyId, code: 'CATALOG', nameEn: 'Printing Products', nameAr: 'منتجات المطبعة' }),
+      );
+    }
+    let unit = await this.unitRepo.findOne({ where: { companyId, code: 'PCS' } });
+    if (!unit) {
+      unit = await this.unitRepo.save(this.unitRepo.create({ companyId, code: 'PCS', nameEn: 'Piece', nameAr: 'قطعة' }));
+    }
+    let packageType = await this.packageTypeRepo.findOne({ where: { companyId, code: 'ITEM' } });
+    if (!packageType) {
+      packageType = await this.packageTypeRepo.save(
+        this.packageTypeRepo.create({ companyId, code: 'ITEM', nameEn: 'Item', nameAr: 'صنف' }),
+      );
+    }
+    return { categoryId: category.id, unitId: unit.id, packageTypeId: packageType.id };
+  }
+
+  async createCatalogItem(dto: CreateCatalogProductDto, companyId: string): Promise<Product> {
+    const defaults = await this.resolveCatalogDefaults(companyId);
+    return super.create({
+      companyId,
+      nameEn: dto.nameEn,
+      nameAr: dto.nameEn,
+      size: dto.size,
+      notes: dto.notes,
+      sellingPrice: dto.sellingPrice ?? null,
+      categoryId: defaults.categoryId,
+      unitId: defaults.unitId,
+      packageTypeId: defaults.packageTypeId,
+      unitsPerPackage: 1,
+      productType: ProductType.CATALOG_ITEM,
+      averageCost: 0,
+      purchasePrice: 0,
+    } as any);
+  }
+
+  async updateCatalogItem(id: string, companyId: string, dto: UpdateCatalogProductDto): Promise<Product> {
+    const existing = await this.findOneScoped(id, companyId);
+    if (existing.productType !== ProductType.CATALOG_ITEM) throw new NotFoundException('Product not found');
+    const patch: Record<string, unknown> = {};
+    if (dto.nameEn !== undefined) {
+      patch.nameEn = dto.nameEn;
+      patch.nameAr = dto.nameEn;
+    }
+    if (dto.size !== undefined) patch.size = dto.size;
+    if (dto.notes !== undefined) patch.notes = dto.notes;
+    if (dto.sellingPrice !== undefined) patch.sellingPrice = dto.sellingPrice;
+    return super.update(id, patch as any);
+  }
+}

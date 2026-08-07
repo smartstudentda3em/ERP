@@ -3,8 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Customer } from './customers/entities/customer.entity';
 import { Supplier } from './suppliers/entities/supplier.entity';
 import { SalesRepresentative } from './entities/sales-representative.entity';
+import { CommissionException } from './entities/commission-exception.entity';
 import { SettingsModule } from '../settings/settings.module';
 import { TreasuryModule } from '../treasury/treasury.module';
+import { HrModule } from '../hr/hr.module';
 
 import { CustomersController } from './customers/customers.controller';
 import { CustomersService } from './customers/customers.service';
@@ -17,9 +19,10 @@ import {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Customer, Supplier, SalesRepresentative]),
+    TypeOrmModule.forFeature([Customer, Supplier, SalesRepresentative, CommissionException]),
     SettingsModule,
     TreasuryModule,
+    HrModule,
   ],
   controllers: [CustomersController, SuppliersController, SalesRepresentativesController],
   providers: [CustomersService, SuppliersService, SalesRepresentativesService],

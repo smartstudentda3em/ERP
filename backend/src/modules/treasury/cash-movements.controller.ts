@@ -70,6 +70,16 @@ export class CashMovementsController {
     return this.service.getExpenseTransactions(companyId, dateFrom, dateTo, CashMovementSourceType.PAYROLL);
   }
 
+  @Get('manager-partner-profits')
+  @Permissions('treasury.expense.view')
+  managerPartnerProfitTransactions(
+    @CurrentUser('companyId') companyId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.service.getManagerPartnerProfitTransactions(companyId, dateFrom, dateTo);
+  }
+
   @Patch('expenses/:id')
   @Permissions('treasury.expense.edit')
   updateExpense(

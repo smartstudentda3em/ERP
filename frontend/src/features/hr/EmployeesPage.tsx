@@ -12,6 +12,7 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
+import { EmployeeDetailModal } from './EmployeeDetailModal';
 
 interface Branch {
   id: string;
@@ -41,6 +42,9 @@ export function EmployeesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [branchFilter, setBranchFilter] = useState('');
+  const [viewingId, setViewingId] = useState<string | null>(null);
 
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
@@ -49,8 +53,11 @@ export function EmployeesPage() {
   });
 
   const employeesQuery = useQuery({
-    queryKey: ['hr-employees', companyId],
-    queryFn: () => unwrap<Employee[]>(apiClient.get('/hr/employees')),
+    queryKey: ['hr-employees', companyId, search, branchFilter],
+    queryFn: () =>
+      unwrap<Employee[]>(
+        apiClient.get('/hr/employees', { params: { search: search || undefined, branchId: branchFilter || undefined } }),
+      ),
     enabled: !!companyId,
   });
 
@@ -147,9 +154,45 @@ export function EmployeesPage() {
 
   return (
     <div>
-      <PageHeader title={t('nav.employees')} actions={<Button onClick={openCreate}>+ {t('common.create')}</Button>} />
+      {/* Wrapped so this list never co-prints with an open EmployeeDetailModal's salary-slip
+          report — that report is rendered as a print-only sibling fragment, not inside the modal
+          (see EmployeeDetailModal.tsx), so this is the only thing left that would otherwise show. */}
+      <div className="print:hidden">
+        <PageHeader title={t('nav.employees')} actions={<Button onClick={openCreate}>+ {t('common.create')}</Button>} />
 
-      <DataTable columns={columns} data={employeesQuery.data ?? []} keyField={(r) => r.id} isLoading={employeesQuery.isLoading} />
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="flex w-72 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3">
+            <span className="text-sm text-[var(--text-muted)]">🔍</span>
+            <input
+              className="w-full border-0 bg-transparent py-2 text-sm text-[var(--text)] outline-none"
+              placeholder={t('hr.searchByNameOrTitle')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="w-56">
+            <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              <option value="">{t('hr.allBranches')}</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nameAr || b.nameEn}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+
+        <DataTable
+          columns={columns}
+          data={employeesQuery.data ?? []}
+          keyField={(r) => r.id}
+          isLoading={employeesQuery.isLoading}
+          searchable={false}
+          onRowClick={(r) => setViewingId(r.id)}
+        />
+      </div>
+
+      {viewingId && <EmployeeDetailModal employeeId={viewingId} onClose={() => setViewingId(null)} />}
 
       <Modal
         open={modalOpen}

@@ -56,6 +56,7 @@
     "welcomeBack": "Welcome back"
   },
   "common": {
+    "noResults": "No results",
     "save": "Save",
     "cancel": "Cancel",
     "create": "Create",
@@ -132,6 +133,8 @@
     "computedUnitCost": "Computed unit cost",
     "autoComputed": "auto-computed",
     "category": "Category",
+    "invoiceBasicInfo": "Basic Invoice Information",
+    "invoiceSummary": "Invoice Summary",
     "brand": "Brand",
     "purchasePrice": "Purchase Price",
     "unitPurchasePrice": "Average Unit Purchase Price",
@@ -222,6 +225,8 @@
   },
   "actions": {
     "addLine": "+ Add Line",
+    "addLinePress": "+ Add New Line",
+    "searchProduct": "Search for an item…",
     "recordPayment": "Record Payment",
     "collectPayment": "Record Payment / Collect",
     "selectProduct": "Select product…",
@@ -274,6 +279,15 @@
     "category": "Category",
     "operatingExpenses": "Operating Expenses",
     "distributedDividends": "Distributed Dividends",
+    "managerPartnerProfits": "Managers & Partners Profits",
+    "totalManagerPartnerProfits": "Total Distributed Profits",
+    "profitsByPersonTitle": "Profits by Beneficiary",
+    "totalProfitForPerson": "Total for {{name}}",
+    "profitSubType": "Sub-category",
+    "profitSubTypes": {
+      "MANAGER": "Manager Profit",
+      "PARTNER": "Partner Profit"
+    },
     "expenseBreakdown": "Expense Breakdown",
     "printComprehensiveReport": "Print Comprehensive Financial Report",
     "exportPdf": "Export PDF",
@@ -376,6 +390,11 @@
     "absenceDeduction": "Absence Deduction",
     "lateDeduction": "Lateness Deduction",
     "netSalary": "Net Salary",
+    "totalDeductions": "Total Deductions",
+    "commission": "Commission",
+    "salarySlipTitle": "Salary Slip",
+    "exportPdf": "Export PDF",
+    "pdfExportError": "Could not export the report as a PDF file, please try again.",
     "newPayrollRun": "New Payroll Run",
     "backToList": "Back to List",
     "saveAndSubmit": "Save & Submit Payroll",
@@ -389,7 +408,47 @@
     "payrollStatus": {
       "CONFIRMED": "Pending Approval",
       "APPROVED": "Approved"
+    },
+    "searchByNameOrTitle": "Search by name or job title",
+    "allBranches": "All Branches",
+    "allMonths": "All Months",
+    "monthLabel": "Month",
+    "monthlySalaryTitle": "Monthly Salary Details",
+    "attendanceTitle": "Absence & Lateness Records",
+    "leavesTitle": "Leave & Holidays",
+    "addLeave": "+ Add Leave",
+    "leaveStartDate": "Start Date",
+    "leaveEndDate": "End Date",
+    "leaveDays": "Days",
+    "totalLeaveDays": "Total Leave Days",
+    "noLeaveRecords": "No leave records for this period",
+    "leaveType": {
+      "ANNUAL": "Annual",
+      "SICK": "Sick",
+      "UNPAID": "Unpaid",
+      "OTHER": "Other"
     }
+  },
+  "managerDashboard": {
+    "tabLabel": "Manager Dashboard",
+    "salesOverviewTitle": "Total Sales",
+    "commissionTitle": "Sales Commission",
+    "payrollTitle": "Salary & Deductions",
+    "currentMonth": "Current Month",
+    "previousMonth": "Previous Month",
+    "noEmployeeRecord": "No payroll record is linked to your account yet",
+    "noPayrollForMonth": "No salary has been paid for this month yet",
+    "currentMonthPreset": "Current Month",
+    "previousMonthPreset": "Previous Month",
+    "selectManager": "Branch Manager",
+    "selectManagerPlaceholder": "Select a manager to view their data",
+    "employeeInfoTitle": "Manager HR Info",
+    "branchLabel": "Branch",
+    "absenceDays": "Absence Days",
+    "lateHours": "Late Hours",
+    "salesListTitle": "Commission-Eligible Sales",
+    "commissionAmount": "Commission Amount",
+    "noQualifyingSales": "No sales earn you a commission in this period"
   },
   "userMgmt": {
     "users": "Users",
@@ -858,6 +917,15 @@
     "pdfExportError": "Failed to export the report as PDF. Please try again.",
     "responsiblePersonColumn": "Branch Manager / Responsible"
   },
+  "commissionExceptions": {
+    "title": "Commission Exceptions",
+    "viewTitle": "Commission Exceptions — {{name}}",
+    "saveFirstHint": "Save first to add commission exceptions",
+    "noneYet": "No exceptions yet",
+    "typeProduct": "Product",
+    "typeCategory": "Category",
+    "selectTarget": "Select..."
+  },
   "quotations": {
     "convertToInvoice": "Convert to Invoice",
     "confirmConvert": "Convert quotation \"{{name}}\" into a sales invoice?",
@@ -913,7 +981,17 @@
     "totalCommissionsDue": "Total Commissions Due",
     "branchManager": "Branch Manager",
     "branchTotalSales": "Branch Total Sales",
-    "commissionAmountDue": "Commission Amount Due"
+    "commissionAmountDue": "Commission Amount Due",
+    "payoutsTab": "Profit Payouts",
+    "payoutButton": "Pay Out Profit",
+    "totalProfit": "Total Profit",
+    "paidProfit": "Paid Profit",
+    "payoutModalTitle": "Pay Out Branch Manager's Profit",
+    "editPayoutModalTitle": "Edit Payout",
+    "amountToPay": "Amount to Pay",
+    "executePayout": "Execute",
+    "noManagerForBranch": "No manager linked to this branch",
+    "noPayoutsData": "No data for this month"
   },
   "printDocument": {
     "invoiceTitle": "Sales Invoice",

@@ -7,6 +7,7 @@ import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
+import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
 import { FormField, Input, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
@@ -409,7 +410,12 @@ export function SalesInvoicesPage() {
         onRowClick={(r) => navigate(`/sales/invoices/${r.id}`)}
       />
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={t('common.create')} widthClass="max-w-3xl">
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={t('common.create')}
+        widthClass={isPrintingPress ? 'max-w-5xl' : 'max-w-3xl'}
+      >
         <form
           className="grid grid-cols-2 gap-3"
           onSubmit={(e) => {
@@ -417,89 +423,114 @@ export function SalesInvoicesPage() {
             createMutation.mutate();
           }}
         >
-          {!isPrintingPress && (
-            <FormField label={t('nav.customers')}>
-              <Select required value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                <option value="">{t('actions.selectCustomer')}</option>
-                {(customersQuery.data ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-          )}
-          {isPrintingPress && (
+          {isPrintingPress ? (
+            <Card className="col-span-2">
+              <CardHeader>
+                <CardTitle>{t('fields.invoiceBasicInfo')}</CardTitle>
+              </CardHeader>
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label={t('fields.customerName')}>
+                  <Input required value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                </FormField>
+                <FormField label={t('fields.phone')}>
+                  <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+                </FormField>
+                <FormField label={t('fields.branch')}>
+                  <Select required value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                    <option value="">{t('actions.selectBranch')}</option>
+                    {(branchesQuery.data ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.nameAr || b.nameEn}
+                      </option>
+                    ))}
+                  </Select>
+                  {branchId && !resolvedWarehouseId && (
+                    <p className="mt-1 text-xs text-red-600">{t('stockAudit.noWarehouseForBranch')}</p>
+                  )}
+                </FormField>
+                <FormField label={t('common.date')}>
+                  <Input type="date" required value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                </FormField>
+                <FormField label={t('fields.invoiceOwnerPress')}>
+                  <Select value={assigneeValue} disabled={!isAdmin} onChange={(e) => handleAssigneeChange(e.target.value)}>
+                    {isAdmin ? (
+                      <>
+                        <option value="">{t('actions.selectSalesRepPress')}</option>
+                        {(salesRepsQuery.data ?? []).map((r) => (
+                          <option key={r.id} value={`rep:${r.id}`}>
+                            {r.name}
+                          </option>
+                        ))}
+                        {(assignableUsersQuery.data ?? []).map((u) => (
+                          <option key={u.id} value={`user:${u.id}`}>
+                            {u.fullName}
+                          </option>
+                        ))}
+                      </>
+                    ) : (
+                      <option value={assigneeValue}>{lockedAssigneeLabel}</option>
+                    )}
+                  </Select>
+                </FormField>
+                <FormField label={t('fields.depositDestination')}>
+                  <Select
+                    required
+                    value={paymentAccount}
+                    onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
+                  >
+                    <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+                    <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                  </Select>
+                </FormField>
+              </div>
+            </Card>
+          ) : (
             <>
-              <FormField label={t('fields.customerName')}>
-                <Input required value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+              <FormField label={t('nav.customers')}>
+                <Select required value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                  <option value="">{t('actions.selectCustomer')}</option>
+                  {(customersQuery.data ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
               </FormField>
-              <FormField label={t('fields.phone')}>
-                <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+              <FormField label={t('fields.warehouse')}>
+                <Select required value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+                  <option value="">{t('actions.selectWarehouse')}</option>
+                  {(warehousesQuery.data ?? []).map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.nameEn}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+              <FormField label={t('common.date')}>
+                <Input type="date" required value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+              </FormField>
+              <FormField label={t('fields.invoiceOwner')}>
+                <Select value={assigneeValue} disabled={!isAdmin} onChange={(e) => handleAssigneeChange(e.target.value)}>
+                  {isAdmin ? (
+                    <>
+                      <option value="">{t('actions.selectSalesRep')}</option>
+                      {(salesRepsQuery.data ?? []).map((r) => (
+                        <option key={r.id} value={`rep:${r.id}`}>
+                          {r.name}
+                        </option>
+                      ))}
+                      {(assignableUsersQuery.data ?? []).map((u) => (
+                        <option key={u.id} value={`user:${u.id}`}>
+                          {u.fullName}
+                        </option>
+                      ))}
+                    </>
+                  ) : (
+                    <option value={assigneeValue}>{lockedAssigneeLabel}</option>
+                  )}
+                </Select>
               </FormField>
             </>
-          )}
-          {isPrintingPress ? (
-            <FormField label={t('fields.branch')}>
-              <Select required value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-                <option value="">{t('actions.selectBranch')}</option>
-                {(branchesQuery.data ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.nameAr || b.nameEn}
-                  </option>
-                ))}
-              </Select>
-              {branchId && !resolvedWarehouseId && (
-                <p className="mt-1 text-xs text-red-600">{t('stockAudit.noWarehouseForBranch')}</p>
-              )}
-            </FormField>
-          ) : (
-            <FormField label={t('fields.warehouse')}>
-              <Select required value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-                <option value="">{t('actions.selectWarehouse')}</option>
-                {(warehousesQuery.data ?? []).map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.nameEn}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-          )}
-          <FormField label={t('common.date')}>
-            <Input type="date" required value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
-          </FormField>
-          <FormField label={t(isPrintingPress ? 'fields.invoiceOwnerPress' : 'fields.invoiceOwner')}>
-            <Select value={assigneeValue} disabled={!isAdmin} onChange={(e) => handleAssigneeChange(e.target.value)}>
-              {isAdmin ? (
-                <>
-                  <option value="">{t(isPrintingPress ? 'actions.selectSalesRepPress' : 'actions.selectSalesRep')}</option>
-                  {(salesRepsQuery.data ?? []).map((r) => (
-                    <option key={r.id} value={`rep:${r.id}`}>
-                      {r.name}
-                    </option>
-                  ))}
-                  {(assignableUsersQuery.data ?? []).map((u) => (
-                    <option key={u.id} value={`user:${u.id}`}>
-                      {u.fullName}
-                    </option>
-                  ))}
-                </>
-              ) : (
-                <option value={assigneeValue}>{lockedAssigneeLabel}</option>
-              )}
-            </Select>
-          </FormField>
-          {isPrintingPress && (
-            <FormField label={t('fields.depositDestination')}>
-              <Select
-                required
-                value={paymentAccount}
-                onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
-              >
-                <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
-                <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
-              </Select>
-            </FormField>
           )}
 
           <SalesLineEditor
@@ -508,26 +539,54 @@ export function SalesInvoicesPage() {
             warnOnSellBelowCost={currentCompany?.warnOnSellBelowCost ?? true}
           />
 
-          <div className="col-span-2 grid grid-cols-1 gap-3 rounded-lg border border-[var(--border)] p-3 sm:grid-cols-3">
-            <FormField label={t('common.total')}>
-              <Input disabled value={formatAmount(grandTotal)} />
-            </FormField>
-            <FormField label={t('fields.paidAmount')}>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={paidAmount}
-                onChange={(e) => setPaidAmount(e.target.value)}
-              />
-            </FormField>
-            <FormField label={t('fields.remainingAmount')}>
-              <Input disabled value={formatAmount(remainingAmount)} />
-            </FormField>
-            <div className="sm:col-span-3">
-              <Badge color={paymentStatusColor}>{t(`docStatus.${paymentStatusKey}`)}</Badge>
+          {isPrintingPress ? (
+            <Card className="col-span-2">
+              <CardHeader>
+                <CardTitle>{t('fields.invoiceSummary')}</CardTitle>
+              </CardHeader>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <FormField label={t('common.total')}>
+                  <Input disabled value={formatAmount(grandTotal)} />
+                </FormField>
+                <FormField label={t('fields.paidAmount')}>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={paidAmount}
+                    onChange={(e) => setPaidAmount(e.target.value)}
+                  />
+                </FormField>
+                <FormField label={t('fields.remainingAmount')}>
+                  <Input disabled value={formatAmount(remainingAmount)} />
+                </FormField>
+                <div className="sm:col-span-3">
+                  <Badge color={paymentStatusColor}>{t(`docStatus.${paymentStatusKey}`)}</Badge>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <div className="col-span-2 grid grid-cols-1 gap-3 rounded-lg border border-[var(--border)] p-3 sm:grid-cols-3">
+              <FormField label={t('common.total')}>
+                <Input disabled value={formatAmount(grandTotal)} />
+              </FormField>
+              <FormField label={t('fields.paidAmount')}>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={paidAmount}
+                  onChange={(e) => setPaidAmount(e.target.value)}
+                />
+              </FormField>
+              <FormField label={t('fields.remainingAmount')}>
+                <Input disabled value={formatAmount(remainingAmount)} />
+              </FormField>
+              <div className="sm:col-span-3">
+                <Badge color={paymentStatusColor}>{t(`docStatus.${paymentStatusKey}`)}</Badge>
+              </div>
             </div>
-          </div>
+          )}
 
           {error && <p className="col-span-2 text-sm text-red-600">{error}</p>}
 

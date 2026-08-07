@@ -22,6 +22,7 @@ export interface RecordCashMovementInput {
   partyCustomerId?: string | null;
   partySupplierId?: string | null;
   partnerId?: string | null;
+  salesRepresentativeId?: string | null;
   description?: string | null;
   createdById: string;
 }
@@ -58,6 +59,7 @@ export class CashMovementsService {
       partyCustomerId: input.partyCustomerId ?? null,
       partySupplierId: input.partySupplierId ?? null,
       partnerId: input.partnerId ?? null,
+      salesRepresentativeId: input.salesRepresentativeId ?? null,
       description: input.description ?? null,
       companyId: input.companyId,
       branchId: input.branchId ?? null,
@@ -351,6 +353,57 @@ export class CashMovementsService {
     }));
   }
 
+  /**
+   * "أرباح المدراء والشركاء" tab on the Expenses screen: every branch-manager commission payout
+   * (sourceType COMMISSION_PAYOUT) and partner dividend payout (sourceType DIVIDEND) recorded as
+   * an EXPENSE, in one combined newest-first list — each row tagged with which of the two it is
+   * (subType) and the recipient's resolved name, since the two source types attribute to different
+   * tables (salesRepresentativeId vs partnerId) with no single FK to join on.
+   */
+  async getManagerPartnerProfitTransactions(companyId: string, dateFrom?: string, dateTo?: string) {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('m.id', 'id')
+      .addSelect('m."movementDate"', 'date')
+      .addSelect('m."documentNumber"', 'documentNumber')
+      .addSelect('m."sourceType"', 'sourceType')
+      .addSelect('m.amount', 'amount')
+      .addSelect('m.account', 'account')
+      .addSelect('m."branchId"', 'branchId')
+      .addSelect('m.description', 'description')
+      .addSelect('sr.name', 'managerName')
+      .addSelect('p.name', 'partnerName')
+      .from('cash_movements', 'm')
+      .leftJoin('sales_representatives', 'sr', 'sr.id = m."salesRepresentativeId"')
+      .leftJoin('partners', 'p', 'p.id = m."partnerId"')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere(`m.type = 'EXPENSE'`)
+      .andWhere(`m."sourceType" IN ('COMMISSION_PAYOUT', 'DIVIDEND')`)
+      .orderBy('m."createdAt"', 'DESC');
+
+    if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });
+    if (dateTo) qb.andWhere('m."movementDate" <= :dateTo', { dateTo });
+
+    const rows = await qb.getRawMany();
+    const mapped = rows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      documentNumber: r.documentNumber,
+      subType: r.sourceType === 'COMMISSION_PAYOUT' ? ('MANAGER' as const) : ('PARTNER' as const),
+      name: r.managerName ?? r.partnerName ?? '—',
+      amount: Number(r.amount),
+      account: r.account,
+      branchId: r.branchId,
+      description: r.description,
+    }));
+    return {
+      dateFrom: dateFrom ?? null,
+      dateTo: dateTo ?? null,
+      rows: mapped,
+      total: mapped.reduce((sum, r) => sum + r.amount, 0),
+    };
+  }
+
   /** Fetches one manually-recorded expense (MANUAL/EXPENSE) row, scoped to its company, or throws. */
   private async getManualExpenseOrFail(companyId: string, id: string): Promise<CashMovement> {
     const row = await this.repo.findOne({
@@ -504,6 +557,119 @@ export class CashMovementsService {
       }
       await repo.remove(row);
     });
+  }
+
+  /**
+   * "صرف الأرباح" — pays a Printing Press branch manager's earned commission out of the chosen
+   * treasury account. Single row, no linked pair (unlike capital injections' CASH+BANK mirror),
+   * since the whole amount really does leave the one account picked — same shape as a dividend
+   * payout, just attributed to a manager instead of a partner and with a user-chosen account
+   * instead of a hardcoded CASH.
+   */
+  async createCommissionPayout(
+    companyId: string,
+    input: {
+      movementDate: string;
+      amount: number;
+      account: CashMovementAccount;
+      salesRepresentativeId: string;
+      branchId?: string | null;
+      description?: string | null;
+      createdById: string;
+    },
+  ): Promise<CashMovement> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertSufficientBalance(companyId, input.account, input.amount, input.branchId, manager);
+      return this.record(
+        {
+          companyId,
+          branchId: input.branchId ?? null,
+          movementDate: input.movementDate,
+          type: CashMovementType.EXPENSE,
+          account: input.account,
+          amount: input.amount,
+          sourceType: CashMovementSourceType.COMMISSION_PAYOUT,
+          category: 'Commission Payout',
+          salesRepresentativeId: input.salesRepresentativeId,
+          description: input.description,
+          createdById: input.createdById,
+        },
+        manager,
+      );
+    });
+  }
+
+  async updateCommissionPayout(
+    companyId: string,
+    id: string,
+    input: { movementDate: string; amount: number; account: CashMovementAccount; description?: string | null },
+  ): Promise<CashMovement> {
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(CashMovement);
+      const row = await repo.findOne({
+        where: { id, companyId, sourceType: CashMovementSourceType.COMMISSION_PAYOUT },
+      });
+      if (!row) throw new NotFoundException('Commission payout not found');
+
+      // Same-account edits add the row's own old amount back before comparing, so replacing a
+      // payout in place never falsely counts itself as an extra draw on the balance; a switch to
+      // the other account gets no such credit, since the old amount never left that one.
+      const excludeAmount = row.account === input.account ? Number(row.amount) : 0;
+      await this.assertSufficientBalance(companyId, input.account, input.amount, row.branchId, manager, excludeAmount);
+
+      row.movementDate = input.movementDate;
+      row.amount = input.amount;
+      row.account = input.account;
+      row.description = input.description ?? null;
+      return repo.save(row);
+    });
+  }
+
+  async deleteCommissionPayout(companyId: string, id: string): Promise<void> {
+    const row = await this.repo.findOne({
+      where: { id, companyId, sourceType: CashMovementSourceType.COMMISSION_PAYOUT },
+    });
+    if (!row) throw new NotFoundException('Commission payout not found');
+    await this.repo.remove(row);
+  }
+
+  /** Commission payout log — every "صرف الأرباح" transaction, optionally scoped to one manager. */
+  async getCommissionPayouts(companyId: string, dateFrom?: string, dateTo?: string, salesRepresentativeId?: string) {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('m.id', 'id')
+      .addSelect('m."movementDate"', 'date')
+      .addSelect('m."documentNumber"', 'documentNumber')
+      .addSelect('m.amount', 'amount')
+      .addSelect('m.account', 'account')
+      .addSelect('m."branchId"', 'branchId')
+      .addSelect('m."salesRepresentativeId"', 'salesRepresentativeId')
+      .addSelect('m.description', 'description')
+      .addSelect('m."createdAt"', 'createdAt')
+      .addSelect('u."fullName"', 'createdByName')
+      .from('cash_movements', 'm')
+      .leftJoin('users', 'u', 'u.id = m."createdById"')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere(`m."sourceType" = 'COMMISSION_PAYOUT'`)
+      .orderBy('m."createdAt"', 'DESC');
+
+    if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });
+    if (dateTo) qb.andWhere('m."movementDate" <= :dateTo', { dateTo });
+    if (salesRepresentativeId) qb.andWhere('m."salesRepresentativeId" = :salesRepresentativeId', { salesRepresentativeId });
+
+    const rows = await qb.getRawMany();
+    return rows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      documentNumber: r.documentNumber,
+      amount: Number(r.amount),
+      account: r.account,
+      branchId: r.branchId,
+      salesRepresentativeId: r.salesRepresentativeId,
+      description: r.description,
+      createdAt: r.createdAt,
+      createdByName: r.createdByName ?? '—',
+    }));
   }
 
   /** Printing Press never issues stock for its catalog sales (see SalesInvoicesService.create()),

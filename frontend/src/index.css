@@ -929,3 +929,56 @@ body {
 .stock-audit-print.pdf-export-mode .overflow-x-auto {
   overflow: visible;
 }
+
+/* Employee salary slip (مسند الراتب) print/PDF — rendered as a sibling of the interactive
+   Employee Detail modal (see EmployeeDetailModal.tsx), never as its child, since the modal itself
+   is print:hidden (Modal.tsx) and a hidden ancestor would take this block down with it. Hidden by
+   default like every other print-only fragment in this file; shown only for an actual print or the
+   html2canvas PDF snapshot. */
+.employee-salary-print {
+  display: none;
+}
+
+@media print {
+  .employee-salary-print {
+    display: block !important;
+  }
+  .employee-salary-print .overflow-x-auto {
+    overflow: visible;
+  }
+  .employee-salary-print tr {
+    break-inside: avoid;
+  }
+}
+
+.employee-salary-print.pdf-export-mode {
+  display: block !important;
+}
+.employee-salary-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+
+.employee-salary-print-header {
+  margin-bottom: 14px;
+}
+.employee-salary-print-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #1e3a5f;
+  margin-bottom: 4px;
+}
+.employee-salary-print-meta {
+  font-size: 12px;
+  color: #374151;
+}
+.employee-salary-print-section {
+  margin-top: 16px;
+}
+.employee-salary-print-section-title {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #1e3a5f;
+  border-bottom: 2px solid #1e3a5f;
+  padding-bottom: 3px;
+}

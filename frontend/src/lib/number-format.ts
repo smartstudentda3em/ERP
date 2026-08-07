@@ -14,3 +14,12 @@ export function formatAmount(value: unknown): string {
   if (Number.isInteger(num)) return num.toLocaleString('en-US');
   return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
+
+/** Rounds to `decimals` places (2 by default, matching formatAmount's own precision — this
+ * codebase has no per-currency decimal-places setting to vary it by). Used for reverse-calculated
+ * values (e.g. unit price derived from an edited line total) so they don't carry long floating-point
+ * tails into a field the user then re-edits. */
+export function roundTo(value: number, decimals = 2): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}

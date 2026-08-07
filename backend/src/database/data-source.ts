@@ -33,6 +33,7 @@ import { AuditLog } from '../modules/audit-log/entities/audit-log.entity';
 import { Customer } from '../modules/parties/customers/entities/customer.entity';
 import { Supplier } from '../modules/parties/suppliers/entities/supplier.entity';
 import { SalesRepresentative } from '../modules/parties/entities/sales-representative.entity';
+import { CommissionException } from '../modules/parties/entities/commission-exception.entity';
 
 // Inventory
 import { Product } from '../modules/inventory/products/entities/product.entity';
@@ -75,6 +76,7 @@ import { InstallmentPlan, InstallmentPlanLine } from '../modules/sales/installme
 import { InstallmentScheduleItem } from '../modules/sales/installment-plans/entities/installment-schedule-item.entity';
 import { InstallmentPayment } from '../modules/sales/installment-plans/entities/installment-payment.entity';
 import { Employee } from '../modules/hr/entities/employee.entity';
+import { EmployeeLeave } from '../modules/hr/entities/employee-leave.entity';
 import { PayrollRun, PayrollRunLine } from '../modules/hr/entities/payroll-run.entity';
 
 // Purchasing (scaffold)
@@ -129,6 +131,7 @@ export const allEntities = [
   Customer,
   Supplier,
   SalesRepresentative,
+  CommissionException,
   Product,
   ProductBatch,
   StockLevel,
@@ -158,6 +161,7 @@ export const allEntities = [
   InstallmentScheduleItem,
   InstallmentPayment,
   Employee,
+  EmployeeLeave,
   PayrollRun,
   PayrollRunLine,
   PurchaseRequest,

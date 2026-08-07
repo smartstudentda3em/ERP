@@ -6,6 +6,7 @@ import { Branch } from '../../settings/entities/branch.entity';
 import { Customer } from '../../parties/customers/entities/customer.entity';
 import { Supplier } from '../../parties/suppliers/entities/supplier.entity';
 import { Partner } from '../../settings/entities/partner.entity';
+import { SalesRepresentative } from '../../parties/entities/sales-representative.entity';
 
 /**
  * The single source of truth for every dinar that has actually moved through the business's cash
@@ -62,6 +63,15 @@ export class CashMovement extends BaseEntity {
   @ManyToOne(() => Partner, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'partnerId' })
   partner: Partner | null;
+
+  /** Which branch manager this movement is attributed to — set on commission-payout movements
+   * ("صرف الأرباح"), the same role partnerId plays for capital injections/dividends. */
+  @Column('uuid', { nullable: true })
+  salesRepresentativeId: string | null;
+
+  @ManyToOne(() => SalesRepresentative, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'salesRepresentativeId' })
+  salesRepresentative: SalesRepresentative | null;
 
   @Column({ length: 300, nullable: true })
   description: string | null;

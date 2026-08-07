@@ -25,6 +25,23 @@ export class UpdateCapitalInjectionDto {
   @IsOptional() @IsUUID() branchId?: string;
 }
 
+export class CreateCommissionPayoutDto {
+  @IsDateString() movementDate: string;
+  @IsNumber() @Min(0.01) amount: number;
+  @IsEnum(CashMovementAccount) account: CashMovementAccount;
+  /** The branch manager this payout goes to. */
+  @IsUUID() salesRepresentativeId: string;
+  @IsOptional() @IsUUID() branchId?: string;
+  @IsOptional() @IsString() description?: string;
+}
+
+export class UpdateCommissionPayoutDto {
+  @IsDateString() movementDate: string;
+  @IsNumber() @Min(0.01) amount: number;
+  @IsEnum(CashMovementAccount) account: CashMovementAccount;
+  @IsOptional() @IsString() description?: string;
+}
+
 export class CreateDividendDto {
   @IsUUID() companyId: string;
   @IsDateString() movementDate: string;

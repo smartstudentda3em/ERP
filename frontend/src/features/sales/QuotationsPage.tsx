@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
-import { formatAmount } from '../../lib/number-format';
+import { formatAmount, roundTo } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
 import { useActiveCompany } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -103,6 +103,8 @@ export function QuotationsPage() {
         quantity: String(l.quantity),
         unitPrice: String(l.unitPrice),
         unitKind: 'UNIT' as const,
+        lineTotal: String(roundTo(l.quantity * l.unitPrice)),
+        pendingTotalOverride: false,
       })),
     );
   }, [editingQuotationQuery.data]);

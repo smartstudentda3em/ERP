@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
@@ -11,6 +12,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { CashMovementAccount } from '../../../entities/enums';
 
 export class CreatePayrollRunLineDto {
   @IsUUID() employeeId: string;
@@ -23,6 +25,9 @@ export class CreatePayrollRunDto {
   @IsInt() @Min(2000) year: number;
   @IsInt() @Min(1) @Max(12) month: number;
   @IsOptional() @IsString() notes?: string;
+  /** Required for the Printing Press only (enforced in PayrollService.create(), not here, since the
+   * requirement depends on the caller's company) — the account net salaries are disbursed from. */
+  @IsOptional() @IsEnum(CashMovementAccount) paymentAccount?: CashMovementAccount;
 
   @IsArray()
   @ArrayMinSize(1)

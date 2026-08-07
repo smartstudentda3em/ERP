@@ -355,7 +355,42 @@ function syncOfflineBranchManagerRepresentative(user: any, roles: any[], branchI
     email: user.email,
     branchId,
     userId: user.id,
+    // Mirrors UsersService's BRANCH_MANAGER_DEFAULT_COMMISSION_RATE — only on first-time creation.
+    commissionRate: 5,
   });
+}
+
+/**
+ * Mirrors UsersService.syncBranchManagerEmployee(): same auto-provisioning idea as
+ * syncOfflineBranchManagerRepresentative above, but for the HR module's employees table — lets a
+ * logged-in branch manager's own payroll data be resolved from their userId (see
+ * buildManagerDashboard()). The admin still edits the real baseSalary afterwards via Employees;
+ * this only guarantees the link exists.
+ */
+function syncOfflineBranchManagerEmployee(user: any, roles: any[], branchId: string | null | undefined): void {
+  const branchManagerRole = roles.find((r) => r?.name === BRANCH_MANAGER_ROLE_NAME);
+  if (!branchManagerRole || !branchId) return;
+  const companyId = branchManagerRole.restrictedCompanyId ?? user.companyId;
+  if (!companyId) return;
+
+  const employees = readTable<any>('employees');
+  const existing = employees.find((e) => e.userId === user.id);
+  if (existing) {
+    existing.branchId = branchId;
+    existing.companyId = companyId;
+    writeTable('employees', employees);
+    return;
+  }
+
+  genericCreate('employees', {
+    companyId,
+    branchId,
+    name: user.fullName,
+    jobTitle: BRANCH_MANAGER_ROLE_NAME,
+    baseSalary: 0,
+    isActive: true,
+    userId: user.id,
+  }, { createdAt: new Date().toISOString() });
 }
 
 /**
@@ -467,7 +502,7 @@ function migrateToMultiCompany() {
   const untaggedTables = [
     'branches', 'warehouses', 'currencies', 'taxes', 'units', 'packageTypes',
     'productCategories', 'brands', 'expenseCategories', 'partners',
-    'products', 'customers', 'suppliers', 'salesRepresentatives',
+    'products', 'customers', 'suppliers', 'salesRepresentatives', 'commissionExceptions',
     // purchaseReceipts never stamped companyId at all until this fix — any receipt created before
     // it exists in localStorage with no companyId, which silently zeroed out "مشتريات اليوم" for
     // every company since buildDashboardSummary's companyId filter excluded them all.
@@ -606,6 +641,7 @@ function factoryResetDemoData() {
     'customers',
     'suppliers',
     'salesRepresentatives',
+    'commissionExceptions',
     'products',
     'quotations',
     'salesOrders',
@@ -755,6 +791,7 @@ function ensureSeeded() {
   }
   writeTable('suppliers', []);
   writeTable('salesRepresentatives', []);
+  writeTable('commissionExceptions', []);
   writeTable('products', []);
   writeTable('quotations', []);
   writeTable('salesOrders', []);
@@ -775,6 +812,7 @@ function ensureSeeded() {
   writeTable('installmentPayments', []);
   writeTable('whatsappOutboxMessages', []);
   writeTable('employees', []);
+  writeTable('employeeLeaves', []);
   writeTable('payrollRuns', []);
   writeTable('payrollRunLines', []);
 
@@ -943,6 +981,7 @@ function recordCashMovement(input: {
   partyCustomerId?: string | null;
   partySupplierId?: string | null;
   partnerId?: string | null;
+  salesRepresentativeId?: string | null;
   description?: string | null;
   createdById?: string;
 }) {
@@ -961,6 +1000,7 @@ function recordCashMovement(input: {
     partyCustomerId: input.partyCustomerId ?? null,
     partySupplierId: input.partySupplierId ?? null,
     partnerId: input.partnerId ?? null,
+    salesRepresentativeId: input.salesRepresentativeId ?? null,
     description: input.description ?? null,
     companyId: input.companyId ?? OFFLINE_COMPANY_ID,
     branchId: input.branchId ?? null,
@@ -1325,6 +1365,44 @@ function buildExpenseTransactions(companyId: string, sourceType: 'MANUAL' | 'PAY
     }));
 }
 
+/** Mirrors the backend's getManagerPartnerProfitTransactions(): every commission-payout and
+ * dividend EXPENSE row combined into one list for the "أرباح المدراء والشركاء" tab, tagged with
+ * which of the two it is and the recipient's resolved name. */
+function buildManagerPartnerProfitTransactions(companyId: string, dateFrom?: string, dateTo?: string) {
+  const reps = readTable<any>('salesRepresentatives');
+  const partners = readTable<any>('partners');
+  const rows = readTable<any>('cashMovements')
+    .filter(
+      (m) =>
+        m.companyId === companyId &&
+        m.type === 'EXPENSE' &&
+        (m.sourceType === 'COMMISSION_PAYOUT' || m.sourceType === 'DIVIDEND') &&
+        (!dateFrom || m.movementDate >= dateFrom) &&
+        (!dateTo || m.movementDate <= dateTo),
+    )
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .map((m) => ({
+      id: m.id,
+      date: m.movementDate,
+      documentNumber: m.documentNumber,
+      subType: m.sourceType === 'COMMISSION_PAYOUT' ? 'MANAGER' : 'PARTNER',
+      name:
+        m.sourceType === 'COMMISSION_PAYOUT'
+          ? reps.find((r) => r.id === m.salesRepresentativeId)?.name ?? '—'
+          : partners.find((p) => p.id === m.partnerId)?.name ?? '—',
+      amount: Number(m.amount),
+      account: m.account,
+      branchId: m.branchId ?? null,
+      description: m.description,
+    }));
+  return {
+    dateFrom: dateFrom ?? null,
+    dateTo: dateTo ?? null,
+    rows,
+    total: rows.reduce((sum, r) => sum + r.amount, 0),
+  };
+}
+
 // Only manually-recorded operating expenses count here — a supplier payment/purchase receipt is
 // a balance-sheet cash-out-for-inventory movement, not a P&L expense; its cost only hits the P&L
 // via costOfGoodsSold on the units actually sold (see buildProfitReport). Including the full
@@ -1342,6 +1420,163 @@ function buildCogsTransactions(companyId: string, dateFrom?: string, dateTo?: st
       customerName: customers.find((c) => c.id === i.customerId)?.name ?? '—',
       cogs: Number(i.costOfGoodsSold ?? 0),
     }));
+}
+
+/** = (end - start) inclusive, for 'YYYY-MM-DD' date strings — mirrors the backend's
+ * daysBetweenInclusive() in employees.service.ts. */
+function daysBetweenInclusive(start: string, end: string): number {
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  return Math.round(ms / 86400000) + 1;
+}
+
+/** Mirrors EmployeesService's private getMonthlyCommissions(): per-month commission earned by this
+ * employee over [periodStart, periodEnd] when linked to a branch manager (SalesRepresentative row
+ * with a matching userId) — zero for every month otherwise. Same exception-aware per-line rate
+ * resolution as buildBranchManagersCommission/buildManagerDashboardForRep, bucketed by month. */
+function buildEmployeeMonthlyCommissions(employee: any, companyId: string, periodStart: string, periodEnd: string): Map<number, number> {
+  const commissionByMonth = new Map<number, number>();
+  if (!employee.userId) return commissionByMonth;
+
+  const rep = readTable<any>('salesRepresentatives').find((r) => r.userId === employee.userId && r.companyId === companyId);
+  if (!rep || !rep.branchId) return commissionByMonth;
+
+  const generalRate = Number(rep.commissionRate ?? 0);
+  const products = readTable<any>('products');
+  const exceptions = readTable<any>('commissionExceptions').filter(
+    (e) => e.companyId === companyId && e.salesRepresentativeId === rep.id,
+  );
+
+  const invoices = readTable<any>('salesInvoices').filter(
+    (i) => i.companyId === companyId && i.branchId === rep.branchId && i.invoiceDate >= periodStart && i.invoiceDate <= periodEnd,
+  );
+  for (const inv of invoices) {
+    const month = Number(String(inv.invoiceDate).slice(5, 7));
+    for (const line of inv.lines ?? []) {
+      const product = products.find((p) => p.id === line.productId);
+      const categoryId = product?.categoryId ?? null;
+      const productException = exceptions.find((e) => e.productId === line.productId);
+      const categoryException = !productException && categoryId ? exceptions.find((e) => e.categoryId === categoryId) : undefined;
+      const rate = Number(productException?.commissionRate ?? categoryException?.commissionRate ?? generalRate);
+      if (rate <= 0) continue;
+      const commission = (Number(line.lineTotal ?? 0) * rate) / 100;
+      commissionByMonth.set(month, (commissionByMonth.get(month) ?? 0) + commission);
+    }
+  }
+
+  return commissionByMonth;
+}
+
+/** Mirrors EmployeesService.getHistory() — powers the employee detail panel's "بحث بالسنة/الشهر".
+ * Always returns a `salary.monthly` array (1 entry when `month` is given, all 12 for the whole
+ * year) plus `totals` summed across whatever months are in that array, so the caller renders the
+ * same shape either way. */
+function buildEmployeeHistory(employeeId: string, companyId: string, year: number, month?: number) {
+  const employee = readTable<any>('employees').find((e) => e.id === employeeId && e.companyId === companyId);
+  if (!employee) throw new OfflineApiError('Employee not found');
+  const branches = readTable<any>('branches');
+  const branch = branches.find((b) => b.id === employee.branchId) ?? null;
+
+  const months = month ? [month] : Array.from({ length: 12 }, (_, i) => i + 1);
+  const runs = readTable<any>('payrollRuns').filter(
+    (r) => r.companyId === companyId && r.year === year && (!month || r.month === month),
+  );
+  const lines = readTable<any>('payrollRunLines');
+
+  const firstMonth = months[0];
+  const lastMonth = months[months.length - 1];
+  const periodStart = `${year}-${String(firstMonth).padStart(2, '0')}-01`;
+  const lastDay = new Date(year, lastMonth, 0).getDate();
+  const periodEnd = `${year}-${String(lastMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+  // Commission is only meaningful for months an actual payroll run exists for — added on top of
+  // that run's stored deduction figures below, never shown standalone for a month with no run yet.
+  const commissionByMonth = buildEmployeeMonthlyCommissions(employee, companyId, periodStart, periodEnd);
+
+  const monthly = months.map((m) => {
+    const run = runs.find((r) => r.month === m);
+    const line = run ? lines.find((l) => l.payrollRunId === run.id && l.employeeId === employeeId) : null;
+    if (!run || !line) {
+      return {
+        month: m,
+        hasPayrollRun: false,
+        baseSalary: 0,
+        absenceDays: 0,
+        lateHours: 0,
+        absenceDeduction: 0,
+        lateDeduction: 0,
+        otherDeductions: 0,
+        commission: 0,
+        netSalary: 0,
+        status: null as string | null,
+      };
+    }
+    const commission = commissionByMonth.get(m) ?? 0;
+    const baseSalary = Number(line.baseSalary);
+    const absenceDeduction = Number(line.absenceDeduction);
+    const lateDeduction = Number(line.lateDeduction);
+    const otherDeductions = Number(line.otherDeductions);
+    return {
+      month: m,
+      hasPayrollRun: true,
+      baseSalary,
+      absenceDays: Number(line.absenceDays),
+      lateHours: Number(line.lateHours),
+      absenceDeduction,
+      lateDeduction,
+      otherDeductions,
+      commission,
+      // Adds the manager's earned commission on top of the stored line figure — display-only for
+      // this panel, the officially posted payroll netSalary (feeding the الرواتب expense total)
+      // stays untouched.
+      netSalary: Math.max(0, baseSalary - absenceDeduction - lateDeduction - otherDeductions) + commission,
+      status: run.status as string,
+    };
+  });
+
+  const totals = monthly.reduce(
+    (acc, m) => ({
+      baseSalary: acc.baseSalary + m.baseSalary,
+      absenceDays: acc.absenceDays + m.absenceDays,
+      lateHours: acc.lateHours + m.lateHours,
+      absenceDeduction: acc.absenceDeduction + m.absenceDeduction,
+      lateDeduction: acc.lateDeduction + m.lateDeduction,
+      otherDeductions: acc.otherDeductions + m.otherDeductions,
+      commission: acc.commission + m.commission,
+      netSalary: acc.netSalary + m.netSalary,
+    }),
+    {
+      baseSalary: 0,
+      absenceDays: 0,
+      lateHours: 0,
+      absenceDeduction: 0,
+      lateDeduction: 0,
+      otherDeductions: 0,
+      commission: 0,
+      netSalary: 0,
+    },
+  );
+
+  const overlapping = readTable<any>('employeeLeaves').filter(
+    (l) => l.employeeId === employeeId && l.companyId === companyId && l.startDate <= periodEnd && l.endDate >= periodStart,
+  );
+  const leaveRecords = overlapping
+    .map((l) => ({ id: l.id, startDate: l.startDate, endDate: l.endDate, type: l.type, notes: l.notes, days: daysBetweenInclusive(l.startDate, l.endDate) }))
+    .sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
+
+  return {
+    employee: {
+      id: employee.id,
+      name: employee.name,
+      jobTitle: employee.jobTitle,
+      branchName: branch?.nameAr ?? branch?.nameEn ?? null,
+      baseSalary: Number(employee.baseSalary),
+      isActive: employee.isActive,
+    },
+    year,
+    month: month ?? null,
+    salary: { monthly, totals },
+    leaves: { records: leaveRecords, totalDays: leaveRecords.reduce((s, r) => s + r.days, 0) },
+  };
 }
 
 function buildExpenseReport(companyId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
@@ -1576,35 +1811,198 @@ function buildManagersProfitability(companyId: string, dateFrom: string, dateTo:
  * its assigned manager's commissionRate — attributed to the branch itself (SalesInvoice.branchId),
  * never to whoever actually created each invoice. One row per branch, even one with no assigned
  * manager or no sales in the period (zeros), so the report needs no per-invoice manager selection.
+ *
+ * commissionAmount is computed per invoice line (not totalSales × generalRate), since a manager's
+ * commissionExceptions can override the rate for a specific product or product category — a line's
+ * rate is its product-specific exception, else its category's exception, else the manager's own
+ * general commissionRate. totalSales stays SUM(lineTotal), same figure grandTotal always equals
+ * (no header-level tax/discount on sales invoices in this system). Lines live embedded on each
+ * salesInvoices row (`inv.lines`), not a separate table — no join needed, just a products lookup
+ * for each line's categoryId.
  */
 function buildBranchManagersCommission(companyId: string, dateFrom: string, dateTo: string) {
   const branches = readTable<any>('branches').filter((b) => b.companyId === companyId);
   const reps = readTable<any>('salesRepresentatives').filter((r) => r.companyId === companyId);
+  const products = readTable<any>('products');
   const invoices = readTable<any>('salesInvoices').filter(
     (i) => i.companyId === companyId && i.branchId && i.invoiceDate >= dateFrom && i.invoiceDate <= dateTo,
   );
+  const exceptions = readTable<any>('commissionExceptions').filter((e) => e.companyId === companyId);
 
-  const salesByBranchId = new Map<string, number>();
+  const linesByBranchId = new Map<string, { lineTotal: number; productId: string; categoryId: string | null }[]>();
   for (const inv of invoices) {
-    salesByBranchId.set(inv.branchId, (salesByBranchId.get(inv.branchId) ?? 0) + Number(inv.grandTotal ?? 0));
+    if (!linesByBranchId.has(inv.branchId)) linesByBranchId.set(inv.branchId, []);
+    const bucket = linesByBranchId.get(inv.branchId)!;
+    for (const line of inv.lines ?? []) {
+      const product = products.find((p) => p.id === line.productId);
+      bucket.push({
+        lineTotal: Number(line.lineTotal ?? 0),
+        productId: line.productId,
+        categoryId: product?.categoryId ?? null,
+      });
+    }
   }
 
   return branches
     .map((b) => {
       const manager = reps.find((r) => r.branchId === b.id) ?? null;
-      const totalSales = salesByBranchId.get(b.id) ?? 0;
-      const commissionRate = Number(manager?.commissionRate ?? 0);
+      const generalRate = Number(manager?.commissionRate ?? 0);
+      const managerExceptions = manager ? exceptions.filter((e) => e.salesRepresentativeId === manager.id) : [];
+      const lines = linesByBranchId.get(b.id) ?? [];
+
+      let totalSales = 0;
+      let commissionAmount = 0;
+      for (const line of lines) {
+        const productException = managerExceptions.find((e) => e.productId === line.productId);
+        const categoryException =
+          !productException && line.categoryId
+            ? managerExceptions.find((e) => e.categoryId === line.categoryId)
+            : undefined;
+        const rate = Number(productException?.commissionRate ?? categoryException?.commissionRate ?? generalRate);
+        totalSales += line.lineTotal;
+        commissionAmount += (line.lineTotal * rate) / 100;
+      }
+
       return {
         branchId: b.id,
         branchName: b.nameAr || b.nameEn || null,
         managerId: manager?.id ?? null,
         managerName: manager?.name ?? null,
         totalSales,
-        commissionRate,
-        commissionAmount: (totalSales * commissionRate) / 100,
+        commissionRate: generalRate,
+        commissionAmount,
       };
     })
     .sort((a, b) => b.commissionAmount - a.commissionAmount);
+}
+
+/**
+ * Mirrors SalesRepresentativesService.getManagerDashboard(): a logged-in branch manager's own
+ * sales/commission for the given date range (scoped to their own branch only, same exception-aware
+ * math as buildBranchManagersCommission), plus their current/previous calendar month payroll
+ * snapshot — independent of the date range, since payroll is always run monthly.
+ */
+function buildManagerDashboard(companyId: string, dateFrom?: string, dateTo?: string) {
+  const userId = getOfflineSessionUser()?.id;
+  const rep = readTable<any>('salesRepresentatives').find((r) => r.userId === userId && r.companyId === companyId);
+  if (!rep) throw new OfflineApiError('لا يوجد سجل مدير فرع مرتبط بحسابك');
+  return buildManagerDashboardForRep(rep, companyId, dateFrom, dateTo);
+}
+
+/** Admin drill-down mirror of the backend's getManagerDashboardByRepId(): same computation, keyed
+ * by the SalesRepresentative's own id instead of resolving it from the logged-in session. */
+function buildManagerDashboardByRepId(companyId: string, repId: string, dateFrom?: string, dateTo?: string) {
+  const rep = readTable<any>('salesRepresentatives').find((r) => r.id === repId && r.companyId === companyId);
+  if (!rep) throw new OfflineApiError('مدير الفرع غير موجود');
+  return buildManagerDashboardForRep(rep, companyId, dateFrom, dateTo);
+}
+
+/** Mirrors SalesRepresentativesService.monthsInDateRange(): the 3 (year, month) pairs a
+ * quarter-shaped [dateFrom, dateTo] spans, walked forward from dateFrom's own (year, month). */
+function monthsInOfflineDateRange(dateFrom: string): { year: number; month: number }[] {
+  const [y, m] = dateFrom.split('-').map(Number);
+  return [0, 1, 2].map((i) => {
+    const d = new Date(y, m - 1 + i, 1);
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  });
+}
+
+function buildManagerDashboardForRep(rep: any, companyId: string, dateFrom?: string, dateTo?: string) {
+  const branches = readTable<any>('branches');
+  const products = readTable<any>('products');
+  const invoices = readTable<any>('salesInvoices').filter(
+    (i) =>
+      i.companyId === companyId &&
+      i.branchId === rep.branchId &&
+      (!dateFrom || i.invoiceDate >= dateFrom) &&
+      (!dateTo || i.invoiceDate <= dateTo),
+  );
+  const exceptions = readTable<any>('commissionExceptions').filter(
+    (e) => e.companyId === companyId && e.salesRepresentativeId === rep.id,
+  );
+
+  // Only lines this manager actually earns a commission on ever reach the dashboard — a resolved
+  // rate of 0% (no general rate and no exception, or an exception explicitly zeroing it out) means
+  // this sale isn't "his" for commission purposes, so it's excluded from both the sales list AND
+  // totalSales, not just from the commission total.
+  const generalRate = Number(rep.commissionRate ?? 0);
+  let totalSales = 0;
+  let commissionAmount = 0;
+  const items: {
+    lineId: string;
+    invoiceId: string;
+    documentNumber: string;
+    invoiceDate: string;
+    productName: string;
+    lineTotal: number;
+    commissionRate: number;
+    commissionAmount: number;
+  }[] = [];
+  for (const inv of invoices) {
+    for (const line of inv.lines ?? []) {
+      const product = products.find((p) => p.id === line.productId);
+      const categoryId = product?.categoryId ?? null;
+      const productException = exceptions.find((e) => e.productId === line.productId);
+      const categoryException =
+        !productException && categoryId ? exceptions.find((e) => e.categoryId === categoryId) : undefined;
+      const rate = Number(productException?.commissionRate ?? categoryException?.commissionRate ?? generalRate);
+      if (rate <= 0) continue;
+      const lineTotal = Number(line.lineTotal ?? 0);
+      const lineCommission = (lineTotal * rate) / 100;
+      totalSales += lineTotal;
+      commissionAmount += lineCommission;
+      items.push({
+        lineId: line.id ?? `${inv.id}-${line.productId}`,
+        invoiceId: inv.id,
+        documentNumber: inv.documentNumber,
+        invoiceDate: inv.invoiceDate,
+        productName: product?.nameAr || product?.nameEn || '—',
+        lineTotal,
+        commissionRate: rate,
+        commissionAmount: lineCommission,
+      });
+    }
+  }
+  items.sort((a, b) => (a.invoiceDate < b.invoiceDate ? 1 : a.invoiceDate > b.invoiceDate ? -1 : 0));
+
+  const employee = rep.userId
+    ? readTable<any>('employees').find((e) => e.userId === rep.userId && e.companyId === companyId)
+    : undefined;
+
+  function payrollSnapshot(year: number, month: number) {
+    if (!employee) return null;
+    const run = readTable<any>('payrollRuns').find((r) => r.companyId === companyId && r.year === year && r.month === month);
+    if (!run) return null;
+    const line = readTable<any>('payrollRunLines').find((l) => l.payrollRunId === run.id && l.employeeId === employee.id);
+    if (!line) return null;
+    return {
+      year,
+      month,
+      baseSalary: Number(line.baseSalary),
+      absenceDays: Number(line.absenceDays),
+      lateHours: Number(line.lateHours),
+      absenceDeduction: Number(line.absenceDeduction),
+      lateDeduction: Number(line.lateDeduction),
+      otherDeductions: Number(line.otherDeductions),
+      totalDeductions: Number(line.absenceDeduction) + Number(line.lateDeduction) + Number(line.otherDeductions),
+      netSalary: Number(line.netSalary),
+      status: run.status,
+    };
+  }
+
+  const branch = branches.find((b) => b.id === rep.branchId);
+  const months = dateFrom ? monthsInOfflineDateRange(dateFrom) : [];
+
+  return {
+    manager: { id: rep.id, name: rep.name, branchName: branch ? branch.nameAr || branch.nameEn || null : null },
+    employee: employee ? { baseSalary: Number(employee.baseSalary), jobTitle: employee.jobTitle } : null,
+    sales: { totalSales, items },
+    commission: { generalRate, amount: commissionAmount },
+    payroll: {
+      hasEmployeeRecord: !!employee,
+      months: months.map((m) => payrollSnapshot(m.year, m.month)),
+    },
+  };
 }
 
 /** Mirrors the backend's getReportsInvoices(): same population and date range as buildSalesRepresentativesReport's sales-volume side, so the table always reconciles with the chart. */
@@ -3410,6 +3808,44 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       const code = body.code || tryGetNextNumber('SALES_REPRESENTATIVE') || `REP-${Date.now()}`;
       return genericCreate('salesRepresentatives', body, { companyId: repsCompanyId, code });
     }
+    // Self-service "لوحة المدير" dashboard — must be checked before the generic seg1-only
+    // patch/delete branches below (those match any truthy seg1), same ordering rule as the
+    // commission-exceptions branch right after it, so 'me' is never treated as a rep id.
+    if (seg1 === 'me' && seg2 === 'dashboard' && method === 'get') {
+      return buildManagerDashboard(repsCompanyId, params?.dateFrom, params?.dateTo);
+    }
+    // Admin drill-down — same ordering rule as 'me/dashboard' above (must come before the generic
+    // seg1-only branches so seg1 here, a real rep id, is never treated as a plain :id GET/PATCH).
+    if (seg1 && seg2 === 'dashboard' && !seg3 && method === 'get') {
+      return buildManagerDashboardByRepId(repsCompanyId, seg1, params?.dateFrom, params?.dateTo);
+    }
+    // Must be checked before the generic seg1-only patch/delete branches below, since those match
+    // any truthy seg1 regardless of seg2/seg3 — a DELETE here would otherwise delete the rep itself.
+    if (seg1 && seg2 === 'commission-exceptions' && !seg3 && method === 'get') {
+      const products = readTable<any>('products');
+      const categories = readTable<any>('productCategories');
+      return readTable<any>('commissionExceptions')
+        .filter((e) => e.companyId === repsCompanyId && e.salesRepresentativeId === seg1)
+        .map((e) => ({
+          ...e,
+          product: e.productId ? products.find((p) => p.id === e.productId) ?? null : null,
+          category: e.categoryId ? categories.find((c) => c.id === e.categoryId) ?? null : null,
+        }));
+    }
+    if (seg1 && seg2 === 'commission-exceptions' && !seg3 && method === 'post') {
+      if (!!body.productId === !!body.categoryId) {
+        throw new OfflineApiError('يجب تحديد منتج واحد أو فئة واحدة، وليس كلاهما أو لا شيء');
+      }
+      return genericCreate('commissionExceptions', body, {
+        companyId: repsCompanyId,
+        salesRepresentativeId: seg1,
+        productId: body.productId ?? null,
+        categoryId: body.categoryId ?? null,
+      });
+    }
+    if (seg1 && seg2 === 'commission-exceptions' && seg3 && method === 'delete') {
+      return genericDelete('commissionExceptions', seg3);
+    }
     if (seg1 && method === 'patch') {
       const rows = readTable<any>('salesRepresentatives');
       const row = rows.find((r) => r.id === seg1 && r.companyId === repsCompanyId);
@@ -4294,13 +4730,51 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
     }
 
     if (!seg2 && method === 'get') {
-      return readTable<any>('employees')
-        .filter((e) => e.companyId === hrCompanyId)
-        .map(hydrateEmployee)
-        .sort((a: any, b: any) => (a.createdAt < b.createdAt ? 1 : -1));
+      let list = readTable<any>('employees').filter((e) => e.companyId === hrCompanyId);
+      if (params?.branchId) list = list.filter((e) => e.branchId === params.branchId);
+      if (params?.search) {
+        const q = String(params.search).toLowerCase();
+        list = list.filter(
+          (e) => String(e.name).toLowerCase().includes(q) || String(e.jobTitle).toLowerCase().includes(q),
+        );
+      }
+      return list.map(hydrateEmployee).sort((a: any, b: any) => (a.createdAt < b.createdAt ? 1 : -1));
     }
 
-    if (seg2 && method === 'get') {
+    // GET /hr/employees/:id/history?year=&month= — checked before the generic
+    // "GET /hr/employees/:id" handler below, which would otherwise also match on seg2 alone.
+    if (seg2 && seg3 === 'history' && method === 'get') {
+      return buildEmployeeHistory(seg2, hrCompanyId, Number(params?.year), params?.month ? Number(params.month) : undefined);
+    }
+
+    if (seg2 && seg3 === 'leaves' && !seg4 && method === 'post') {
+      const employee = readTable<any>('employees').find((e) => e.id === seg2 && e.companyId === hrCompanyId);
+      if (!employee) throw new OfflineApiError('Employee not found');
+      if (body.endDate < body.startDate) throw new OfflineApiError('تاريخ النهاية يجب أن يكون بعد تاريخ البداية');
+      const createdById = getOfflineSessionUser()?.id ?? 'offline-demo-user';
+      return genericCreate(
+        'employeeLeaves',
+        {
+          employeeId: seg2,
+          startDate: body.startDate,
+          endDate: body.endDate,
+          type: body.type,
+          notes: body.notes ?? null,
+          createdById,
+        },
+        { companyId: hrCompanyId, createdAt: new Date().toISOString() },
+      );
+    }
+
+    if (seg2 && seg3 === 'leaves' && seg4 && method === 'delete') {
+      const leave = readTable<any>('employeeLeaves').find(
+        (l) => l.id === seg4 && l.employeeId === seg2 && l.companyId === hrCompanyId,
+      );
+      if (!leave) throw new OfflineApiError('Leave record not found');
+      return genericDelete('employeeLeaves', seg4);
+    }
+
+    if (seg2 && !seg3 && method === 'get') {
       const employee = readTable<any>('employees').find((e) => e.id === seg2 && e.companyId === hrCompanyId);
       if (!employee) throw new OfflineApiError('Employee not found');
       return hydrateEmployee(employee);
@@ -4321,7 +4795,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       return hydrateEmployee(employee);
     }
 
-    if (seg2 && method === 'patch') {
+    if (seg2 && !seg3 && method === 'patch') {
       const employees = readTable<any>('employees');
       const employee = employees.find((e) => e.id === seg2 && e.companyId === hrCompanyId);
       if (!employee) throw new OfflineApiError('Employee not found');
@@ -4334,7 +4808,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       return hydrateEmployee(employee);
     }
 
-    if (seg2 && method === 'delete') {
+    if (seg2 && !seg3 && method === 'delete') {
       const hasPayrollHistory = readTable<any>('payrollRunLines').some((l) => l.employeeId === seg2);
       if (hasPayrollHistory) {
         throw new OfflineApiError('Cannot delete an employee with payroll history — deactivate instead');
@@ -4384,6 +4858,12 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       return hydratePayrollRun(run);
     }
 
+    // Mirrors PayrollService.create(): for every non-Press company this still just saves a
+    // CONFIRMED run (unchanged from before, no CashMovement touched). For the Printing Press,
+    // body.paymentAccount is required, and the run's total net salary is balance-checked against
+    // that account BEFORE anything is written — an insufficient balance throws and leaves no
+    // orphaned run behind — then the run is written already APPROVED with its CashMovement(s)
+    // posted, since "حفظ واعتماد الكشف" is a single action for Press, not a two-step create+approve.
     if (!seg2 && method === 'post') {
       const existing = readTable<any>('payrollRuns').find(
         (r) => r.companyId === payrollCompanyId && r.year === Number(body.year) && r.month === Number(body.month),
@@ -4395,23 +4875,13 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         if (!employeeById.has(l.employeeId)) throw new OfflineApiError('One or more employees not found');
       }
 
-      const documentNumber = tryGetNextNumber('PAYROLL_RUN') ?? nextDocNumber('payrollRuns', 'PR', payrollCompanyId);
-      const run = genericCreate(
-        'payrollRuns',
-        {
-          year: Number(body.year),
-          month: Number(body.month),
-          notes: body.notes ?? null,
-          status: 'CONFIRMED',
-          createdById: getOfflineSessionUser()?.id ?? 'offline-demo-user',
-          approvedById: null,
-          approvedAt: null,
-        },
-        { documentNumber, companyId: payrollCompanyId, createdAt: new Date().toISOString() },
-      );
+      const company = readTable<any>('companies').find((c) => c.id === payrollCompanyId);
+      const isPress = company?.code === 'PRESS';
+      if (isPress && !body.paymentAccount) {
+        throw new OfflineApiError('يجب اختيار مصدر الصرف (الكاش أو البنك)');
+      }
 
-      const runLines = readTable<any>('payrollRunLines');
-      for (const l of body.lines ?? []) {
+      const computedLines = (body.lines ?? []).map((l: any) => {
         const employee = employeeById.get(l.employeeId)!;
         const baseSalary = Number(employee.baseSalary);
         const dailyRate = baseSalary / 30;
@@ -4422,9 +4892,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         const absenceDeduction = dailyRate * absenceDays;
         const lateDeduction = hourlyRate * lateHours;
         const netSalary = Math.max(0, baseSalary - absenceDeduction - lateDeduction - otherDeductions);
-        runLines.push({
-          id: genId(),
-          payrollRunId: run.id,
+        return {
           employeeId: employee.id,
           branchId: employee.branchId,
           baseSalary,
@@ -4434,13 +4902,74 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
           absenceDeduction,
           lateDeduction,
           netSalary,
-        });
+        };
+      });
+
+      if (isPress) {
+        const totalNetSalary = computedLines.reduce((sum: number, l: any) => sum + l.netSalary, 0);
+        assertSufficientBalance(payrollCompanyId, body.paymentAccount, totalNetSalary, undefined);
+      }
+
+      const documentNumber = tryGetNextNumber('PAYROLL_RUN') ?? nextDocNumber('payrollRuns', 'PR', payrollCompanyId);
+      const run = genericCreate(
+        'payrollRuns',
+        {
+          year: Number(body.year),
+          month: Number(body.month),
+          notes: body.notes ?? null,
+          status: 'CONFIRMED',
+          paymentAccount: isPress ? body.paymentAccount : null,
+          createdById: getOfflineSessionUser()?.id ?? 'offline-demo-user',
+          approvedById: null,
+          approvedAt: null,
+        },
+        { documentNumber, companyId: payrollCompanyId, createdAt: new Date().toISOString() },
+      );
+
+      const runLines = readTable<any>('payrollRunLines');
+      for (const l of computedLines) {
+        runLines.push({ id: genId(), payrollRunId: run.id, ...l });
       }
       writeTable('payrollRunLines', runLines);
+
+      if (isPress) {
+        const lastDay = new Date(run.year, run.month, 0).getDate();
+        const movementDate = `${run.year}-${String(run.month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        const totalsByBranch = new Map<string, number>();
+        for (const l of computedLines) {
+          totalsByBranch.set(l.branchId, (totalsByBranch.get(l.branchId) ?? 0) + l.netSalary);
+        }
+        for (const [branchId, amount] of totalsByBranch) {
+          if (amount <= 0) continue;
+          recordCashMovement({
+            companyId: payrollCompanyId,
+            branchId,
+            movementDate,
+            type: 'EXPENSE',
+            account: body.paymentAccount,
+            amount,
+            sourceType: 'PAYROLL',
+            sourceId: run.id,
+            category: 'رواتب الموظفين',
+            description: `رواتب شهر ${run.month}/${run.year} - ${run.documentNumber}`,
+            createdById: getOfflineSessionUser()?.id ?? 'offline-demo-user',
+          });
+        }
+        run.status = 'APPROVED';
+        run.approvedById = getOfflineSessionUser()?.id ?? 'offline-demo-user';
+        run.approvedAt = new Date().toISOString();
+        const runsAfter = readTable<any>('payrollRuns');
+        const idx = runsAfter.findIndex((r) => r.id === run.id);
+        if (idx !== -1) runsAfter[idx] = run;
+        writeTable('payrollRuns', runsAfter);
+      }
 
       return hydratePayrollRun(run);
     }
 
+    // Defensive-only path today: Press runs are already APPROVED by the create handler above, so
+    // this only ever fires for a non-Press CONFIRMED run's manual approval, or a CONFIRMED Press run
+    // that somehow exists without having gone through create()'s auto-approve.
     if (seg2 && seg3 === 'approve' && method === 'post') {
       const runs = readTable<any>('payrollRuns');
       const run = runs.find((r) => r.id === seg2 && r.companyId === payrollCompanyId);
@@ -4449,7 +4978,16 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         throw new OfflineApiError('Only a submitted (pending-approval) payroll run can be approved');
       }
 
+      const company = readTable<any>('companies').find((c) => c.id === payrollCompanyId);
+      const isPress = company?.code === 'PRESS';
+      const account = run.paymentAccount ?? 'CASH';
       const lines = readTable<any>('payrollRunLines').filter((l) => l.payrollRunId === run.id);
+      if (isPress) {
+        if (!run.paymentAccount) throw new OfflineApiError('يجب اختيار مصدر الصرف (الكاش أو البنك)');
+        const totalNetSalary = lines.reduce((sum, l) => sum + Number(l.netSalary), 0);
+        assertSufficientBalance(payrollCompanyId, account, totalNetSalary, undefined);
+      }
+
       const totalsByBranch = new Map<string, number>();
       for (const line of lines) {
         totalsByBranch.set(line.branchId, (totalsByBranch.get(line.branchId) ?? 0) + Number(line.netSalary));
@@ -4465,7 +5003,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
           branchId,
           movementDate,
           type: 'EXPENSE',
-          account: 'CASH',
+          account,
           amount,
           sourceType: 'PAYROLL',
           sourceId: run.id,
@@ -4520,7 +5058,13 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
           ),
         );
 
+        // The removal above already takes the old posting out of the balance before this checks —
+        // no excludeAmount add-back needed. No-ops for every non-Press company.
+        const account = run.paymentAccount ?? 'CASH';
         const freshLines = runLines.filter((l) => l.payrollRunId === run.id);
+        const totalNetSalary = freshLines.reduce((sum, l) => sum + Number(l.netSalary), 0);
+        assertSufficientBalance(payrollCompanyId, account, totalNetSalary, undefined);
+
         const totalsByBranch = new Map<string, number>();
         for (const line of freshLines) {
           totalsByBranch.set(line.branchId, (totalsByBranch.get(line.branchId) ?? 0) + Number(line.netSalary));
@@ -4534,7 +5078,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
             branchId,
             movementDate,
             type: 'EXPENSE',
-            account: 'CASH',
+            account,
             amount,
             sourceType: 'PAYROLL',
             sourceId: run.id,
@@ -5349,6 +5893,10 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
     const treasurySalariesCompanyId = getOfflineSessionUser()?.companyId ?? OFFLINE_COMPANY_ID;
     return buildExpenseTransactions(treasurySalariesCompanyId, 'PAYROLL', params?.dateFrom, params?.dateTo);
   }
+  if (seg0 === 'treasury' && seg1 === 'manager-partner-profits' && method === 'get') {
+    const profitsCompanyId = getOfflineSessionUser()?.companyId ?? OFFLINE_COMPANY_ID;
+    return buildManagerPartnerProfitTransactions(profitsCompanyId, params?.dateFrom, params?.dateTo);
+  }
   if (seg0 === 'treasury' && seg1 === 'expenses' && seg2 && method === 'patch') {
     const treasuryExpensesCompanyId = getOfflineSessionUser()?.companyId ?? OFFLINE_COMPANY_ID;
     const rows = readTable<any>('cashMovements');
@@ -5648,6 +6196,92 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
     }
   }
 
+  // --- Treasury: commission payouts ("صرف الأرباح") ---------------------------------
+  // Mirrors PartnersTreasuryController's commission-payouts routes / CashMovementsService's
+  // createCommissionPayout/updateCommissionPayout/deleteCommissionPayout/getCommissionPayouts —
+  // a branch manager's earned commission paid out of a user-chosen account (unlike dividends,
+  // which always draw from CASH), attributed via salesRepresentativeId the way partnerId
+  // attributes a dividend.
+  if (seg0 === 'treasury' && seg1 === 'commission-payouts') {
+    const payoutsCompanyId = getOfflineSessionUser()?.companyId ?? OFFLINE_COMPANY_ID;
+
+    if (!seg2 && method === 'get') {
+      const users = readTable<any>('users');
+      return readTable<any>('cashMovements')
+        .filter(
+          (m) =>
+            m.companyId === payoutsCompanyId &&
+            m.sourceType === 'COMMISSION_PAYOUT' &&
+            (!params?.dateFrom || m.movementDate >= params.dateFrom) &&
+            (!params?.dateTo || m.movementDate <= params.dateTo) &&
+            (!params?.salesRepresentativeId || m.salesRepresentativeId === params.salesRepresentativeId),
+        )
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+        .map((m) => ({
+          id: m.id,
+          date: m.movementDate,
+          documentNumber: m.documentNumber,
+          amount: Number(m.amount),
+          account: m.account,
+          branchId: m.branchId ?? null,
+          salesRepresentativeId: m.salesRepresentativeId ?? null,
+          description: m.description,
+          createdAt: m.createdAt,
+          createdByName: users.find((u) => u.id === m.createdById)?.fullName ?? '—',
+        }));
+    }
+
+    if (!seg2 && method === 'post') {
+      const rep = readTable<any>('salesRepresentatives').find(
+        (r) => r.id === body.salesRepresentativeId && r.isActive && r.companyId === payoutsCompanyId,
+      );
+      if (!rep) throw new OfflineApiError('Selected branch manager was not found or is not active');
+      const amount = Number(body.amount);
+      const branchId = body.branchId ?? rep.branchId ?? null;
+      assertSufficientBalance(payoutsCompanyId, body.account, amount, branchId);
+      return recordCashMovement({
+        companyId: payoutsCompanyId,
+        branchId,
+        movementDate: body.movementDate,
+        type: 'EXPENSE',
+        account: body.account,
+        amount,
+        sourceType: 'COMMISSION_PAYOUT',
+        category: 'Commission Payout',
+        salesRepresentativeId: body.salesRepresentativeId,
+        description: body.description ?? null,
+      });
+    }
+
+    if (seg2 && method === 'patch') {
+      const rows = readTable<any>('cashMovements');
+      const row = rows.find((m) => m.id === seg2 && m.companyId === payoutsCompanyId && m.sourceType === 'COMMISSION_PAYOUT');
+      if (!row) throw new OfflineApiError('Commission payout not found');
+      const amount = Number(body.amount);
+      // Same-account edits add the row's own old amount back before comparing, so replacing a
+      // payout in place never falsely counts itself as an extra draw on the balance.
+      const excludeAmount = row.account === body.account ? Number(row.amount) : 0;
+      assertSufficientBalance(payoutsCompanyId, body.account, amount, row.branchId, excludeAmount);
+      row.movementDate = body.movementDate;
+      row.amount = amount;
+      row.account = body.account;
+      row.description = body.description ?? null;
+      writeTable('cashMovements', rows);
+      return row;
+    }
+
+    if (seg2 && method === 'delete') {
+      const rows = readTable<any>('cashMovements');
+      const row = rows.find((m) => m.id === seg2 && m.companyId === payoutsCompanyId && m.sourceType === 'COMMISSION_PAYOUT');
+      if (!row) throw new OfflineApiError('Commission payout not found');
+      writeTable(
+        'cashMovements',
+        rows.filter((m) => m.id !== seg2),
+      );
+      return { deleted: true };
+    }
+  }
+
   // --- Users / roles ---------------------------------------------------------------
   if (seg0 === 'users') {
     // Self-service "Account Settings" — declared before the generic list/':id' handlers below so
@@ -5736,6 +6370,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         writeTable('userCompanies', links);
       }
       syncOfflineBranchManagerRepresentative(user, assignedRoles, body.branchId);
+      syncOfflineBranchManagerEmployee(user, assignedRoles, body.branchId);
       return user;
     }
 
@@ -5779,6 +6414,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         writeTable('userCompanies', links);
       }
       syncOfflineBranchManagerRepresentative(row, row.roles ?? [], row.branchId);
+      syncOfflineBranchManagerEmployee(row, row.roles ?? [], row.branchId);
       return row;
     }
     if (seg1 && method === 'delete') {

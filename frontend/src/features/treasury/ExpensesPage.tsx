@@ -56,6 +56,20 @@ interface CogsTransaction {
   cogs: number;
 }
 
+/** Printing Press only — "أرباح المدراء والشركاء" tab, combining branch-manager commission payouts
+ * and partner dividend payouts into one list (see backend's getManagerPartnerProfitTransactions). */
+interface ProfitTransaction {
+  id: string;
+  date: string;
+  documentNumber: string;
+  subType: 'MANAGER' | 'PARTNER';
+  name: string;
+  amount: number;
+  account: 'CASH' | 'BANK';
+  branchId?: string | null;
+  description: string | null;
+}
+
 /** Printing Press only — one row per purchase receipt, backing the "مشتريات المواد الخام" tab
  * instead of COGS. Reuses the same GET /inventory/purchase-receipts resource ProductsPage.tsx's
  * raw-materials report already fetches for this tenant. */
@@ -69,7 +83,7 @@ interface PurchaseReceipt {
   supplier: { companyName: string } | null;
 }
 
-type Tab = 'operating' | 'cogs' | 'salaries';
+type Tab = 'operating' | 'cogs' | 'salaries' | 'profits';
 
 function money(n: number): string {
   return formatAmount(n);
@@ -170,9 +184,22 @@ export function ExpensesPage() {
     queryFn: () => unwrap<PurchaseReceipt[]>(apiClient.get('/inventory/purchase-receipts', { params: { companyId } })),
     enabled: !!companyId && isPrintingPress,
   });
+  // Printing Press only — "أرباح المدراء والشركاء" tab's combined commission-payout + dividend log.
+  const profitsQuery = useQuery({
+    queryKey: ['treasury-manager-partner-profits', companyId, dateRange.from, dateRange.to],
+    queryFn: () =>
+      unwrap<{ rows: ProfitTransaction[]; total: number }>(
+        apiClient.get('/treasury/manager-partner-profits', {
+          params: { companyId, dateFrom: dateRange.from || undefined, dateTo: dateRange.to || undefined },
+        }),
+      ),
+    enabled: !!companyId && isPrintingPress,
+  });
+
   // Applies the Branch filter on top of the server-side date filtering already done for
-  // expenses/salaries and the client-side date filtering already done for raw material purchases —
-  // one shared predicate so all three tabs (and every total derived from them) narrow consistently.
+  // expenses/salaries/profits and the client-side date filtering already done for raw material
+  // purchases — one shared predicate so all four tabs (and every total derived from them) narrow
+  // consistently.
   const matchesBranch = (branchId?: string | null) => !branchFilter || branchId === branchFilter;
 
   const filteredExpenses = useMemo(
@@ -183,6 +210,25 @@ export function ExpensesPage() {
     () => (salariesQuery.data ?? []).filter((s) => matchesBranch(s.branchId)),
     [salariesQuery.data, branchFilter],
   );
+  const filteredProfits = useMemo(
+    () => (profitsQuery.data?.rows ?? []).filter((p) => matchesBranch(p.branchId)),
+    [profitsQuery.data, branchFilter],
+  );
+  // Per-beneficiary breakdown for the "أرباح المدراء والشركاء" tab's summary card — grouped by
+  // subType+name (not name alone) so a manager and a partner who happen to share a name are never
+  // collapsed into one total. Recomputes automatically whenever filteredProfits changes, i.e.
+  // whenever the date range or branch filter narrows the same rows the table below shows, so the
+  // two can never disagree.
+  const profitsByPerson = useMemo(() => {
+    const totals = new Map<string, { name: string; subType: 'MANAGER' | 'PARTNER'; amount: number }>();
+    for (const p of filteredProfits) {
+      const key = `${p.subType}:${p.name}`;
+      const existing = totals.get(key);
+      if (existing) existing.amount += p.amount;
+      else totals.set(key, { name: p.name, subType: p.subType, amount: p.amount });
+    }
+    return [...totals.values()].sort((a, b) => b.amount - a.amount);
+  }, [filteredProfits]);
   const dateFilteredRawMaterialPurchases = useMemo(
     () =>
       (rawMaterialPurchasesQuery.data ?? []).filter(
@@ -320,13 +366,14 @@ export function ExpensesPage() {
     0,
   );
   const totalSalaries = filteredSalaries.reduce((sum, s) => sum + s.amount, 0);
+  const totalProfitsPaidOut = filteredProfits.reduce((sum, p) => sum + p.amount, 0);
   // Printing Press's second tab totals raw material purchases instead of COGS — see tabs/columns
   // below — so the grand total follows suit for this tenant only.
   const secondTabTotal = isPrintingPress ? totalRawMaterialPurchases : totalCogs;
-  // Grand total across all three expense types shown on this screen (operating + raw materials/COGS
-  // + salaries) — dividends are excluded since they're a distribution of profit, not an expense
-  // (tracked instead under Partners > Dividends).
-  const grandTotal = totalExpenses + secondTabTotal + totalSalaries;
+  // Grand total across all expense types shown on this screen: operating + raw materials/COGS +
+  // salaries + (Printing Press only) manager/partner profit payouts — the fourth arm the request
+  // adds to this screen's comprehensive expense figure.
+  const grandTotal = totalExpenses + secondTabTotal + totalSalaries + (isPrintingPress ? totalProfitsPaidOut : 0);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'operating', label: t('accounting.operatingExpenses') },
@@ -335,6 +382,7 @@ export function ExpensesPage() {
       label: isPrintingPress ? t('accounting.rawMaterialPurchases') : t('accounting.costOfGoodsSold'),
     },
     { key: 'salaries', label: t('accounting.salaries') },
+    ...(isPrintingPress ? [{ key: 'profits' as Tab, label: t('accounting.managerPartnerProfits') }] : []),
   ];
 
   const cogsColumns: Column<CogsTransaction>[] = [
@@ -362,6 +410,17 @@ export function ExpensesPage() {
     { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
     { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.account}`) },
     { header: t('table.description'), accessor: (r) => r.description ?? '—' },
+  ];
+
+  // Read-only — managed from صرف الأرباح (branch managers) / الشركاء (partners), same convention
+  // as the الرواتب tab's payroll rows above.
+  const profitColumns: Column<ProfitTransaction>[] = [
+    { header: t('common.date'), accessor: (r) => r.date },
+    { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
+    { header: t('accounting.profitSubType'), accessor: (r) => t(`accounting.profitSubTypes.${r.subType}`) },
+    { header: t('common.name'), accessor: (r) => r.name },
+    { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
+    { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.account}`) },
   ];
 
   const recurringColumns: Column<RecurringExpense>[] = [
@@ -527,6 +586,43 @@ export function ExpensesPage() {
             data={filteredSalaries}
             keyField={(r) => r.id}
             isLoading={salariesQuery.isLoading}
+          />
+        </>
+      )}
+
+      {tab === 'profits' && (
+        <>
+          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="text-xs text-[var(--text-muted)]">{t('accounting.totalManagerPartnerProfits')}</div>
+              <div className="mt-1 text-2xl font-semibold">{money(totalProfitsPaidOut)}</div>
+            </div>
+
+            {/* Per-beneficiary breakdown — always derived from profitsByPerson, itself derived from
+                filteredProfits, so this list and the detail table below it can never disagree, and
+                it recomputes automatically whenever the date range or branch filter changes. */}
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="mb-2 text-xs text-[var(--text-muted)]">{t('accounting.profitsByPersonTitle')}</div>
+              {profitsByPerson.length === 0 ? (
+                <div className="text-sm text-[var(--text-muted)]">{t('common.noData')}</div>
+              ) : (
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                  {profitsByPerson.map((p) => (
+                    <li key={`${p.subType}:${p.name}`} className="flex items-center justify-between gap-2">
+                      <span>{t('accounting.totalProfitForPerson', { name: p.name })}</span>
+                      <span className="font-semibold">{money(p.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <DataTable
+            columns={profitColumns}
+            data={filteredProfits}
+            keyField={(r) => r.id}
+            isLoading={profitsQuery.isLoading}
           />
         </>
       )}

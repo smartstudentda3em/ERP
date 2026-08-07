@@ -16,10 +16,21 @@ import { PartnersTreasuryController } from './partners-treasury.controller';
 import { SettingsModule } from '../settings/settings.module';
 import { Partner } from '../settings/entities/partner.entity';
 import { Company } from '../settings/entities/company.entity';
+import { SalesRepresentative } from '../parties/entities/sales-representative.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([CashBox, BankAccount, CashTransaction, Transfer, CashMovement, RecurringExpense, Partner, Company]),
+    TypeOrmModule.forFeature([
+      CashBox,
+      BankAccount,
+      CashTransaction,
+      Transfer,
+      CashMovement,
+      RecurringExpense,
+      Partner,
+      Company,
+      SalesRepresentative,
+    ]),
     SettingsModule,
   ],
   controllers: [

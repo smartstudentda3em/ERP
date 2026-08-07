@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Injectable,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -18,9 +19,13 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CompanyScopedCrudService } from '../../common/services/base-crud.service';
 import { SalesRepresentative } from './entities/sales-representative.entity';
+import { CommissionException } from './entities/commission-exception.entity';
+import { CreateCommissionExceptionDto } from './dto/commission-exception.dto';
 import { Company } from '../settings/entities/company.entity';
 import { NumberingSeriesService } from '../settings/numbering-series.controller';
 import { quarterDateRange } from '../treasury/partners-treasury.controller';
+import { Employee } from '../hr/entities/employee.entity';
+import { PayrollRun, PayrollRunLine } from '../hr/entities/payroll-run.entity';
 
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
@@ -30,10 +35,57 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   constructor(
     @InjectRepository(SalesRepresentative) repo: Repository<SalesRepresentative>,
     @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
+    @InjectRepository(CommissionException) private readonly commissionExceptionsRepo: Repository<CommissionException>,
+    @InjectRepository(Employee) private readonly employeeRepo: Repository<Employee>,
+    @InjectRepository(PayrollRun) private readonly payrollRunRepo: Repository<PayrollRun>,
+    @InjectRepository(PayrollRunLine) private readonly payrollRunLineRepo: Repository<PayrollRunLine>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
   ) {
     super(repo);
+  }
+
+  /** Exactly one of productId/categoryId must be set on a commission exception — there's no DB
+   * constraint for this (this module has no migration workflow), so it's enforced here the same
+   * way assertBranchRequiredForPress() enforces its own cross-field rule below. */
+  private assertExactlyOneTarget(dto: { productId?: string; categoryId?: string }): void {
+    if (!!dto.productId === !!dto.categoryId) {
+      throw new BadRequestException('يجب تحديد منتج واحد أو فئة واحدة، وليس كلاهما أو لا شيء');
+    }
+  }
+
+  async listCommissionExceptions(companyId: string, repId: string): Promise<CommissionException[]> {
+    await this.findOneForCompany(repId, companyId);
+    return this.commissionExceptionsRepo.find({
+      where: { companyId, salesRepresentativeId: repId },
+      relations: ['product', 'category'],
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  async addCommissionException(
+    companyId: string,
+    repId: string,
+    dto: CreateCommissionExceptionDto,
+  ): Promise<CommissionException> {
+    await this.findOneForCompany(repId, companyId);
+    this.assertExactlyOneTarget(dto);
+    const exception = this.commissionExceptionsRepo.create({
+      companyId,
+      salesRepresentativeId: repId,
+      productId: dto.productId ?? null,
+      categoryId: dto.categoryId ?? null,
+      commissionRate: dto.commissionRate,
+    });
+    return this.commissionExceptionsRepo.save(exception);
+  }
+
+  async removeCommissionException(companyId: string, repId: string, exceptionId: string): Promise<void> {
+    const exception = await this.commissionExceptionsRepo.findOne({
+      where: { id: exceptionId, companyId, salesRepresentativeId: repId },
+    });
+    if (!exception) throw new NotFoundException('Commission exception not found');
+    await this.commissionExceptionsRepo.remove(exception);
   }
 
   /** Overrides the base class's bare findAll so the list screen can show each rep's branch name
@@ -302,6 +354,21 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     });
   }
 
+  /** Shared by getBranchManagersCommission() and getManagerDashboard() so the two commission
+   * calculations can never silently diverge: a line's rate is its product-specific exception,
+   * else its category's exception, else the manager's own general commissionRate. */
+  private resolveLineRate(
+    line: { productId: string; categoryId: string | null },
+    exceptions: { byProductId: Map<string, number>; byCategoryId: Map<string, number> } | undefined,
+    generalRate: number,
+  ): number {
+    return (
+      exceptions?.byProductId.get(line.productId) ??
+      (line.categoryId ? exceptions?.byCategoryId.get(line.categoryId) : undefined) ??
+      generalRate
+    );
+  }
+
   /**
    * Branch Managers Commission report: each branch's total sales for the period × its assigned
    * manager's commissionRate — attributed to the branch itself (SalesInvoice.branchId), not
@@ -309,6 +376,13 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
    * everything sold under their branch regardless of who rang it up. One row per branch (even a
    * branch with no assigned manager or no sales in the period still appears, with zeros), so the
    * report never needs a manager picked per invoice — it's derived entirely from the branch.
+   *
+   * commissionAmount is computed per invoice LINE (not a flat totalSales × generalRate anymore),
+   * since a manager's CommissionException list can override the rate for a specific product or
+   * product category: a line's rate is its product-specific exception, else its category's
+   * exception, else the manager's own general commissionRate. totalSales stays SUM(lineTotal),
+   * which is numerically identical to the old SUM(grandTotal) — sales invoices have no header-level
+   * tax/discount in this system, so grandTotal === subtotal === SUM(lines.lineTotal) always.
    */
   async getBranchManagersCommission(
     companyId: string,
@@ -325,43 +399,240 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       commissionAmount: number;
     }[]
   > {
-    const rows = await this.dataSource
+    const branchRows = await this.dataSource
       .createQueryBuilder()
       .select('b.id', 'branchId')
       .addSelect('COALESCE(b."nameAr", b."nameEn")', 'branchName')
       .addSelect('r.id', 'managerId')
       .addSelect('r.name', 'managerName')
       .addSelect('COALESCE(r."commissionRate", 0)', 'commissionRate')
-      .addSelect(
-        `COALESCE((
-          SELECT SUM(i."grandTotal") FROM sales_invoices i
-          WHERE i."branchId" = b.id AND i."companyId" = :companyId
-            AND i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo
-        ), 0)`,
-        'totalSales',
-      )
       .from('branches', 'b')
       .leftJoin('sales_representatives', 'r', 'r."branchId" = b.id')
       .where('b."companyId" = :companyId', { companyId })
-      .setParameters({ companyId, dateFrom, dateTo })
+      .setParameters({ companyId })
       .orderBy('b."nameAr"', 'ASC')
       .getRawMany();
 
-    return rows
+    const lineRows = await this.dataSource
+      .createQueryBuilder()
+      .select('i."branchId"', 'branchId')
+      .addSelect('l."lineTotal"', 'lineTotal')
+      .addSelect('l."productId"', 'productId')
+      .addSelect('p."categoryId"', 'categoryId')
+      .from('sales_invoice_lines', 'l')
+      .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+      .innerJoin('products', 'p', 'p.id = l."productId"')
+      .where('i."companyId" = :companyId', { companyId })
+      .andWhere('i."branchId" IS NOT NULL')
+      .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
+      .getRawMany();
+
+    const exceptionRows = await this.commissionExceptionsRepo.find({ where: { companyId } });
+    const exceptionsByRepId = new Map<
+      string,
+      { byProductId: Map<string, number>; byCategoryId: Map<string, number> }
+    >();
+    for (const e of exceptionRows) {
+      if (!exceptionsByRepId.has(e.salesRepresentativeId)) {
+        exceptionsByRepId.set(e.salesRepresentativeId, { byProductId: new Map(), byCategoryId: new Map() });
+      }
+      const bucket = exceptionsByRepId.get(e.salesRepresentativeId)!;
+      if (e.productId) bucket.byProductId.set(e.productId, Number(e.commissionRate));
+      else if (e.categoryId) bucket.byCategoryId.set(e.categoryId, Number(e.commissionRate));
+    }
+
+    const linesByBranchId = new Map<string, typeof lineRows>();
+    for (const line of lineRows) {
+      if (!linesByBranchId.has(line.branchId)) linesByBranchId.set(line.branchId, []);
+      linesByBranchId.get(line.branchId)!.push(line);
+    }
+
+    return branchRows
       .map((r) => {
-        const totalSales = Number(r.totalSales);
-        const commissionRate = Number(r.commissionRate);
+        const generalRate = Number(r.commissionRate);
+        const exceptions = r.managerId ? exceptionsByRepId.get(r.managerId) : undefined;
+        const lines = linesByBranchId.get(r.branchId) ?? [];
+        let totalSales = 0;
+        let commissionAmount = 0;
+        for (const line of lines) {
+          const lineTotal = Number(line.lineTotal);
+          const rate = this.resolveLineRate(line, exceptions, generalRate);
+          totalSales += lineTotal;
+          commissionAmount += (lineTotal * rate) / 100;
+        }
         return {
           branchId: r.branchId,
           branchName: r.branchName,
           managerId: r.managerId,
           managerName: r.managerName,
           totalSales,
-          commissionRate,
-          commissionAmount: (totalSales * commissionRate) / 100,
+          commissionRate: generalRate,
+          commissionAmount,
         };
       })
       .sort((a, b) => b.commissionAmount - a.commissionAmount);
+  }
+
+  /** Looks up this employee's payroll figures for one specific (year, month) — null when no
+   * payroll run covers that month yet (the manager dashboard shows an empty state for it). */
+  private async getPayrollMonthSnapshot(employeeId: string, companyId: string, year: number, month: number) {
+    const line = await this.payrollRunLineRepo
+      .createQueryBuilder('l')
+      .innerJoinAndSelect('l.payrollRun', 'run')
+      .where('l."employeeId" = :employeeId', { employeeId })
+      .andWhere('run."companyId" = :companyId', { companyId })
+      .andWhere('run.year = :year', { year })
+      .andWhere('run.month = :month', { month })
+      .getOne();
+    if (!line) return null;
+
+    return {
+      year,
+      month,
+      baseSalary: Number(line.baseSalary),
+      absenceDays: Number(line.absenceDays),
+      lateHours: Number(line.lateHours),
+      absenceDeduction: Number(line.absenceDeduction),
+      lateDeduction: Number(line.lateDeduction),
+      otherDeductions: Number(line.otherDeductions),
+      totalDeductions: Number(line.absenceDeduction) + Number(line.lateDeduction) + Number(line.otherDeductions),
+      netSalary: Number(line.netSalary),
+      status: line.payrollRun.status,
+    };
+  }
+
+  /** The 3 (year, month) pairs a quarter-shaped [dateFrom, dateTo] spans — "لوحة المدير" is always
+   * filtered to exactly one quarter, so this just walks forward from dateFrom's own (year, month)
+   * instead of taking quarter/year as separate params the caller would have to keep in sync with
+   * the date range it already computed. */
+  private monthsInDateRange(dateFrom: string): { year: number; month: number }[] {
+    const [y, m] = dateFrom.split('-').map(Number);
+    return [0, 1, 2].map((i) => {
+      const d = new Date(y, m - 1 + i, 1);
+      return { year: d.getFullYear(), month: d.getMonth() + 1 };
+    });
+  }
+
+  /**
+   * Self-service dashboard for a logged-in branch manager ("لوحة المدير"): their own sales total
+   * and commission for the given date range (scoped to their own branch only, same exception-aware
+   * math as getBranchManagersCommission), plus a payroll snapshot for each of the 3 months the
+   * selected quarter spans.
+   */
+  async getManagerDashboard(companyId: string, userId: string, dateFrom: string, dateTo: string) {
+    const rep = await this.repo.findOne({ where: { userId, companyId } as any, relations: ['branch'] });
+    if (!rep) throw new NotFoundException('لا يوجد سجل مدير فرع مرتبط بحسابك');
+    return this.buildManagerDashboardForRep(rep, companyId, dateFrom, dateTo);
+  }
+
+  /**
+   * Admin drill-down variant of getManagerDashboard() — same computation, just keyed by the
+   * SalesRepresentative's own id instead of resolving it from the caller's JWT, so an admin (who
+   * has sales-representatives.view) can inspect any one manager's dashboard from "لوحة المدير"
+   * without having to log in as them.
+   */
+  async getManagerDashboardByRepId(companyId: string, repId: string, dateFrom: string, dateTo: string) {
+    const rep = await this.repo.findOne({ where: { id: repId, companyId } as any, relations: ['branch'] });
+    if (!rep) throw new NotFoundException('مدير الفرع غير موجود');
+    return this.buildManagerDashboardForRep(rep, companyId, dateFrom, dateTo);
+  }
+
+  private async buildManagerDashboardForRep(
+    rep: SalesRepresentative,
+    companyId: string,
+    dateFrom: string,
+    dateTo: string,
+  ) {
+    const generalRate = Number(rep.commissionRate ?? 0);
+    const lineRows = rep.branchId
+      ? await this.dataSource
+          .createQueryBuilder()
+          .select('l.id', 'lineId')
+          .addSelect('i.id', 'invoiceId')
+          .addSelect('i."documentNumber"', 'documentNumber')
+          .addSelect('i."invoiceDate"', 'invoiceDate')
+          .addSelect('l."lineTotal"', 'lineTotal')
+          .addSelect('l."productId"', 'productId')
+          .addSelect('p."categoryId"', 'categoryId')
+          .addSelect('COALESCE(p."nameAr", p."nameEn")', 'productName')
+          .from('sales_invoice_lines', 'l')
+          .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+          .innerJoin('products', 'p', 'p.id = l."productId"')
+          .where('i."companyId" = :companyId', { companyId })
+          .andWhere('i."branchId" = :branchId', { branchId: rep.branchId })
+          .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
+          .orderBy('i."invoiceDate"', 'DESC')
+          .addOrderBy('i."documentNumber"', 'DESC')
+          .getRawMany()
+      : [];
+
+    const exceptionRows = await this.commissionExceptionsRepo.find({
+      where: { companyId, salesRepresentativeId: rep.id },
+    });
+    const exceptions = { byProductId: new Map<string, number>(), byCategoryId: new Map<string, number>() };
+    for (const e of exceptionRows) {
+      if (e.productId) exceptions.byProductId.set(e.productId, Number(e.commissionRate));
+      else if (e.categoryId) exceptions.byCategoryId.set(e.categoryId, Number(e.commissionRate));
+    }
+
+    // Only lines this manager actually earns a commission on ever reach the dashboard — a resolved
+    // rate of 0% (no general rate and no exception, or an exception explicitly zeroing it out) means
+    // this sale isn't "his" for commission purposes, so it's excluded from both the sales list AND
+    // totalSales, not just from the commission total.
+    let totalSales = 0;
+    let commissionAmount = 0;
+    const items: {
+      lineId: string;
+      invoiceId: string;
+      documentNumber: string;
+      invoiceDate: string;
+      productName: string;
+      lineTotal: number;
+      commissionRate: number;
+      commissionAmount: number;
+    }[] = [];
+    for (const line of lineRows) {
+      const rate = this.resolveLineRate(line, exceptions, generalRate);
+      if (rate <= 0) continue;
+      const lineTotal = Number(line.lineTotal);
+      const lineCommission = (lineTotal * rate) / 100;
+      totalSales += lineTotal;
+      commissionAmount += lineCommission;
+      items.push({
+        lineId: line.lineId,
+        invoiceId: line.invoiceId,
+        documentNumber: line.documentNumber,
+        invoiceDate: line.invoiceDate,
+        productName: line.productName,
+        lineTotal,
+        commissionRate: rate,
+        commissionAmount: lineCommission,
+      });
+    }
+
+    const employee = rep.userId
+      ? await this.employeeRepo.findOne({ where: { userId: rep.userId, companyId } as any })
+      : null;
+
+    const months = this.monthsInDateRange(dateFrom);
+    const payrollMonths = employee
+      ? await Promise.all(months.map((m) => this.getPayrollMonthSnapshot(employee.id, companyId, m.year, m.month)))
+      : months.map(() => null);
+
+    return {
+      manager: {
+        id: rep.id,
+        name: rep.name,
+        branchName: (rep as any).branch?.nameAr || (rep as any).branch?.nameEn || null,
+      },
+      employee: employee ? { baseSalary: Number(employee.baseSalary), jobTitle: employee.jobTitle } : null,
+      sales: { totalSales, items },
+      commission: { generalRate, amount: commissionAmount },
+      payroll: {
+        hasEmployeeRecord: !!employee,
+        months: payrollMonths,
+      },
+    };
   }
 
   /** The actual invoices behind the "حجم المبيعات" chart bar(s) — same population (rep IS NOT NULL, or one specific rep) and date range as getReportsSummary, so the table always reconciles with the chart. */
@@ -479,6 +750,54 @@ export class SalesRepresentativesController {
     @Query('representativeId') representativeId?: string,
   ) {
     return this.service.getReportsReceipts(companyId, dateFrom, dateTo, representativeId);
+  }
+  /** Self-service "لوحة المدير" dashboard — no @Permissions decorator, matching
+   * UsersController.getOwnProfile's pattern, since a مدير فرع has no sales-representatives.*
+   * permission. Declared before the :id-shaped routes below so 'me' is never captured as an id. */
+  @Get('me/dashboard')
+  meDashboard(
+    @CurrentUser('companyId') companyId: string,
+    @CurrentUser('userId') userId: string,
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+  ) {
+    return this.service.getManagerDashboard(companyId, userId, dateFrom, dateTo);
+  }
+  /** Admin drill-down for "لوحة المدير" — lets anyone with sales-representatives.view pick a
+   * specific manager from a list and inspect their dashboard, instead of only ever seeing their
+   * own (which is meaningless for an admin who isn't a branch manager themselves). */
+  @Get(':id/dashboard')
+  @Permissions('sales-representatives.view')
+  managerDashboardByRepId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('companyId') companyId: string,
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+  ) {
+    return this.service.getManagerDashboardByRepId(companyId, id, dateFrom, dateTo);
+  }
+  @Get(':id/commission-exceptions')
+  @Permissions('sales-representatives.view')
+  listCommissionExceptions(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('companyId') companyId: string) {
+    return this.service.listCommissionExceptions(companyId, id);
+  }
+  @Post(':id/commission-exceptions')
+  @Permissions('sales-representatives.edit')
+  addCommissionException(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateCommissionExceptionDto,
+    @CurrentUser('companyId') companyId: string,
+  ) {
+    return this.service.addCommissionException(companyId, id, dto);
+  }
+  @Delete(':id/commission-exceptions/:exceptionId')
+  @Permissions('sales-representatives.edit')
+  removeCommissionException(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('exceptionId', ParseUUIDPipe) exceptionId: string,
+    @CurrentUser('companyId') companyId: string,
+  ) {
+    return this.service.removeCommissionException(companyId, id, exceptionId);
   }
   @Get(':id') @Permissions('sales-representatives.view') findOne(
     @Param('id', ParseUUIDPipe) id: string,

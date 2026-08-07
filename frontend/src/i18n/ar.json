@@ -56,6 +56,7 @@
     "welcomeBack": "مرحباً بعودتك"
   },
   "common": {
+    "noResults": "لا نتائج",
     "save": "حفظ",
     "cancel": "إلغاء",
     "create": "إضافة",
@@ -132,6 +133,8 @@
     "computedUnitCost": "تكلفة الوحدة المحسوبة",
     "autoComputed": "تُحسب تلقائيًا",
     "category": "الفئة",
+    "invoiceBasicInfo": "بيانات الفاتورة الأساسية",
+    "invoiceSummary": "ملخص الفاتورة",
     "brand": "العلامة التجارية",
     "purchasePrice": "سعر الشراء",
     "unitPurchasePrice": "متوسط سعر شراء الوحدة",
@@ -222,6 +225,8 @@
   },
   "actions": {
     "addLine": "+ إضافة سطر",
+    "addLinePress": "+ إضافة سطر جديد",
+    "searchProduct": "ابحث عن صنف…",
     "recordPayment": "تسجيل دفعة",
     "collectPayment": "سند قبض / تحصيل",
     "selectProduct": "اختر صنف…",
@@ -274,6 +279,15 @@
     "category": "التصنيف",
     "operatingExpenses": "المصروفات التشغيلية",
     "distributedDividends": "الأرباح المصروفة",
+    "managerPartnerProfits": "أرباح المدراء والشركاء",
+    "totalManagerPartnerProfits": "إجمالي الأرباح المصروفة",
+    "profitsByPersonTitle": "تفاصيل الأرباح حسب المستفيد",
+    "totalProfitForPerson": "إجمالي أرباح {{name}}",
+    "profitSubType": "التصنيف الفرعي",
+    "profitSubTypes": {
+      "MANAGER": "أرباح مدير",
+      "PARTNER": "أرباح شريك"
+    },
     "expenseBreakdown": "تفصيل المصروفات",
     "printComprehensiveReport": "طباعة التقرير المالي الشامل",
     "exportPdf": "تصدير PDF",
@@ -376,6 +390,11 @@
     "absenceDeduction": "خصم الغياب",
     "lateDeduction": "خصم التأخير",
     "netSalary": "صافي الراتب",
+    "totalDeductions": "إجمالي الخصومات",
+    "commission": "العمولة",
+    "salarySlipTitle": "مسند الراتب",
+    "exportPdf": "تصدير PDF",
+    "pdfExportError": "تعذر تصدير التقرير كملف PDF، يرجى المحاولة مرة أخرى.",
     "newPayrollRun": "كشف رواتب جديد",
     "backToList": "العودة للقائمة",
     "saveAndSubmit": "حفظ واعتماد الكشف",
@@ -389,7 +408,47 @@
     "payrollStatus": {
       "CONFIRMED": "بانتظار الاعتماد",
       "APPROVED": "معتمد"
+    },
+    "searchByNameOrTitle": "بحث بالاسم أو المسمى الوظيفي",
+    "allBranches": "كل الفروع",
+    "allMonths": "كل الشهور",
+    "monthLabel": "الشهر",
+    "monthlySalaryTitle": "تفاصيل الراتب الشهري",
+    "attendanceTitle": "سجلات الغياب والتأخير",
+    "leavesTitle": "الإجازات والعطلات",
+    "addLeave": "+ إضافة إجازة",
+    "leaveStartDate": "تاريخ البداية",
+    "leaveEndDate": "تاريخ النهاية",
+    "leaveDays": "عدد الأيام",
+    "totalLeaveDays": "إجمالي أيام الإجازة",
+    "noLeaveRecords": "لا توجد إجازات مسجلة لهذه الفترة",
+    "leaveType": {
+      "ANNUAL": "سنوية",
+      "SICK": "مرضية",
+      "UNPAID": "بدون راتب",
+      "OTHER": "أخرى"
     }
+  },
+  "managerDashboard": {
+    "tabLabel": "لوحة المدير",
+    "salesOverviewTitle": "إجمالي المبيعات",
+    "commissionTitle": "عمولة المبيعات",
+    "payrollTitle": "الراتب والخصومات",
+    "currentMonth": "الشهر الحالي",
+    "previousMonth": "الشهر السابق",
+    "noEmployeeRecord": "لا يوجد سجل راتب مرتبط بحسابك بعد",
+    "noPayrollForMonth": "لم يُصرف راتب هذا الشهر بعد",
+    "currentMonthPreset": "الشهر الحالي",
+    "previousMonthPreset": "الشهر السابق",
+    "selectManager": "مدير الفرع",
+    "selectManagerPlaceholder": "اختر مديرًا لعرض بياناته",
+    "employeeInfoTitle": "البيانات الوظيفية للمدير",
+    "branchLabel": "الفرع",
+    "absenceDays": "أيام الغياب",
+    "lateHours": "ساعات التأخير",
+    "salesListTitle": "المبيعات الخاضعة للعمولة",
+    "commissionAmount": "قيمة العمولة",
+    "noQualifyingSales": "لا توجد مبيعات خاضعة لعمولتك خلال هذه الفترة"
   },
   "userMgmt": {
     "users": "المستخدمون",
@@ -858,6 +917,15 @@
     "pdfExportError": "تعذر تصدير التقرير كملف PDF، يرجى المحاولة مرة أخرى.",
     "responsiblePersonColumn": "مدير الفرع / المسؤول"
   },
+  "commissionExceptions": {
+    "title": "استثناءات العمولة",
+    "viewTitle": "استثناءات العمولة — {{name}}",
+    "saveFirstHint": "احفظ البيانات أولاً لإضافة استثناءات العمولة",
+    "noneYet": "لا توجد استثناءات بعد",
+    "typeProduct": "منتج",
+    "typeCategory": "فئة",
+    "selectTarget": "اختر..."
+  },
   "quotations": {
     "convertToInvoice": "تحويل إلى فاتورة",
     "confirmConvert": "هل تريد تحويل عرض السعر \"{{name}}\" إلى فاتورة بيع؟",
@@ -913,7 +981,17 @@
     "totalCommissionsDue": "إجمالي العمولات المستحقة",
     "branchManager": "مدير الفرع",
     "branchTotalSales": "إجمالي مبيعات الفرع",
-    "commissionAmountDue": "مبلغ العمولة المستحق"
+    "commissionAmountDue": "مبلغ العمولة المستحق",
+    "payoutsTab": "صرف الأرباح",
+    "payoutButton": "صرف الأرباح",
+    "totalProfit": "إجمالي الأرباح",
+    "paidProfit": "الأرباح المصروفة",
+    "payoutModalTitle": "صرف أرباح مدير الفرع",
+    "editPayoutModalTitle": "تعديل عملية الصرف",
+    "amountToPay": "المبلغ المراد صرفه",
+    "executePayout": "تنفيذ",
+    "noManagerForBranch": "لا يوجد مدير مرتبط بهذا الفرع",
+    "noPayoutsData": "لا توجد بيانات لهذا الشهر"
   },
   "printDocument": {
     "invoiceTitle": "فاتورة بيع",

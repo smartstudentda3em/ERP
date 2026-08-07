@@ -3,16 +3,21 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { PayrollRun, PayrollRunLine } from './entities/payroll-run.entity';
 import { Employee } from './entities/employee.entity';
+import { Company } from '../settings/entities/company.entity';
 import { CreatePayrollRunDto, UpdatePayrollRunDto } from './dto/payroll.dto';
 import { CashMovementsService } from '../treasury/cash-movements.service';
 import { NumberingSeriesService } from '../settings/numbering-series.controller';
 import { CashMovementAccount, CashMovementSourceType, CashMovementType, DocumentStatus } from '../../entities/enums';
+
+/** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
+const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
 
 @Injectable()
 export class PayrollService {
   constructor(
     @InjectRepository(PayrollRun) private readonly repo: Repository<PayrollRun>,
     @InjectRepository(Employee) private readonly employeeRepo: Repository<Employee>,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly cashMovementsService: CashMovementsService,
     private readonly numberingSeriesService: NumberingSeriesService,
@@ -35,65 +40,107 @@ export class PayrollService {
 
   /**
    * Snapshots each line's employee baseSalary/branchId as of right now and computes deductions —
-   * a later change to Employee.baseSalary never retroactively changes an already-saved run. Never
-   * touches CashMovement; only approve() posts anything. One run per company/year/month (see the
-   * unique index on PayrollRun) — this is the "منع التكرار المالي" guard at the creation step.
+   * a later change to Employee.baseSalary never retroactively changes an already-saved run. One run
+   * per company/year/month (see the unique index on PayrollRun) — this is the "منع التكرار المالي"
+   * guard at the creation step.
+   *
+   * For every company except the Printing Press, this still just saves a CONFIRMED run and touches
+   * no CashMovement — a separate manual approve() posts the expense later, unchanged from before.
+   * For the Press, dto.paymentAccount is required and this method disburses immediately: the balance
+   * of that account is checked against the run's total net salary BEFORE anything is persisted (so
+   * an insufficient balance leaves no orphaned CONFIRMED run behind), then the run is saved already
+   * APPROVED with its CashMovement(s) posted in the same transaction — matching "لا يتم تنفيذ الخصم
+   * أو تسجيل القيد المحاسبي إلا في حال وجود رصيد كافٍ" and "عند... الضغط على 'حفظ واعتماد الكشف'،
+   * يتم الخصم التلقائي" from the spec: that button never leaves a Press run pending a second,
+   * separate approval click.
    */
   async create(dto: CreatePayrollRunDto, createdById: string, companyId: string): Promise<PayrollRun> {
-    const existing = await this.repo.findOne({ where: { companyId, year: dto.year, month: dto.month } });
-    if (existing) {
-      throw new BadRequestException('A payroll run for this month already exists');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const runRepo = manager.getRepository(PayrollRun);
+      const employeeRepo = manager.getRepository(Employee);
 
-    const employeeIds = dto.lines.map((l) => l.employeeId);
-    const employees = await this.employeeRepo.find({ where: { id: In(employeeIds), companyId } });
-    if (employees.length !== new Set(employeeIds).size) {
-      throw new NotFoundException('One or more employees not found');
-    }
-    const employeeById = new Map(employees.map((e) => [e.id, e]));
+      const existing = await runRepo.findOne({ where: { companyId, year: dto.year, month: dto.month } });
+      if (existing) {
+        throw new BadRequestException('A payroll run for this month already exists');
+      }
 
-    const documentNumber =
-      (await this.numberingSeriesService.tryGetNextNumber(companyId, 'PAYROLL_RUN')) ?? `PR-${Date.now()}`;
+      const employeeIds = dto.lines.map((l) => l.employeeId);
+      const employees = await employeeRepo.find({ where: { id: In(employeeIds), companyId } });
+      if (employees.length !== new Set(employeeIds).size) {
+        throw new NotFoundException('One or more employees not found');
+      }
+      const employeeById = new Map(employees.map((e) => [e.id, e]));
 
-    const lines = dto.lines.map((l) => {
-      const employee = employeeById.get(l.employeeId)!;
-      const baseSalary = Number(employee.baseSalary);
-      // Daily rate = monthly salary / 30; hourly rate = daily rate / 8-hour workday — the same
-      // standard formula مذكور بالمواصفة for absence/lateness deductions.
-      const dailyRate = baseSalary / 30;
-      const hourlyRate = dailyRate / 8;
-      const absenceDays = l.absenceDays ?? 0;
-      const lateHours = l.lateHours ?? 0;
-      const otherDeductions = l.otherDeductions ?? 0;
-      const absenceDeduction = dailyRate * absenceDays;
-      const lateDeduction = hourlyRate * lateHours;
-      const netSalary = Math.max(0, baseSalary - absenceDeduction - lateDeduction - otherDeductions);
+      const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+      const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
+      if (isPress && !dto.paymentAccount) {
+        throw new BadRequestException('يجب اختيار مصدر الصرف (الكاش أو البنك)');
+      }
 
-      return Object.assign(new PayrollRunLine(), {
-        employeeId: employee.id,
-        branchId: employee.branchId,
-        baseSalary,
-        absenceDays,
-        lateHours,
-        otherDeductions,
-        absenceDeduction,
-        lateDeduction,
-        netSalary,
+      const documentNumber =
+        (await this.numberingSeriesService.tryGetNextNumber(companyId, 'PAYROLL_RUN')) ?? `PR-${Date.now()}`;
+
+      const lines = dto.lines.map((l) => {
+        const employee = employeeById.get(l.employeeId)!;
+        const baseSalary = Number(employee.baseSalary);
+        // Daily rate = monthly salary / 30; hourly rate = daily rate / 8-hour workday — the same
+        // standard formula مذكور بالمواصفة for absence/lateness deductions.
+        const dailyRate = baseSalary / 30;
+        const hourlyRate = dailyRate / 8;
+        const absenceDays = l.absenceDays ?? 0;
+        const lateHours = l.lateHours ?? 0;
+        const otherDeductions = l.otherDeductions ?? 0;
+        const absenceDeduction = dailyRate * absenceDays;
+        const lateDeduction = hourlyRate * lateHours;
+        const netSalary = Math.max(0, baseSalary - absenceDeduction - lateDeduction - otherDeductions);
+
+        return Object.assign(new PayrollRunLine(), {
+          employeeId: employee.id,
+          branchId: employee.branchId,
+          baseSalary,
+          absenceDays,
+          lateHours,
+          otherDeductions,
+          absenceDeduction,
+          lateDeduction,
+          netSalary,
+        });
       });
-    });
 
-    const run = this.repo.create({
-      companyId,
-      documentNumber,
-      year: dto.year,
-      month: dto.month,
-      notes: dto.notes ?? null,
-      status: DocumentStatus.CONFIRMED,
-      createdById,
-      lines,
-    });
+      if (isPress) {
+        const totalNetSalary = lines.reduce((sum, l) => sum + Number(l.netSalary), 0);
+        await this.cashMovementsService.assertSufficientBalance(
+          companyId,
+          dto.paymentAccount!,
+          totalNetSalary,
+          undefined,
+          manager,
+        );
+      }
 
-    return this.repo.save(run);
+      const run = runRepo.create({
+        companyId,
+        documentNumber,
+        year: dto.year,
+        month: dto.month,
+        notes: dto.notes ?? null,
+        status: DocumentStatus.CONFIRMED,
+        paymentAccount: isPress ? dto.paymentAccount! : null,
+        createdById,
+        lines,
+      });
+      await runRepo.save(run);
+
+      if (isPress) {
+        await this.postPayrollCashMovements(run, companyId, createdById, manager, dto.paymentAccount!);
+        run.status = DocumentStatus.APPROVED;
+        run.approvedById = createdById;
+        run.approvedAt = new Date();
+        await runRepo.save(run);
+      }
+
+      return run;
+    });
   }
 
   /**
@@ -108,6 +155,7 @@ export class PayrollService {
     companyId: string,
     postedById: string,
     manager: EntityManager,
+    account: CashMovementAccount,
   ): Promise<void> {
     const totalsByBranch = new Map<string, number>();
     for (const line of run.lines) {
@@ -125,7 +173,7 @@ export class PayrollService {
           branchId,
           movementDate,
           type: CashMovementType.EXPENSE,
-          account: CashMovementAccount.CASH,
+          account,
           amount,
           sourceType: CashMovementSourceType.PAYROLL,
           sourceId: run.id,
@@ -139,9 +187,11 @@ export class PayrollService {
   }
 
   /**
-   * The only point where payroll actually posts to operating expenses. Only legal from CONFIRMED,
-   * and status becomes APPROVED right after, so this can never run twice for the same run — that
-   * one-way transition is what prevents double-posting.
+   * The only point where a non-Press payroll run actually posts to operating expenses (Press runs
+   * are already APPROVED by create() — see above — so this only ever runs for them defensively, in
+   * case a CONFIRMED Press run somehow exists). Only legal from CONFIRMED, and status becomes
+   * APPROVED right after, so this can never run twice for the same run — that one-way transition is
+   * what prevents double-posting.
    */
   async approve(id: string, companyId: string, approverId: string): Promise<PayrollRun> {
     return this.dataSource.transaction(async (manager) => {
@@ -152,7 +202,16 @@ export class PayrollService {
         throw new BadRequestException('Only a submitted (pending-approval) payroll run can be approved');
       }
 
-      await this.postPayrollCashMovements(run, companyId, approverId, manager);
+      const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+      const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
+      const account = run.paymentAccount ?? CashMovementAccount.CASH;
+      if (isPress) {
+        if (!run.paymentAccount) throw new BadRequestException('يجب اختيار مصدر الصرف (الكاش أو البنك)');
+        const totalNetSalary = run.lines.reduce((sum, l) => sum + Number(l.netSalary), 0);
+        await this.cashMovementsService.assertSufficientBalance(companyId, account, totalNetSalary, undefined, manager);
+      }
+
+      await this.postPayrollCashMovements(run, companyId, approverId, manager, account);
 
       run.status = DocumentStatus.APPROVED;
       run.approvedById = approverId;
@@ -199,7 +258,13 @@ export class PayrollService {
 
       if (run.status === DocumentStatus.APPROVED) {
         await this.cashMovementsService.removeBySource(companyId, CashMovementSourceType.PAYROLL, run.id, manager);
-        await this.postPayrollCashMovements(run, companyId, updatedById, manager);
+        // The removal above already takes the old posting out of the balance before this checks —
+        // no excludeAmount add-back needed, unlike PurchaseReceiptsService.update() which checks
+        // before removing. No-ops for every non-Press company (assertSufficientBalance's own guard).
+        const account = run.paymentAccount ?? CashMovementAccount.CASH;
+        const totalNetSalary = run.lines.reduce((sum, l) => sum + Number(l.netSalary), 0);
+        await this.cashMovementsService.assertSufficientBalance(companyId, account, totalNetSalary, undefined, manager);
+        await this.postPayrollCashMovements(run, companyId, updatedById, manager, account);
       }
 
       return runRepo.save(run);

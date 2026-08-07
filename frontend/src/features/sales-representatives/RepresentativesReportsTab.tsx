@@ -17,16 +17,10 @@ import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
-import { Input, FormField, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { useActiveCompany } from '../../lib/use-active-company';
-
-interface SalesRepresentative {
-  id: string;
-  name: string;
-}
 
 interface RepReportRow {
   representativeId: string;
@@ -92,11 +86,11 @@ function money(n: number): string {
 }
 
 /** 1-4 for a quarter, 0 for the full calendar year. */
-type Quarter = 0 | 1 | 2 | 3 | 4;
+export type ReportsQuarter = 0 | 1 | 2 | 3 | 4;
 type DetailTab = 'invoices' | 'receipts';
 
 /** Q1: Jan1–Mar31, Q2: Apr1–Jun30, Q3: Jul1–Sep30, Q4: Oct1–Dec31 — mirrors quarterDateRange() elsewhere in the app. `quarter` 0 means the full year (Jan1–Dec31). */
-function quarterDateRange(year: number, quarter: Quarter): { dateFrom: string; dateTo: string } {
+function quarterDateRange(year: number, quarter: ReportsQuarter): { dateFrom: string; dateTo: string } {
   if (quarter === 0) {
     return { dateFrom: `${year}-01-01`, dateTo: `${year}-12-31` };
   }
@@ -116,15 +110,28 @@ const chartTooltipStyle = {
   fontSize: 13,
 };
 
-export function RepresentativesReportsTab() {
+interface RepresentativesReportsTabProps {
+  /** Lifted up to SalesRepresentativesPage so the manager-select and year/quarter controls can
+   * render inline with the page's own tab bar instead of inside this tab's own filter row.
+   * customRange stays lifted too, purely so both this component and the parent's year/quarter
+   * controls agree on whether the quick filter is currently overridden. */
+  representativeId: string;
+  year: number;
+  quarter: ReportsQuarter;
+  customRange: DateRange;
+  onCustomRangeChange: (range: DateRange) => void;
+}
+
+export function RepresentativesReportsTab({
+  representativeId,
+  year,
+  quarter,
+  customRange,
+  onCustomRangeChange,
+}: RepresentativesReportsTabProps) {
   const { t } = useTranslation();
   const { isPrintingPress } = useActiveCompany();
   const companyId = useAuthStore((s) => s.user?.companyId);
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [quarter, setQuarter] = useState<Quarter>((Math.floor(now.getMonth() / 3) + 1) as Quarter);
-  const [customRange, setCustomRange] = useState<DateRange>({ from: '', to: '' });
-  const [representativeId, setRepresentativeId] = useState('');
   const [detailTab, setDetailTab] = useState<DetailTab>('invoices');
   const [comparisonTab, setComparisonTab] = useState<ComparisonTab>('sales');
   const [salesSortDir, setSalesSortDir] = useState<SortDir>('desc');
@@ -136,11 +143,6 @@ export function RepresentativesReportsTab() {
     () => (hasCustomRange ? { dateFrom: customRange.from, dateTo: customRange.to } : quarterDateRange(year, quarter)),
     [hasCustomRange, customRange, year, quarter],
   );
-
-  const repsQuery = useQuery({
-    queryKey: ['sales-representatives'],
-    queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives')),
-  });
 
   const reportQuery = useQuery({
     queryKey: ['sales-representatives-report', companyId, dateFrom, dateTo, representativeId],
@@ -345,45 +347,9 @@ export function RepresentativesReportsTab() {
 
   return (
     <div>
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <FormField label={t(isPrintingPress ? 'fields.salesRepresentativePress' : 'fields.salesRepresentative')}>
-          <Select value={representativeId} onChange={(e) => setRepresentativeId(e.target.value)}>
-            <option value="">
-              {t(isPrintingPress ? 'salesRepresentativesReports.allRepresentativesPress' : 'salesRepresentativesReports.allRepresentatives')}
-            </option>
-            {(repsQuery.data ?? []).map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </Select>
-        </FormField>
-        <FormField label={t('salesReport.year')}>
-          <Input
-            type="number"
-            disabled={hasCustomRange}
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value) || now.getFullYear())}
-          />
-        </FormField>
-        <FormField label={t('partners.quarter')}>
-          <Select
-            disabled={hasCustomRange}
-            value={quarter}
-            onChange={(e) => setQuarter(Number(e.target.value) as Quarter)}
-          >
-            <option value={1}>{t('partners.q1')}</option>
-            <option value={2}>{t('partners.q2')}</option>
-            <option value={3}>{t('partners.q3')}</option>
-            <option value={4}>{t('partners.q4')}</option>
-            <option value={0}>{t('partners.fullYear')}</option>
-          </Select>
-        </FormField>
-      </div>
-
       <div className="mb-4">
         <div className="mb-1 text-xs text-[var(--text-muted)]">{t('salesRepresentativesReports.customDateRange')}</div>
-        <DateRangeFilter value={customRange} onChange={setCustomRange} />
+        <DateRangeFilter value={customRange} onChange={onCustomRangeChange} />
       </div>
 
       {/* Printing Press drops "إجمالي المبالغ المحصلة" and its collection chart entirely — this

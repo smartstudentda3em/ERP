@@ -10,6 +10,7 @@ import { Input, FormField, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
 import { useActiveCompany } from '../../lib/use-active-company';
 
 interface SalesRepresentative {
@@ -35,6 +36,21 @@ interface Branch {
   nameAr: string;
 }
 
+interface CommissionException {
+  id: string;
+  productId: string | null;
+  categoryId: string | null;
+  commissionRate: number;
+  product?: { nameEn: string; nameAr?: string | null } | null;
+  category?: { nameEn: string; nameAr?: string | null } | null;
+}
+
+interface ProductOption {
+  id: string;
+  nameEn: string;
+  nameAr?: string | null;
+}
+
 const emptyForm = {
   name: '',
   phone: '',
@@ -50,11 +66,18 @@ export function RepresentativesListTab() {
   const { isPrintingPress } = useActiveCompany();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const canCreate = useAuthStore((s) => s.hasPermission('sales-representatives.create'));
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [exceptionTargetId, setExceptionTargetId] = useState('');
+  const [exceptionRate, setExceptionRate] = useState('');
+  // Printing Press only — clicking anywhere on a manager's row (except the Edit/Delete actions,
+  // which stopPropagation) opens a separate view-only modal listing their commission exceptions.
+  // Adding/removing exceptions still only happens from the edit-manager modal above.
+  const [viewingRep, setViewingRep] = useState<SalesRepresentative | null>(null);
   // Printing Press only — lets the user find a branch manager by their own name or by the branch
   // they're responsible for (e.g. "حمدي" or "فرع خيطان"), replacing DataTable's generic per-column
   // search so the placeholder can spell out both criteria explicitly.
@@ -77,9 +100,49 @@ export function RepresentativesListTab() {
     enabled: modalOpen && !!companyId,
   });
 
+  const exceptionsQuery = useQuery({
+    queryKey: ['sales-representatives', editingId, 'commission-exceptions'],
+    queryFn: () => unwrap<CommissionException[]>(apiClient.get(`/sales-representatives/${editingId}/commission-exceptions`)),
+    enabled: modalOpen && !!editingId,
+  });
+
+  // Same query shape/key as exceptionsQuery above (by design — the two share the TanStack Query
+  // cache when the same rep is both viewed and then edited, no duplicate fetch), just driven by
+  // viewingRep instead of editingId so the read-only view modal doesn't need the edit modal open.
+  const viewExceptionsQuery = useQuery({
+    queryKey: ['sales-representatives', viewingRep?.id, 'commission-exceptions'],
+    queryFn: () =>
+      unwrap<CommissionException[]>(apiClient.get(`/sales-representatives/${viewingRep!.id}/commission-exceptions`)),
+    enabled: !!viewingRep,
+  });
+
+  // Primary source: the "المنتجات" catalog (the same list the المشتريات↔المخازن nav item shows) —
+  // CATALOG_ITEM rows for Printing Press, or the plain products list for every other company (which
+  // has no separate catalog/raw-material split to begin with). Merged with the raw-materials list
+  // (Purchasing's own "المواد الخام" tab) only for Printing Press, since that's the one company where
+  // the two are genuinely disjoint tables — mirrors the exact same sourcing SalesLineEditor.tsx uses.
+  const exceptionCatalogQuery = useQuery({
+    queryKey: isPrintingPress ? ['printing-products-catalog'] : ['products'],
+    queryFn: () =>
+      unwrap<ProductOption[]>(apiClient.get(isPrintingPress ? '/inventory/products/catalog' : '/inventory/products')),
+    enabled: modalOpen && !!editingId,
+  });
+  const exceptionRawMaterialsQuery = useQuery({
+    queryKey: ['inventory-products-for-commission', companyId],
+    queryFn: () => unwrap<ProductOption[]>(apiClient.get('/inventory/products', { params: { companyId } })),
+    enabled: modalOpen && !!editingId && isPrintingPress,
+  });
+  const exceptionProducts = useMemo(() => {
+    const merged = [...(exceptionCatalogQuery.data ?? []), ...(isPrintingPress ? exceptionRawMaterialsQuery.data ?? [] : [])];
+    const seen = new Set<string>();
+    return merged.filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+  }, [exceptionCatalogQuery.data, exceptionRawMaterialsQuery.data, isPrintingPress]);
+
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm);
+    setExceptionTargetId('');
+    setExceptionRate('');
     setModalOpen(true);
   }
 
@@ -94,7 +157,43 @@ export function RepresentativesListTab() {
       userId: rep.userId ?? '',
       isActive: rep.isActive,
     });
+    setExceptionTargetId('');
+    setExceptionRate('');
     setModalOpen(true);
+  }
+
+  const addExceptionMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post(`/sales-representatives/${editingId}/commission-exceptions`, {
+        productId: exceptionTargetId,
+        commissionRate: Number(exceptionRate || 0),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales-representatives', editingId, 'commission-exceptions'] });
+      setExceptionTargetId('');
+      setExceptionRate('');
+      toast.success(t('common.addedSuccessfully'));
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message ?? t('common.saveFailed'));
+    },
+  });
+
+  const removeExceptionMutation = useMutation({
+    mutationFn: (exceptionId: string) =>
+      apiClient.delete(`/sales-representatives/${editingId}/commission-exceptions/${exceptionId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales-representatives', editingId, 'commission-exceptions'] });
+      toast.success(t('common.deletedSuccessfully'));
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message ?? t('common.saveFailed'));
+    },
+  });
+
+  function exceptionTargetLabel(ex: CommissionException): string {
+    if (ex.productId) return ex.product?.nameAr || ex.product?.nameEn || ex.productId;
+    return ex.category?.nameAr || ex.category?.nameEn || ex.categoryId || '';
   }
 
   const saveMutation = useMutation({
@@ -216,6 +315,7 @@ export function RepresentativesListTab() {
         keyField={(r) => r.id}
         isLoading={repsQuery.isLoading}
         searchable={!isPrintingPress}
+        onRowClick={isPrintingPress ? (r) => setViewingRep(r) : undefined}
       />
 
       <Modal
@@ -270,6 +370,69 @@ export function RepresentativesListTab() {
               onChange={(e) => setForm({ ...form, commissionRate: e.target.value })}
             />
           </FormField>
+          <div className="col-span-2 rounded-lg border border-[var(--border)] p-3">
+            <div className="mb-2 text-sm font-medium text-[var(--text)]">{t('commissionExceptions.title')}</div>
+            {!editingId ? (
+              <p className="text-sm text-[var(--text-muted)]">{t('commissionExceptions.saveFirstHint')}</p>
+            ) : (
+              <>
+                <div className="mb-2 flex flex-col gap-1.5">
+                  {(exceptionsQuery.data ?? []).length === 0 && (
+                    <span className="text-sm text-[var(--text-muted)]">{t('commissionExceptions.noneYet')}</span>
+                  )}
+                  {(exceptionsQuery.data ?? []).map((ex) => (
+                    <div
+                      key={ex.id}
+                      className="flex items-center justify-between rounded bg-gray-100 px-2.5 py-1 text-sm dark:bg-gray-800"
+                    >
+                      <span>
+                        {t(ex.productId ? 'commissionExceptions.typeProduct' : 'commissionExceptions.typeCategory')}
+                        {': '}
+                        {exceptionTargetLabel(ex)} — {formatAmount(ex.commissionRate)}%
+                      </span>
+                      <button
+                        type="button"
+                        className="text-gray-500 hover:text-red-600 disabled:opacity-50"
+                        disabled={removeExceptionMutation.isPending}
+                        onClick={() => removeExceptionMutation.mutate(ex.id)}
+                        aria-label={t('common.delete') ?? ''}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <Select value={exceptionTargetId} onChange={(e) => setExceptionTargetId(e.target.value)}>
+                    <option value="">{t('commissionExceptions.selectTarget')}</option>
+                    {exceptionProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nameAr || p.nameEn}
+                      </option>
+                    ))}
+                  </Select>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    className="w-24"
+                    placeholder={t('fields.commissionRate') ?? ''}
+                    value={exceptionRate}
+                    onChange={(e) => setExceptionRate(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!exceptionTargetId || !exceptionRate || addExceptionMutation.isPending}
+                    onClick={() => addExceptionMutation.mutate()}
+                  >
+                    + {t('common.add')}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
           <div className="col-span-2">
             <FormField label={t('fields.linkedUserAccount')}>
               <Select value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })}>
@@ -299,6 +462,34 @@ export function RepresentativesListTab() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!viewingRep}
+        onClose={() => setViewingRep(null)}
+        title={t('commissionExceptions.viewTitle', { name: viewingRep?.name ?? '' })}
+      >
+        <div className="flex flex-col gap-1.5">
+          {viewExceptionsQuery.isLoading && (
+            <span className="text-sm text-[var(--text-muted)]">{t('common.loading')}</span>
+          )}
+          {!viewExceptionsQuery.isLoading && (viewExceptionsQuery.data ?? []).length === 0 && (
+            <span className="text-sm text-[var(--text-muted)]">{t('commissionExceptions.noneYet')}</span>
+          )}
+          {(viewExceptionsQuery.data ?? []).map((ex) => (
+            <div
+              key={ex.id}
+              className="flex items-center justify-between rounded bg-gray-100 px-2.5 py-1.5 text-sm dark:bg-gray-800"
+            >
+              <span>
+                {t(ex.productId ? 'commissionExceptions.typeProduct' : 'commissionExceptions.typeCategory')}
+                {': '}
+                {exceptionTargetLabel(ex)}
+              </span>
+              <span className="font-medium">{formatAmount(ex.commissionRate)}%</span>
+            </div>
+          ))}
+        </div>
       </Modal>
     </div>
   );

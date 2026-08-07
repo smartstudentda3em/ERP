@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { apiClient, unwrap } from '../../lib/api-client';
-import { formatAmount } from '../../lib/number-format';
+import { formatAmount, roundTo } from '../../lib/number-format';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
+import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { useActiveCompany } from '../../lib/use-active-company';
 
 export type UnitKind = 'UNIT' | 'PACKAGE';
@@ -14,6 +15,13 @@ export interface SalesLineForm {
   quantity: string;
   unitPrice: string;
   unitKind: UnitKind;
+  /** Editable total for this line — normally just quantity × unitPrice, but can also be typed
+   * directly to reverse-derive unitPrice (see updateLine's lineTotal branch below). */
+  lineTotal: string;
+  /** True only while a directly-typed lineTotal is waiting on a quantity > 0 to divide by (the
+   * quantity was 0/blank at the moment of typing) — cleared as soon as that division actually runs,
+   * so it never lingers as stale state once the reverse calc has resolved. */
+  pendingTotalOverride: boolean;
 }
 
 interface Product {
@@ -27,6 +35,7 @@ interface Product {
   unitsPerPackage?: number | null;
   packagePurchasePrice?: number | null;
   packageSellingPrice?: number | null;
+  categoryId?: string | null;
 }
 
 interface Unit {
@@ -40,7 +49,7 @@ interface PackageType {
 }
 
 export function emptyLine(): SalesLineForm {
-  return { productId: '', quantity: '1', unitPrice: '0', unitKind: 'UNIT' };
+  return { productId: '', quantity: '1', unitPrice: '0', unitKind: 'UNIT', lineTotal: '0', pendingTotalOverride: false };
 }
 
 export function linesToPayload(lines: SalesLineForm[]) {
@@ -118,14 +127,62 @@ export function SalesLineEditor({
     return packageTypesQuery.data?.find((p) => p.id === id)?.nameEn ?? '';
   }
 
+  const productOptions = useMemo(
+    () =>
+      products.map((p) => ({
+        value: p.id,
+        label: isPrintingPress ? p.nameEn : `${p.sku} — ${p.nameEn}`,
+      })),
+    [products, isPrintingPress],
+  );
+
+  /**
+   * Two-way quantity/unitPrice/lineTotal calculation. Which field drives the recompute depends on
+   * which one the patch actually touches:
+   *  - productId (or unitPrice/quantity in the normal forward direction): lineTotal is derived —
+   *    always recomputed as quantity × unitPrice.
+   *  - lineTotal edited directly: reverse direction — unitPrice is derived as lineTotal ÷ quantity,
+   *    guarded against division by zero. If quantity is 0/blank at that moment, the typed lineTotal
+   *    is kept as-is and unitPrice is left untouched (pendingTotalOverride marks this line so a
+   *    later quantity edit knows to run the deferred division instead of overwriting the typed
+   *    total the normal forward way).
+   */
   function updateLine(index: number, patch: Partial<SalesLineForm>) {
     const next = [...lines];
-    next[index] = { ...next[index], ...patch };
-    if (patch.productId) {
+    const line = { ...next[index], ...patch };
+
+    if (patch.productId !== undefined) {
       const product = products.find((p) => p.id === patch.productId);
-      next[index].unitKind = 'UNIT';
-      if (product && product.sellingPrice !== null) next[index].unitPrice = String(product.sellingPrice);
+      line.unitKind = 'UNIT';
+      if (product && product.sellingPrice !== null) line.unitPrice = String(product.sellingPrice);
+      line.pendingTotalOverride = false;
+      line.lineTotal = String(roundTo(Number(line.quantity || 0) * Number(line.unitPrice || 0)));
+    } else if (patch.lineTotal !== undefined) {
+      const qty = Number(line.quantity || 0);
+      if (qty > 0) {
+        const derivedPrice = roundTo(Number(patch.lineTotal || 0) / qty);
+        line.unitPrice = String(derivedPrice);
+        line.lineTotal = String(roundTo(qty * derivedPrice));
+        line.pendingTotalOverride = false;
+      } else {
+        line.pendingTotalOverride = true;
+      }
+    } else if (patch.quantity !== undefined) {
+      const qty = Number(line.quantity || 0);
+      if (line.pendingTotalOverride && qty > 0) {
+        const derivedPrice = roundTo(Number(line.lineTotal || 0) / qty);
+        line.unitPrice = String(derivedPrice);
+        line.lineTotal = String(roundTo(qty * derivedPrice));
+        line.pendingTotalOverride = false;
+      } else {
+        line.lineTotal = String(roundTo(qty * Number(line.unitPrice || 0)));
+      }
+    } else if (patch.unitPrice !== undefined) {
+      line.pendingTotalOverride = false;
+      line.lineTotal = String(roundTo(Number(line.quantity || 0) * Number(patch.unitPrice || 0)));
     }
+
+    next[index] = line;
     onChange(next);
   }
 
@@ -138,15 +195,128 @@ export function SalesLineEditor({
       const suggested = pricingFor(product, unitKind).suggestedPrice;
       if (suggested !== null) next[index].unitPrice = String(suggested);
     }
+    next[index].pendingTotalOverride = false;
+    next[index].lineTotal = String(roundTo(Number(next[index].quantity || 0) * Number(next[index].unitPrice || 0)));
     onChange(next);
+  }
+
+  if (isPrintingPress) {
+    return (
+      <div className="col-span-2">
+        <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+          <table className="app-table w-full">
+            <thead>
+              <tr>
+                <th>{t('fields.product')}</th>
+                <th>{t('fields.unitPrice')}</th>
+                <th>{t('fields.quantity')}</th>
+                <th>{t('fields.lineTotal')}</th>
+                <th>{t('common.actions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line, i) => {
+                const product = products.find((p) => p.id === line.productId);
+                const unitPrice = Number(line.unitPrice || 0);
+                const quantity = Number(line.quantity || 0);
+                const pricing = product ? pricingFor(product, line.unitKind) : null;
+                const profitPerUnit = pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
+                const belowCost = profitPerUnit !== null && profitPerUnit < 0;
+
+                return (
+                  <Fragment key={i}>
+                    <tr>
+                      <td className="min-w-[220px] text-start">
+                        <SearchableSelect
+                          options={productOptions}
+                          value={line.productId}
+                          onChange={(v) => updateLine(i, { productId: v })}
+                          placeholder={t('actions.searchProduct') ?? ''}
+                        />
+                      </td>
+                      <td className="w-32">
+                        <Input
+                          className={belowCost && warnOnSellBelowCost ? 'border-yellow-500' : ''}
+                          type="number"
+                          step="0.01"
+                          title={t('fields.actualSellingPrice')}
+                          value={line.unitPrice}
+                          onChange={(e) => updateLine(i, { unitPrice: e.target.value })}
+                        />
+                      </td>
+                      <td className="w-24">
+                        <Input
+                          type="number"
+                          value={line.quantity}
+                          onChange={(e) => updateLine(i, { quantity: e.target.value })}
+                        />
+                      </td>
+                      <td className="w-32">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          title={t('fields.lineTotal')}
+                          value={line.lineTotal}
+                          onChange={(e) => updateLine(i, { lineTotal: e.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="text-red-600"
+                          onClick={() => onChange(lines.filter((_, idx) => idx !== i))}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                    {product && pricing && (
+                      <tr>
+                        <td colSpan={5} className="!border-t-0 !py-1 !text-start">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-[var(--text-muted)]">
+                            {pricing.suggestedPrice != null && (
+                              <span>
+                                {t('fields.suggestedPrice')}:{' '}
+                                <span className="font-medium">{formatAmount(pricing.suggestedPrice)}</span>{' '}
+                                <span className="italic">({t('fields.referenceOnly')})</span>
+                              </span>
+                            )}
+                            {profitPerUnit !== null && (
+                              <span className={belowCost ? 'font-medium text-red-600' : ''}>
+                                {t('fields.profit')}: {formatAmount(profitPerUnit)} × {quantity} ={' '}
+                                {formatAmount(profitPerUnit * quantity)}
+                              </span>
+                            )}
+                            {belowCost && warnOnSellBelowCost && (
+                              <span className="font-medium text-red-600">⚠ {t('fields.belowCostWarning')}</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <Button type="button" variant="secondary" className="mt-2" onClick={() => onChange([...lines, emptyLine()])}>
+          {t('actions.addLinePress')}
+        </Button>
+        <div className="mt-3 text-end text-sm font-semibold">
+          {t('common.total')}: {formatAmount(computeGrandTotal(lines))}
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="col-span-2">
-      <div className="mb-2 grid grid-cols-12 gap-2 text-xs font-medium text-[var(--text-muted)]">
-        <div className="col-span-5">{t('fields.product')}</div>
+      <div className="mb-2 grid grid-cols-13 gap-2 text-xs font-medium text-[var(--text-muted)]">
+        <div className="col-span-4">{t('fields.product')}</div>
         <div className="col-span-2">{t('fields.quantity')}</div>
         <div className="col-span-2">{t('fields.unitPrice')}</div>
+        <div className="col-span-2">{t('fields.lineTotal')}</div>
         <div className="col-span-2" />
         <div className="col-span-1" />
       </div>
@@ -164,9 +334,9 @@ export function SalesLineEditor({
 
         return (
           <div key={i} className="mb-2">
-            <div className="grid grid-cols-12 gap-2">
+            <div className="grid grid-cols-13 gap-2">
               <Select
-                className="col-span-5"
+                className="col-span-4"
                 value={line.productId}
                 onChange={(e) => updateLine(i, { productId: e.target.value })}
               >
@@ -190,6 +360,14 @@ export function SalesLineEditor({
                 title={t('fields.actualSellingPrice')}
                 value={line.unitPrice}
                 onChange={(e) => updateLine(i, { unitPrice: e.target.value })}
+              />
+              <Input
+                className="col-span-2"
+                type="number"
+                step="0.01"
+                title={t('fields.lineTotal')}
+                value={line.lineTotal}
+                onChange={(e) => updateLine(i, { lineTotal: e.target.value })}
               />
               <div className="col-span-2">
                 {canSellByPackage ? (

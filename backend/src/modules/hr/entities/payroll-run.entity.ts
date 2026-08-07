@@ -3,7 +3,7 @@ import { BaseEntity } from '../../../entities/base.entity';
 import { Company } from '../../settings/entities/company.entity';
 import { Branch } from '../../settings/entities/branch.entity';
 import { Employee } from './employee.entity';
-import { DocumentStatus } from '../../../entities/enums';
+import { CashMovementAccount, DocumentStatus } from '../../../entities/enums';
 
 /**
  * One monthly payroll run per company (enforced by the unique index below — re-running the same
@@ -46,6 +46,13 @@ export class PayrollRun extends BaseEntity {
 
   @Column({ type: 'timestamptz', nullable: true })
   approvedAt: Date | null;
+
+  /** The Printing Press's chosen disbursement source (الكاش/البنك) — null for every other company,
+   * which never posts payroll through a balance-checked account. Set once at create() time (Press
+   * runs are created pre-approved, see PayrollService.create()) and reused by update()'s re-posting
+   * after an edit, so a corrected run never silently redirects its debit to a different account. */
+  @Column({ type: 'enum', enum: CashMovementAccount, nullable: true })
+  paymentAccount: CashMovementAccount | null;
 
   @OneToMany(() => PayrollRunLine, (line) => line.payrollRun, { cascade: true })
   lines: PayrollRunLine[];

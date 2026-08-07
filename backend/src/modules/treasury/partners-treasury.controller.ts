@@ -5,11 +5,18 @@ import { DataSource, Repository } from 'typeorm';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { CashMovementsService } from './cash-movements.service';
-import { CreateCapitalInjectionDto, CreateDividendDto, UpdateCapitalInjectionDto } from './dto/partners-treasury.dto';
+import {
+  CreateCapitalInjectionDto,
+  CreateCommissionPayoutDto,
+  CreateDividendDto,
+  UpdateCapitalInjectionDto,
+  UpdateCommissionPayoutDto,
+} from './dto/partners-treasury.dto';
 import { CashMovementAccount, CashMovementSourceType, CashMovementType } from '../../entities/enums';
 import { Partner } from '../settings/entities/partner.entity';
 import { CashMovement } from './entities/cash-movement.entity';
 import { Company } from '../settings/entities/company.entity';
+import { SalesRepresentative } from '../parties/entities/sales-representative.entity';
 
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
@@ -35,6 +42,7 @@ export class PartnersTreasuryController {
     private readonly cashMovementsService: CashMovementsService,
     @InjectRepository(Partner) private readonly partnerRepo: Repository<Partner>,
     @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
+    @InjectRepository(SalesRepresentative) private readonly salesRepresentativeRepo: Repository<SalesRepresentative>,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -294,5 +302,53 @@ export class PartnersTreasuryController {
       alreadyDistributed,
       available,
     };
+  }
+
+  /** "صرف الأرباح" — pays a Printing Press branch manager's earned commission out of the chosen account. */
+  @Post('commission-payouts')
+  @Permissions('sales-representatives.create')
+  async createCommissionPayout(@Body() dto: CreateCommissionPayoutDto, @CurrentUser() user: AuthenticatedUser) {
+    const companyId = user.companyId!;
+    const rep = await this.salesRepresentativeRepo.findOne({
+      where: { id: dto.salesRepresentativeId, companyId, isActive: true },
+    });
+    if (!rep) throw new BadRequestException('Selected branch manager was not found or is not active');
+
+    return this.cashMovementsService.createCommissionPayout(companyId, {
+      movementDate: dto.movementDate,
+      amount: dto.amount,
+      account: dto.account,
+      salesRepresentativeId: dto.salesRepresentativeId,
+      branchId: dto.branchId ?? rep.branchId ?? null,
+      description: dto.description,
+      createdById: user.userId,
+    });
+  }
+
+  @Get('commission-payouts')
+  @Permissions('sales-representatives.view')
+  getCommissionPayouts(
+    @CurrentUser('companyId') companyId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('salesRepresentativeId') salesRepresentativeId?: string,
+  ) {
+    return this.cashMovementsService.getCommissionPayouts(companyId, dateFrom, dateTo, salesRepresentativeId);
+  }
+
+  @Patch('commission-payouts/:id')
+  @Permissions('sales-representatives.edit')
+  updateCommissionPayout(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('companyId') companyId: string,
+    @Body() dto: UpdateCommissionPayoutDto,
+  ) {
+    return this.cashMovementsService.updateCommissionPayout(companyId, id, dto);
+  }
+
+  @Delete('commission-payouts/:id')
+  @Permissions('sales-representatives.delete')
+  deleteCommissionPayout(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('companyId') companyId: string) {
+    return this.cashMovementsService.deleteCommissionPayout(companyId, id);
   }
 }

@@ -7,6 +7,7 @@ import { Role } from './entities/role.entity';
 import { UserCompany } from './entities/user-company.entity';
 import { CreateUserDto, UpdateUserDto, UpdateOwnProfileDto } from './dto/user.dto';
 import { SalesRepresentative } from '../parties/entities/sales-representative.entity';
+import { Employee } from '../hr/entities/employee.entity';
 import { NumberingSeriesService } from '../settings/numbering-series.controller';
 import { Quotation } from '../sales/quotations/entities/quotation.entity';
 import { SalesInvoice } from '../sales/sales-invoices/entities/sales-invoice.entity';
@@ -31,6 +32,10 @@ const PROTECTED_ADMIN_EMAIL = 'aymanmakroum83@gmail.com';
  * role name in this system is free-text anyway. */
 const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
 
+/** Applied once, only when auto-provisioning a brand-new SalesRepresentative row (never on repair
+ * of an existing one, so it can never clobber a rate an admin already customized). */
+const BRANCH_MANAGER_DEFAULT_COMMISSION_RATE = 5;
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -38,6 +43,7 @@ export class UsersService {
     @InjectRepository(Role) private readonly roleRepo: Repository<Role>,
     @InjectRepository(UserCompany) private readonly userCompanyRepo: Repository<UserCompany>,
     @InjectRepository(SalesRepresentative) private readonly salesRepRepo: Repository<SalesRepresentative>,
+    @InjectRepository(Employee) private readonly employeeRepo: Repository<Employee>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly quotationsService: QuotationsService,
@@ -103,6 +109,42 @@ export class UsersService {
         phone: user.phone ?? null,
         email: user.email ?? undefined,
         branchId,
+        userId: user.id,
+        // Default general commission rate for a freshly auto-provisioned branch manager — the admin
+        // can still override it afterwards via RepresentativesListTab; this only avoids a silent 0%
+        // that would otherwise leave every commission report empty until someone remembers to set it.
+        commissionRate: BRANCH_MANAGER_DEFAULT_COMMISSION_RATE,
+      }),
+    );
+  }
+
+  /**
+   * Same auto-provisioning idea as syncBranchManagerRepresentative, but for the HR module's
+   * Employee entity — lets a logged-in branch manager's own payroll data be resolved from their
+   * userId instead of requiring an admin to manually link an Employee row after the fact. The admin
+   * still edits the real baseSalary afterwards via EmployeesPage; this only guarantees the link exists.
+   */
+  private async syncBranchManagerEmployee(user: User, roles: Role[], branchId: string | null): Promise<void> {
+    const branchManagerRole = roles.find((r) => r.name === BRANCH_MANAGER_ROLE_NAME);
+    if (!branchManagerRole || !branchId) return;
+    const companyId = branchManagerRole.restrictedCompanyId ?? user.companyId;
+    if (!companyId) return;
+
+    const existing = await this.employeeRepo.findOne({ where: { userId: user.id } });
+    if (existing) {
+      existing.branchId = branchId;
+      existing.companyId = companyId;
+      await this.employeeRepo.save(existing);
+      return;
+    }
+
+    await this.employeeRepo.save(
+      this.employeeRepo.create({
+        companyId,
+        branchId,
+        name: user.fullName,
+        jobTitle: BRANCH_MANAGER_ROLE_NAME,
+        baseSalary: 0,
         userId: user.id,
       }),
     );
@@ -221,6 +263,7 @@ export class UsersService {
     }
 
     await this.syncBranchManagerRepresentative(savedUser, roles, dto.branchId ?? null);
+    await this.syncBranchManagerEmployee(savedUser, roles, dto.branchId ?? null);
 
     return this.stripPasswordHash(savedUser);
   }
@@ -279,6 +322,7 @@ export class UsersService {
     }
 
     await this.syncBranchManagerRepresentative(savedUser, savedUser.roles, savedUser.branchId);
+    await this.syncBranchManagerEmployee(savedUser, savedUser.roles, savedUser.branchId);
 
     return this.stripPasswordHash(savedUser);
   }

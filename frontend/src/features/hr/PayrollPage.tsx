@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
+import { useActiveCompany } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -73,11 +74,13 @@ export function PayrollPage() {
   const canCreate = useAuthStore((s) => s.hasPermission('hr.payroll.create'));
   const canEdit = useAuthStore((s) => s.hasPermission('hr.payroll.edit'));
   const canDelete = useAuthStore((s) => s.hasPermission('hr.payroll.delete'));
+  const { isPrintingPress } = useActiveCompany();
   const [entryOpen, setEntryOpen] = useState(false);
   const [newRunModalOpen, setNewRunModalOpen] = useState(false);
   const now = new Date();
   const [runPeriod, setRunPeriod] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
   const [lineInputs, setLineInputs] = useState<Record<string, { absenceDays: string; lateHours: string; otherDeductions: string }>>({});
+  const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK'>('CASH');
   const [error, setError] = useState<string | null>(null);
 
   const runsQuery = useQuery({
@@ -133,6 +136,9 @@ export function PayrollPage() {
       apiClient.post('/hr/payroll-runs', {
         year: runPeriod.year,
         month: runPeriod.month,
+        // Press-only: required so the backend can debit this run's net salaries from the right
+        // account and check its balance before posting anything (see PayrollService.create()).
+        paymentAccount: isPrintingPress ? paymentAccount : undefined,
         lines: lines.map((l) => ({
           employeeId: l.employeeId,
           absenceDays: Number(l.absenceDays) || 0,
@@ -142,6 +148,10 @@ export function PayrollPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hr-payroll-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-movements'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-report'] });
+      queryClient.invalidateQueries({ queryKey: ['profit-report'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
       setEntryOpen(false);
     },
     onError: (err: any) => setError(err?.response?.data?.message ?? t('common.saveFailed')),
@@ -322,7 +332,7 @@ export function PayrollPage() {
           {t('hr.backToList')}
         </Button>
 
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className={`mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 ${isPrintingPress ? 'lg:grid-cols-3' : ''}`}>
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('hr.payrollMonth')}</div>
             <div className="mt-1 font-semibold">
@@ -333,6 +343,20 @@ export function PayrollPage() {
             <div className="text-xs text-[var(--text-muted)]">{t('hr.totalNetSalary')}</div>
             <div className="mt-1 font-semibold">{formatAmount(totalNetSalary)}</div>
           </Card>
+          {isPrintingPress && (
+            <Card>
+              <div className="text-xs text-[var(--text-muted)]">{t('treasury.paymentAccount')}</div>
+              <Select
+                className="mt-1"
+                required
+                value={paymentAccount}
+                onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
+              >
+                <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+                <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+              </Select>
+            </Card>
+          )}
         </div>
 
         <DataTable columns={lineColumns} data={lines} keyField={(r) => r.employeeId} searchable={false} isLoading={employeesQuery.isLoading} />

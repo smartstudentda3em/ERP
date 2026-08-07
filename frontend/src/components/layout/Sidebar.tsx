@@ -9,6 +9,10 @@ interface NavItem {
   icon: string;
   /** Exact permission code required to see this item. Omit for items every logged-in user can see. */
   permission?: string;
+  /** Exact-match OR across a fixed list of unrelated permission codes — used instead of `permission`
+   * when an item must stay reachable by two independent audiences (e.g. an admin-only permission and
+   * a self-service one every role already has). Ignored when `permission` is also set. */
+  permissionAnyOf?: string[];
   /** Match `to` exactly rather than as a prefix — needed when a sibling route (e.g. /sales/invoices) shares this item's path as a prefix. */
   end?: boolean;
   /** Hidden specifically for the Printing Press tenant (confirmed scope: every other company keeps
@@ -91,7 +95,7 @@ const items: NavItem[] = [
     to: '/sales-representatives',
     label: 'nav.salesRepresentatives',
     icon: '🧑‍💻',
-    permission: 'sales-representatives.view',
+    permissionAnyOf: ['sales-representatives.view', 'dashboard.view'],
   },
   { to: '/sales/quotations', label: 'nav.quotations', icon: '📝', permission: 'sales.quotation.view' },
   { to: '/sales/invoices', label: 'nav.salesInvoices', icon: '💳', permission: 'sales.invoice.view' },
@@ -135,6 +139,7 @@ export function Sidebar({ open }: { open: boolean }) {
   const visibleItems = items.filter(
     (item) =>
       (!item.permission || hasPermission(item.permission)) &&
+      (!item.permissionAnyOf || item.permissionAnyOf.some((c) => hasPermission(c))) &&
       !(item.hideForPrintingPress && isPrintingPress) &&
       !(item.requireAirConditioning && !isAirConditioning) &&
       !(item.requirePrintingPress && !isPrintingPress),

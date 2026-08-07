@@ -88,6 +88,10 @@ export enum CashMovementSourceType {
    * distinct from PURCHASE_RECEIPT/SUPPLIER_PAYMENT since a shipment has no single supplier of its
    * own (each cargo line can name a different one); see ShipmentPaymentsService. */
   SHIPMENT_PAYMENT = 'SHIPMENT_PAYMENT',
+  /** A commission ("أرباح") payout to a Printing Press branch manager — "صرف الأرباح". Attributed
+   * to the manager via CashMovement.salesRepresentativeId, the same way DIVIDEND is attributed to
+   * a partner via partnerId; see PartnersTreasuryController's commission-payouts routes. */
+  COMMISSION_PAYOUT = 'COMMISSION_PAYOUT',
 }
 
 /** How much of a shipment's cost a given payment represents. */
@@ -102,6 +106,14 @@ export enum ShipmentPaymentType {
    * ShipmentPaymentsService), so it tracks total freight spend on a shipment without double
    * counting money that was (or will be) debited through some other real payment. */
   SHIPPING_COST = 'SHIPPING_COST',
+}
+
+/** An employee's logged leave/vacation period — see EmployeeLeave entity. */
+export enum LeaveType {
+  ANNUAL = 'ANNUAL',
+  SICK = 'SICK',
+  UNPAID = 'UNPAID',
+  OTHER = 'OTHER',
 }
 
 /** A customer's eligibility to be sold to on installment — checked only when creating a new

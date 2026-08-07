@@ -1,6 +1,6 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { BaseEntity } from '../../../../entities/base.entity';
-import { InstallmentPlan } from './installment-plan.entity';
+import { Column, Entity, JoinColumn, ManyToOne } from "typeorm";
+import { BaseEntity } from "../../../../entities/base.entity";
+import { InstallmentPlan } from "./installment-plan.entity";
 
 /**
  * One month's due row. Deliberately has NO stored `amountPaid`/`status` column — following this
@@ -9,27 +9,27 @@ import { InstallmentPlan } from './installment-plan.entity';
  * PAID/OVERDUE) are derived at read time by InstallmentPlansService by summing the
  * InstallmentPayment rows linked to this item's id.
  */
-@Entity('installment_schedule_items')
+@Entity("installment_schedule_items")
 export class InstallmentScheduleItem extends BaseEntity {
-  @Column('uuid')
+  @Column("uuid")
   installmentPlanId: string;
 
-  @ManyToOne(() => InstallmentPlan, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'installmentPlanId' })
+  @ManyToOne(() => InstallmentPlan, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "installmentPlanId" })
   installmentPlan: InstallmentPlan;
 
-  @Column('int')
+  @Column("int")
   installmentNumber: number;
 
-  @Column({ type: 'date' })
+  @Column({ type: "date" })
   dueDate: string;
 
-  @Column({ type: 'numeric', precision: 18, scale: 4 })
+  @Column({ type: "numeric", precision: 18, scale: 4 })
   principalPortion: number;
 
-  @Column({ type: 'numeric', precision: 18, scale: 4 })
+  @Column({ type: "numeric", precision: 18, scale: 4 })
   interestPortion: number;
 
-  @Column({ type: 'numeric', precision: 18, scale: 4 })
+  @Column({ type: "numeric", precision: 18, scale: 4 })
   amountDue: number;
 }

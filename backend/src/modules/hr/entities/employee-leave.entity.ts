@@ -1,8 +1,8 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { BaseEntity } from '../../../entities/base.entity';
-import { Company } from '../../settings/entities/company.entity';
-import { Employee } from './employee.entity';
-import { LeaveType } from '../../../entities/enums';
+import { Column, Entity, JoinColumn, ManyToOne } from "typeorm";
+import { BaseEntity } from "../../../entities/base.entity";
+import { Company } from "../../settings/entities/company.entity";
+import { Employee } from "./employee.entity";
+import { LeaveType } from "../../../entities/enums";
 
 /**
  * A single logged leave/vacation period for one employee — "الإجازات والعطلات" in the employee
@@ -10,34 +10,34 @@ import { LeaveType } from '../../../entities/enums';
  * happened (or was approved outside the system), purely so the monthly/yearly history view has
  * real data instead of an empty state.
  */
-@Entity('employee_leaves')
+@Entity("employee_leaves")
 export class EmployeeLeave extends BaseEntity {
-  @Column('uuid')
+  @Column("uuid")
   companyId: string;
 
-  @ManyToOne(() => Company, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'companyId' })
+  @ManyToOne(() => Company, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "companyId" })
   company: Company;
 
-  @Column('uuid')
+  @Column("uuid")
   employeeId: string;
 
-  @ManyToOne(() => Employee, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'employeeId' })
+  @ManyToOne(() => Employee, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "employeeId" })
   employee: Employee;
 
-  @Column({ type: 'date' })
+  @Column({ type: "date" })
   startDate: string;
 
-  @Column({ type: 'date' })
+  @Column({ type: "date" })
   endDate: string;
 
-  @Column({ type: 'enum', enum: LeaveType, default: LeaveType.ANNUAL })
+  @Column({ type: "enum", enum: LeaveType, default: LeaveType.ANNUAL })
   type: LeaveType;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   notes: string | null;
 
-  @Column('uuid')
+  @Column("uuid")
   createdById: string;
 }

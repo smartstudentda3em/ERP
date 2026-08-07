@@ -1,6 +1,6 @@
-import { Column, Entity } from 'typeorm';
-import { BaseEntity } from '../../../entities/base.entity';
-import { WhatsAppMessageType } from '../../../entities/enums';
+import { Column, Entity } from "typeorm";
+import { BaseEntity } from "../../../entities/base.entity";
+import { WhatsAppMessageType } from "../../../entities/enums";
 
 /**
  * A logged WhatsApp-style message. No real WhatsApp Business API credentials exist yet (confirmed
@@ -9,31 +9,38 @@ import { WhatsAppMessageType } from '../../../entities/enums';
  * Swapping in a real provider later means implementing WhatsAppNotifier and writing this same row
  * for audit purposes — no other code changes.
  */
-@Entity('whatsapp_outbox_messages')
+@Entity("whatsapp_outbox_messages")
 export class WhatsAppOutboxMessage extends BaseEntity {
-  @Column({ type: 'enum', enum: WhatsAppMessageType })
+  @Column({ type: "enum", enum: WhatsAppMessageType })
   messageType: WhatsAppMessageType;
 
-  @Column({ length: 200 })
+  @Column({
+    type: "varchar",
+    length: 200,
+  })
   recipientLabel: string;
 
-  @Column({ type: 'varchar', length: 30, nullable: true })
+  @Column({ type: "varchar", length: 30, nullable: true })
   recipientPhone: string | null;
 
-  @Column({ type: 'text' })
+  @Column({ type: "text" })
   content: string;
 
-  @Column('uuid', { nullable: true })
+  @Column("uuid", { nullable: true })
   relatedInstallmentPlanId: string | null;
 
   /** Used only for the daily reminder cron's idempotency check (skip if a CUSTOMER_REMINDER
    * already exists today for this schedule item) — not a relation, just a dedup key. */
-  @Column('uuid', { nullable: true })
+  @Column("uuid", { nullable: true })
   relatedScheduleItemId: string | null;
 
-  @Column({ length: 20, default: 'SENT' })
+  @Column({
+    type: "varchar",
+    length: 20,
+    default: "SENT",
+  })
   status: string;
 
-  @Column('uuid')
+  @Column("uuid")
   companyId: string;
 }

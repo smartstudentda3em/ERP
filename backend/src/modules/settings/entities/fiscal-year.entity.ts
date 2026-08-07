@@ -1,25 +1,31 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { BaseEntity } from '../../../entities/base.entity';
-import { Company } from './company.entity';
+import { Column, Entity, JoinColumn, ManyToOne } from "typeorm";
+import { BaseEntity } from "../../../entities/base.entity";
+import { Company } from "./company.entity";
 
-@Entity('fiscal_years')
+@Entity("fiscal_years")
 export class FiscalYear extends BaseEntity {
-  @Column('uuid')
+  @Column("uuid")
   companyId: string;
 
-  @ManyToOne(() => Company, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'companyId' })
+  @ManyToOne(() => Company, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "companyId" })
   company: Company;
 
-  @Column({ length: 50 })
+  @Column({
+    type: "varchar",
+    length: 50,
+  })
   name: string; // e.g. FY2026
 
-  @Column({ type: 'date' })
+  @Column({ type: "date" })
   startDate: string;
 
-  @Column({ type: 'date' })
+  @Column({ type: "date" })
   endDate: string;
 
-  @Column({ default: false })
+  @Column({
+    type: "boolean",
+    default: false,
+  })
   isClosed: boolean;
 }

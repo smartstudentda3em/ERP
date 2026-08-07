@@ -1,6 +1,6 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { BaseEntity } from '../../../entities/base.entity';
-import { Company } from './company.entity';
+import { Column, Entity, JoinColumn, ManyToOne } from "typeorm";
+import { BaseEntity } from "../../../entities/base.entity";
+import { Company } from "./company.entity";
 
 /**
  * An equity partner and their ownership share — managed under Settings > Partners, independently
@@ -8,21 +8,27 @@ import { Company } from './company.entity';
  * combined sharePercentage across a single company's partners is enforced (by PartnersService) to
  * never exceed 100%.
  */
-@Entity('partners')
+@Entity("partners")
 export class Partner extends BaseEntity {
-  @Column('uuid')
+  @Column("uuid")
   companyId: string;
 
-  @ManyToOne(() => Company, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'companyId' })
+  @ManyToOne(() => Company, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "companyId" })
   company: Company;
 
-  @Column({ length: 150 })
+  @Column({
+    type: "varchar",
+    length: 150,
+  })
   name: string;
 
-  @Column({ type: 'numeric', precision: 5, scale: 2 })
+  @Column({ type: "numeric", precision: 5, scale: 2 })
   sharePercentage: number;
 
-  @Column({ default: true })
+  @Column({
+    type: "boolean",
+    default: true,
+  })
   isActive: boolean;
 }

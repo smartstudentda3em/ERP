@@ -59,7 +59,7 @@ export class SalesPayment extends BaseEntity {
   @Column('uuid', { nullable: true })
   bankAccountId: string | null;
 
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   referenceNumber: string | null;
 
   @Column('uuid', { nullable: true })

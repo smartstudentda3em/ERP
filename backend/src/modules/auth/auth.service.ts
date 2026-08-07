@@ -219,8 +219,17 @@ export class AuthService {
     user.lastLoginAt = new Date();
     await this.userRepo.save(user);
 
-    const tokens = await this.issueTokens(user, meta);
-    return this.toLoginResult(user, tokens);
+    const updatedUser = await this.userRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.roles', 'role')
+      .leftJoinAndSelect('role.permissions', 'permission')
+      .where('user.id = :id', { id: user.id })
+      .getOne();
+
+    if (!updatedUser) throw new UnauthorizedException('User not found');
+
+    const tokens = await this.issueTokens(updatedUser, meta);
+    return this.toLoginResult(updatedUser, tokens);
   }
 
   async refresh(
@@ -254,10 +263,13 @@ export class AuthService {
     matchedSession.revoked = true;
     await this.sessionRepo.save(matchedSession);
 
-    const user = await this.userRepo.findOne({
-      where: { id: payload.sub },
-      relations: ['roles', 'roles.permissions'],
-    });
+    const user = await this.userRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.roles', 'role')
+      .leftJoinAndSelect('role.permissions', 'permission')
+      .where('user.id = :id', { id: payload.sub })
+      .getOne();
+
     if (!user || !user.isActive) throw new UnauthorizedException('User not found or inactive');
 
     const tokens = await this.issueTokens(user, meta);
@@ -297,8 +309,17 @@ export class AuthService {
     user.branchId = await this.resolveBranchId(targetCompanyId);
     await this.userRepo.save(user);
 
-    const tokens = await this.issueTokens(user, meta);
-    return this.toLoginResult(user, tokens);
+    const updatedUser = await this.userRepo
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.roles', 'role')
+      .leftJoinAndSelect('role.permissions', 'permission')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
+    if (!updatedUser) throw new UnauthorizedException('User not found');
+
+    const tokens = await this.issueTokens(updatedUser, meta);
+    return this.toLoginResult(updatedUser, tokens);
   }
 
   /** The companies the caller may pick from in the company picker/switcher — all of them for a true Administrator, otherwise just their UserCompany ACL. */

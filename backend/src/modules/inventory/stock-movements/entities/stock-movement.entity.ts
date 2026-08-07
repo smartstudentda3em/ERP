@@ -46,13 +46,13 @@ export class StockMovement extends BaseEntity {
   @Column({ type: 'numeric', precision: 18, scale: 4 })
   balanceAverageCostAfter: number;
 
-  @Column({ length: 50, nullable: true })
+  @Column({ type: 'varchar', length: 50, nullable: true })
   referenceType: string | null; // e.g. 'SALES_INVOICE'
 
   @Column('uuid', { nullable: true })
   referenceId: string | null;
 
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   referenceNumber: string | null;
 
   @Column({ type: 'text', nullable: true })

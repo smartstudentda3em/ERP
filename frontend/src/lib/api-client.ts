@@ -24,7 +24,7 @@ async function refreshAccessToken(): Promise<string | null> {
       {},
       { withCredentials: true },
     );
-    const { accessToken, user } = response.data;
+    const { accessToken, user } = response.data.data;
     useAuthStore.getState().setSession(accessToken, user);
     return accessToken;
   } catch {

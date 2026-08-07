@@ -28,7 +28,7 @@ export class RecurringExpense extends BaseEntity {
   @Column({ type: 'enum', enum: CashMovementAccount })
   account: CashMovementAccount;
 
-  @Column({ length: 300, nullable: true })
+  @Column({ type: 'varchar', length: 300, nullable: true })
   description: string | null;
 
   /** false = cancelled by the user; the cron job skips it but the row (and its history) stays. */
@@ -36,7 +36,7 @@ export class RecurringExpense extends BaseEntity {
   isActive: boolean;
 
   /** 'YYYY-MM' of the last period this template generated a CashMovement for — guards against double-generation if the cron fires more than once in the same month. */
-  @Column({ length: 7, nullable: true })
+  @Column({ type: 'varchar', length: 7, nullable: true })
   lastGeneratedPeriod: string | null;
 
   @Column('uuid')

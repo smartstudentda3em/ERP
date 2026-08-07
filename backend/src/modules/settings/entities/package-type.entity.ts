@@ -24,7 +24,7 @@ export class PackageType extends BaseEntity {
   nameAr: string;
 
   /** Optional short abbreviation (e.g. CTN, PKT). */
-  @Column({ length: 20, nullable: true })
+  @Column({ type: 'varchar', length: 20, nullable: true })
   code: string | null;
 
   @Column({ type: 'text', nullable: true })

@@ -37,6 +37,6 @@ export class StockLevel extends BaseEntity {
   @Column({ type: 'numeric', precision: 18, scale: 4, default: 0 })
   averageCost: number;
 
-  @Column({ length: 50, nullable: true })
+  @Column({ type: 'varchar', length: 50, nullable: true })
   location: string | null;
 }

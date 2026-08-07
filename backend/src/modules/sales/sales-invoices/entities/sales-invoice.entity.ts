@@ -65,10 +65,10 @@ export class SalesInvoice extends BaseEntity {
   /** Printing Press only — free-text customer identity captured directly on the invoice, since
    * Press invoices are always attributed to the single seeded WALKIN customer rather than a real
    * customer record (see customerId above). Not linked to the Customer table. */
-  @Column({ length: 200, nullable: true })
+  @Column({ type: 'varchar', length: 200, nullable: true })
   customerName: string | null;
 
-  @Column({ length: 30, nullable: true })
+  @Column({ type: 'varchar', length: 30, nullable: true })
   customerPhone: string | null;
 
   /** Printing Press only — which treasury account (cash/bank) an upfront payment settles into.

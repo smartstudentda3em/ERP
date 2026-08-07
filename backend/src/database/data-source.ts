@@ -25,6 +25,7 @@ import { User } from '../modules/users/entities/user.entity';
 import { Role } from '../modules/users/entities/role.entity';
 import { Permission } from '../modules/users/entities/permission.entity';
 import { Session } from '../modules/users/entities/session.entity';
+import { UserCompany } from '../modules/users/entities/user-company.entity';
 
 // Audit
 import { AuditLog } from '../modules/audit-log/entities/audit-log.entity';
@@ -127,6 +128,7 @@ export const allEntities = [
   Role,
   Permission,
   Session,
+  UserCompany,
   AuditLog,
   Customer,
   Supplier,

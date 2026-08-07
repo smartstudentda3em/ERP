@@ -21,7 +21,7 @@ export class Product extends BaseEntity {
   @JoinColumn({ name: 'companyId' })
   company: Company;
 
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   sku: string | null;
 
   @Column({ length: 100, nullable: true })

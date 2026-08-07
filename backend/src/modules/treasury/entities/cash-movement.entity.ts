@@ -39,7 +39,7 @@ export class CashMovement extends BaseEntity {
   sourceId: string | null;
 
   /** Free-text classification for manual entries — rent, salaries, electricity, etc. */
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   category: string | null;
 
   @Column('uuid', { nullable: true })
@@ -73,7 +73,7 @@ export class CashMovement extends BaseEntity {
   @JoinColumn({ name: 'salesRepresentativeId' })
   salesRepresentative: SalesRepresentative | null;
 
-  @Column({ length: 300, nullable: true })
+  @Column({ type: 'varchar', length: 300, nullable: true })
   description: string | null;
 
   @Column('uuid')

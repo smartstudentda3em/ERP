@@ -11,7 +11,7 @@ export class AuditLog extends BaseEntity {
   @Column('uuid', { nullable: true })
   userId: string | null;
 
-  @Column({ length: 150, nullable: true })
+  @Column({ type: 'varchar', length: 150, nullable: true })
   userEmail: string | null;
 
   @Column({ length: 10 })
@@ -20,13 +20,13 @@ export class AuditLog extends BaseEntity {
   @Column({ length: 300 })
   path: string;
 
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   module: string | null;
 
-  @Column({ length: 50, nullable: true })
+  @Column({ type: 'varchar', length: 50, nullable: true })
   action: string | null;
 
-  @Column({ length: 64, nullable: true })
+  @Column({ type: 'varchar', length: 64, nullable: true })
   entityId: string | null;
 
   @Column({ type: 'jsonb', nullable: true })
@@ -35,10 +35,10 @@ export class AuditLog extends BaseEntity {
   @Column({ type: 'int' })
   statusCode: number;
 
-  @Column({ length: 64, nullable: true })
+  @Column({ type: 'varchar', length: 64, nullable: true })
   ipAddress: string | null;
 
-  @Column({ length: 300, nullable: true })
+  @Column({ type: 'varchar', length: 300, nullable: true })
   userAgent: string | null;
 
   @Column({ type: 'int', nullable: true })

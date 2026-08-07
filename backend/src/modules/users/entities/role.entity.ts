@@ -8,8 +8,8 @@ export class Role extends BaseEntity {
   @Column({ length: 100, unique: true })
   name: string;
 
-  @Column({ length: 200, nullable: true })
-  description: string;
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
 
   @Column({ default: false })
   isSystemRole: boolean;

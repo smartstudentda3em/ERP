@@ -17,7 +17,7 @@ export class WhatsAppOutboxMessage extends BaseEntity {
   @Column({ length: 200 })
   recipientLabel: string;
 
-  @Column({ length: 30, nullable: true })
+  @Column({ type: 'varchar', length: 30, nullable: true })
   recipientPhone: string | null;
 
   @Column({ type: 'text' })

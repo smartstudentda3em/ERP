@@ -30,7 +30,7 @@ export class ProductBatch extends BaseEntity {
   @Column({ length: 100 })
   batchNumber: string;
 
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   serialNumber: string | null;
 
   @Column({ type: 'date', nullable: true })

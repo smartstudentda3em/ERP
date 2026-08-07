@@ -8,7 +8,7 @@ import { Branch } from '../../settings/entities/branch.entity';
 export class User extends BaseEntity {
   // Optional secondary contact field now that phone is the required login identifier — unique
   // only applies to non-null values (Postgres never treats two NULLs as a duplicate).
-  @Column({ length: 150, unique: true, nullable: true })
+  @Column({ type: 'varchar', length: 150, unique: true, nullable: true })
   email: string | null;
 
   @Column({ length: 150 })

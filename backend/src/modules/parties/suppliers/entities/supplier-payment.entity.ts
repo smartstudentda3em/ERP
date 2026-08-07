@@ -34,7 +34,7 @@ export class SupplierPayment extends BaseEntity {
   @Column({ type: 'numeric', precision: 18, scale: 4 })
   amount: number;
 
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   referenceNumber: string | null;
 
   @Column('uuid', { nullable: true })

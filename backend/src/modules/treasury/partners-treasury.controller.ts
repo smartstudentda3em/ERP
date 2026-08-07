@@ -61,9 +61,11 @@ export class PartnersTreasuryController {
     if (dto.account) {
       const company = await this.companiesRepo.findOne({ where: { id: companyId } });
       if (company?.code === PRINTING_PRESS_COMPANY_CODE) {
+        // The partner's own branchId (when set) is authoritative — a branch-bound partner's
+        // contribution can only ever be attributed to their own branch, same rule as a dividend.
         return this.cashMovementsService.record({
           companyId,
-          branchId: dto.branchId ?? null,
+          branchId: partner.branchId ?? dto.branchId ?? null,
           movementDate: dto.movementDate,
           type: CashMovementType.INCOME,
           account: dto.account,
@@ -155,7 +157,14 @@ export class PartnersTreasuryController {
   @Get('partners-balances')
   @Permissions('partners.view')
   async getPartnersBalances(@CurrentUser('companyId') companyId: string, @Query('branchId') branchId?: string) {
-    const partners = await this.partnerRepo.find({ where: { companyId, isActive: true }, order: { createdAt: 'ASC' } });
+    // Printing Press only — a partner's own `branchId` now scopes which cap table they belong to,
+    // so narrowing by branch here also narrows WHICH partners show up at all, not just their
+    // movement totals (a partner recorded against another branch was never eligible for this
+    // branch's dividends/injections in the first place).
+    const partners = await this.partnerRepo.find({
+      where: { companyId, isActive: true, ...(branchId ? { branchId } : {}) },
+      order: { createdAt: 'ASC' },
+    });
     const rowsQb = this.dataSource
       .createQueryBuilder()
       .select('m."partnerId"', 'partnerId')
@@ -174,6 +183,7 @@ export class PartnersTreasuryController {
       partnerId: p.id,
       name: p.name,
       sharePercentage: Number(p.sharePercentage),
+      branchId: p.branchId,
       balance: balanceByPartnerId.get(p.id) ?? 0,
     }));
     return {
@@ -200,12 +210,19 @@ export class PartnersTreasuryController {
     const partner = await this.partnerRepo.findOne({ where: { id: partnerId, companyId, isActive: true } });
     if (!partner) throw new BadRequestException('Selected partner was not found or is not active');
 
+    // Printing Press only — a branch-owned partner's available pool and distributed history are
+    // scoped to their own branch's profit and payouts, never mixed with another branch's, exactly
+    // as this partner's own sharePercentage is now already scoped by branchId. Every other
+    // company's partners have no branchId, so this stays company-wide for them, unchanged.
+    const branchId = partner.branchId ?? undefined;
     const { dateFrom, dateTo } = quarterDateRange(Number(year), Number(quarter));
-    const { netProfit } = await this.cashMovementsService.getProfitReport(companyId, dateFrom, dateTo);
+    const { netProfit } = await this.cashMovementsService.getProfitReport(companyId, dateFrom, dateTo, branchId);
     const totalAlreadyDistributed = await this.cashMovementsService.getDistributedDividendsTotal(
       companyId,
       dateFrom,
       dateTo,
+      undefined,
+      branchId,
     );
     const available = netProfit <= 0 ? 0 : Math.max(netProfit - totalAlreadyDistributed, 0);
     const alreadyPaidToPartner = await this.cashMovementsService.getDistributedDividendsTotal(
@@ -213,6 +230,7 @@ export class PartnersTreasuryController {
       dateFrom,
       dateTo,
       partnerId,
+      branchId,
     );
     const sharePercentage = Number(partner.sharePercentage);
     const maxAmount = Math.max((sharePercentage / 100) * available - alreadyPaidToPartner, 0);
@@ -227,12 +245,17 @@ export class PartnersTreasuryController {
     const partner = await this.partnerRepo.findOne({ where: { id: dto.partnerId, companyId, isActive: true } });
     if (!partner) throw new BadRequestException('Selected partner was not found or is not active');
 
+    // Printing Press only — see getPartnerMaxDividend's comment: a branch-owned partner's payout
+    // is capped by their own branch's profit/distribution history, never another branch's.
+    const branchId = partner.branchId ?? undefined;
     const { dateFrom, dateTo } = quarterDateRange(dto.year, dto.quarter);
-    const { netProfit } = await this.cashMovementsService.getProfitReport(companyId, dateFrom, dateTo);
+    const { netProfit } = await this.cashMovementsService.getProfitReport(companyId, dateFrom, dateTo, branchId);
     const totalAlreadyDistributed = await this.cashMovementsService.getDistributedDividendsTotal(
       companyId,
       dateFrom,
       dateTo,
+      undefined,
+      branchId,
     );
     const available = netProfit <= 0 ? 0 : Math.max(netProfit - totalAlreadyDistributed, 0);
     const alreadyPaidToPartner = await this.cashMovementsService.getDistributedDividendsTotal(
@@ -240,6 +263,7 @@ export class PartnersTreasuryController {
       dateFrom,
       dateTo,
       dto.partnerId,
+      branchId,
     );
     const maxAmount = Math.max((Number(partner.sharePercentage) / 100) * available - alreadyPaidToPartner, 0);
     if (dto.amount > maxAmount) {
@@ -251,10 +275,12 @@ export class PartnersTreasuryController {
     // A dividend is real cash actually paid out to ONE partner, so it draws down the Bank Balance
     // (CASH) — the same account real income/expenses move through — not the Partners' Balance
     // (BANK) memo account capital injections track into. Never split across the other partners:
-    // each of them draws down their own share independently, whenever they choose to.
+    // each of them draws down their own share independently, whenever they choose to. The
+    // partner's own branchId (when set) is authoritative over whatever branch the client sent —
+    // a branch-bound partner's payout can only ever be attributed to their own branch.
     return this.cashMovementsService.record({
       companyId,
-      branchId: dto.branchId ?? null,
+      branchId: partner.branchId ?? dto.branchId ?? null,
       movementDate: dto.movementDate,
       type: CashMovementType.EXPENSE,
       account: CashMovementAccount.CASH,

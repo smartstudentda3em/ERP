@@ -122,6 +122,9 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
+  // Filters the receipts table itself (supplier/item name) — separate from `search` above, which
+  // only drives the "pick a product to add" lookup inside the new-receipt form.
+  const [tableSearch, setTableSearch] = useState('');
 
   useEffect(() => {
     onPdfLoadingChange?.(pdfLoading);
@@ -178,9 +181,20 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
 
   const selectedProduct = productsQuery.data?.find((p) => p.id === selectedProductId) ?? null;
 
-  const filteredReceipts = useMemo(
-    () => (receiptsQuery.data ?? []).filter((r) => inDateRange(r.receiptDate, dateRange)),
-    [receiptsQuery.data, dateRange],
+  const filteredReceipts = useMemo(() => {
+    const q = tableSearch.trim().toLowerCase();
+    return (receiptsQuery.data ?? []).filter((r) => {
+      if (!inDateRange(r.receiptDate, dateRange)) return false;
+      if (!q) return true;
+      return (r.supplier?.companyName ?? '').toLowerCase().includes(q) || (r.product?.nameEn ?? '').toLowerCase().includes(q);
+    });
+  }, [receiptsQuery.data, dateRange, tableSearch]);
+
+  // Sum of `totalAmount` across whatever's currently on screen — recomputes live as the date
+  // range or the supplier/item search narrows filteredReceipts.
+  const totalFilteredPurchases = useMemo(
+    () => filteredReceipts.reduce((sum, r) => sum + Number(r.totalAmount || 0), 0),
+    [filteredReceipts],
   );
 
   const searchResults = useMemo(() => {
@@ -633,11 +647,22 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       </Card>
 
       <Card>
-        <CardHeader className="print:hidden">
-          <CardTitle>{t('purchasing.recentReceipts')}</CardTitle>
-        </CardHeader>
-        <div className="print:hidden">
-          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-4 print:hidden">
+          <div className="flex flex-wrap items-center gap-4">
+            <CardTitle>{t('purchasing.recentReceipts')}</CardTitle>
+            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            <div className="max-w-xs">
+              <Input
+                placeholder={t('purchasing.searchByTablePlaceholder')}
+                value={tableSearch}
+                onChange={(e) => setTableSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--table-header-bg)] px-5 py-2.5 text-center shadow-sm">
+            <div className="text-xs text-[var(--text-muted)]">{t('fields.totalPurchases')}</div>
+            <div className="mt-1 text-lg font-semibold text-[var(--text)]">{formatAmount(totalFilteredPurchases)}</div>
+          </div>
         </div>
 
         <div ref={printRef} className="purchasing-print">
@@ -653,6 +678,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
             data={filteredReceipts}
             keyField={(r) => r.id}
             isLoading={receiptsQuery.isLoading}
+            searchable={false}
           />
         </div>
       </Card>

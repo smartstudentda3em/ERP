@@ -126,5 +126,7 @@ export class CreatePartnerDto {
   @IsString() name: string;
   @IsNumber() @Min(0) @Max(100) sharePercentage: number;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  /** Printing Press only: which branch this share applies to. Ignored by every other company. */
+  @IsOptional() @IsUUID() branchId?: string;
 }
 export class UpdatePartnerDto extends PartialType(CreatePartnerDto) {}

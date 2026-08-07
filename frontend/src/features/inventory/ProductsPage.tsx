@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
 import { Input, FormField, Select } from '../../components/ui/Input';
+import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { Tooltip } from '../../components/ui/Tooltip';
@@ -800,24 +801,16 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
               onChange={(e) => setForm({ ...form, reorderLevel: e.target.value })}
             />
           </FormField>
-          <FormField label={t('fields.category')}>
-            <Select
+          <FormField label={t('fields.category')} required>
+            <SearchableSelect
               required
               value={form.categoryId}
+              options={(categoriesQuery.data ?? []).map((c) => ({ value: c.id, label: c.nameEn }))}
               // Changing the category always clears the brand/package/unit — none of those chosen
               // under the previous category are valid for the new one, so there's no case where
               // keeping any of them makes sense (see the three dependent lists below).
-              onChange={(e) =>
-                setForm({ ...form, categoryId: e.target.value, brandId: '', packageTypeId: '', unitId: '' })
-              }
-            >
-              <option value="">—</option>
-              {(categoriesQuery.data ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nameEn}
-                </option>
-              ))}
-            </Select>
+              onChange={(v) => setForm({ ...form, categoryId: v, brandId: '', packageTypeId: '', unitId: '' })}
+            />
           </FormField>
           <FormField label={t('fields.brand')}>
             <Select

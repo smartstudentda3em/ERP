@@ -21,3 +21,5 @@ export class CreateSalesPaymentDto {
    * from `method`, which stays purely descriptive (cash in hand vs. transfer vs. cheque, etc.). */
   @IsOptional() @IsEnum(CashMovementAccount) paymentAccount?: CashMovementAccount;
 }
+
+export class UpdateSalesPaymentDto extends CreateSalesPaymentDto {}

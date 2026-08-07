@@ -17,8 +17,12 @@ export class DashboardController {
 
   @Get('charts/sales')
   @Permissions('dashboard.view')
-  salesChart(@CurrentUser('companyId') companyId: string, @Query('days') days?: string) {
-    return this.service.getSalesChart(companyId, days ? Number(days) : undefined);
+  salesChart(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('branchId') branchId?: string,
+    @Query('days') days?: string,
+  ) {
+    return this.service.getSalesChart(user.companyId!, user.userId, branchId, days ? Number(days) : undefined);
   }
 
   @Get('charts/purchases')

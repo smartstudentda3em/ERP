@@ -128,6 +128,15 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
    * salesRepresentativeId if the cashier picked one, else the linked invoice's rep, else the
    * customer's assigned rep — so a receipt collected against an invoice still counts toward that
    * invoice's rep even when the receipt form itself was left blank.
+   *
+   * An invoice's own attribution has the same kind of fallback: SalesInvoicesPage's combined
+   * "مندوب/مستخدم" dropdown lets an invoice be assigned directly to a system user (createdById)
+   * with no linked SalesRepresentative row at all — e.g. a مدير فرع whose SalesRepresentative
+   * link was never synced, or an admin who picked "المستخدم" instead of "المندوب" for them. Such
+   * an invoice has salesRepresentativeId = NULL, so counting only exact salesRepresentativeId
+   * matches silently drops real sales from that manager's totals. r2 resolves the invoice to
+   * whichever rep's own userId equals its createdById, but only when salesRepresentativeId itself
+   * is NULL — an invoice with an explicit (different) rep is never reattributed.
    */
   async getReportsSummary(
     companyId: string,
@@ -144,13 +153,18 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     const [salesRows, collectedRows] = await Promise.all([
       this.dataSource
         .createQueryBuilder()
-        .select('i."salesRepresentativeId"', 'repId')
+        .select('COALESCE(i."salesRepresentativeId", r2.id)', 'repId')
         .addSelect('COALESCE(SUM(i."grandTotal"), 0)', 'total')
         .from('sales_invoices', 'i')
+        .leftJoin(
+          'sales_representatives',
+          'r2',
+          'r2."userId" = i."createdById" AND r2."companyId" = i."companyId" AND i."salesRepresentativeId" IS NULL',
+        )
         .where('i."companyId" = :companyId', { companyId })
         .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
-        .andWhere('i."salesRepresentativeId" IS NOT NULL')
-        .groupBy('i."salesRepresentativeId"')
+        .andWhere('(i."salesRepresentativeId" IS NOT NULL OR r2.id IS NOT NULL)')
+        .groupBy('COALESCE(i."salesRepresentativeId", r2.id)')
         .getRawMany(),
       this.dataSource
         .createQueryBuilder()
@@ -177,14 +191,24 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   }
 
   private async getPeriodTotals(companyId: string, dateFrom: string, dateTo: string, representativeId?: string) {
+    // Same createdById fallback as getReportsSummary — an invoice with no salesRepresentativeId
+    // still resolves to whichever rep's own userId equals its createdById.
     const salesQb = this.dataSource
       .createQueryBuilder()
       .select('COALESCE(SUM(i."grandTotal"), 0)', 'total')
       .from('sales_invoices', 'i')
+      .leftJoin(
+        'sales_representatives',
+        'r2',
+        'r2."userId" = i."createdById" AND r2."companyId" = i."companyId" AND i."salesRepresentativeId" IS NULL',
+      )
       .where('i."companyId" = :companyId', { companyId })
       .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo });
-    if (representativeId) salesQb.andWhere('i."salesRepresentativeId" = :representativeId', { representativeId });
-    else salesQb.andWhere('i."salesRepresentativeId" IS NOT NULL');
+    if (representativeId) {
+      salesQb.andWhere('COALESCE(i."salesRepresentativeId", r2.id) = :representativeId', { representativeId });
+    } else {
+      salesQb.andWhere('(i."salesRepresentativeId" IS NOT NULL OR r2.id IS NOT NULL)');
+    }
 
     const collectedQb = this.dataSource
       .createQueryBuilder()
@@ -296,16 +320,23 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
 
     const [salesRows, branchCogsRows, branchExpenseRows] = await Promise.all([
+      // Same createdById fallback as getReportsSummary — an invoice with no salesRepresentativeId
+      // still resolves to whichever rep's own userId equals its createdById.
       this.dataSource
         .createQueryBuilder()
-        .select('i."salesRepresentativeId"', 'repId')
+        .select('COALESCE(i."salesRepresentativeId", r2.id)', 'repId')
         .addSelect('COALESCE(SUM(i."grandTotal"), 0)', 'revenue')
         .addSelect('COALESCE(SUM(i."costOfGoodsSold"), 0)', 'cogs')
         .from('sales_invoices', 'i')
+        .leftJoin(
+          'sales_representatives',
+          'r2',
+          'r2."userId" = i."createdById" AND r2."companyId" = i."companyId" AND i."salesRepresentativeId" IS NULL',
+        )
         .where('i."companyId" = :companyId', { companyId })
         .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
-        .andWhere('i."salesRepresentativeId" IS NOT NULL')
-        .groupBy('i."salesRepresentativeId"')
+        .andWhere('(i."salesRepresentativeId" IS NOT NULL OR r2.id IS NOT NULL)')
+        .groupBy('COALESCE(i."salesRepresentativeId", r2.id)')
         .getRawMany(),
       isPress
         ? this.dataSource
@@ -637,6 +668,9 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
 
   /** The actual invoices behind the "حجم المبيعات" chart bar(s) — same population (rep IS NOT NULL, or one specific rep) and date range as getReportsSummary, so the table always reconciles with the chart. */
   async getReportsInvoices(companyId: string, dateFrom: string, dateTo: string, representativeId?: string) {
+    // Same createdById fallback as getReportsSummary — an invoice with no salesRepresentativeId
+    // still resolves to whichever rep's own userId equals its createdById, so this table always
+    // reconciles with that chart's totals.
     const qb = this.dataSource
       .createQueryBuilder()
       .select('i.id', 'id')
@@ -647,10 +681,18 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .addSelect('c.name', 'customerName')
       .from('sales_invoices', 'i')
       .innerJoin('customers', 'c', 'c.id = i."customerId"')
+      .leftJoin(
+        'sales_representatives',
+        'r2',
+        'r2."userId" = i."createdById" AND r2."companyId" = i."companyId" AND i."salesRepresentativeId" IS NULL',
+      )
       .where('i."companyId" = :companyId', { companyId })
       .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo });
-    if (representativeId) qb.andWhere('i."salesRepresentativeId" = :representativeId', { representativeId });
-    else qb.andWhere('i."salesRepresentativeId" IS NOT NULL');
+    if (representativeId) {
+      qb.andWhere('COALESCE(i."salesRepresentativeId", r2.id) = :representativeId', { representativeId });
+    } else {
+      qb.andWhere('(i."salesRepresentativeId" IS NOT NULL OR r2.id IS NOT NULL)');
+    }
 
     const rows = await qb.orderBy('i."invoiceDate"', 'DESC').addOrderBy('i."documentNumber"', 'DESC').getRawMany();
     return rows.map((r) => ({ ...r, grandTotal: Number(r.grandTotal) }));

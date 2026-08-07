@@ -395,6 +395,10 @@
     "salarySlipTitle": "مسند الراتب",
     "exportPdf": "تصدير PDF",
     "pdfExportError": "تعذر تصدير التقرير كملف PDF، يرجى المحاولة مرة أخرى.",
+    "reportViewLabel": "عرض التقرير",
+    "reportViewAll": "الكل (الراتب + الغياب والتأخير)",
+    "reportViewSalaryOnly": "تفاصيل الراتب الشهري فقط",
+    "reportViewAttendanceOnly": "سجلات الغياب والتأخير فقط",
     "newPayrollRun": "كشف رواتب جديد",
     "backToList": "العودة للقائمة",
     "saveAndSubmit": "حفظ واعتماد الكشف",
@@ -446,7 +450,7 @@
     "branchLabel": "الفرع",
     "absenceDays": "أيام الغياب",
     "lateHours": "ساعات التأخير",
-    "salesListTitle": "المبيعات الخاضعة للعمولة",
+    "salesListTitle": "مبيعات مدير الفرع",
     "commissionAmount": "قيمة العمولة",
     "noQualifyingSales": "لا توجد مبيعات خاضعة لعمولتك خلال هذه الفترة"
   },
@@ -527,7 +531,7 @@
     "monthlyRevenue": "إيرادات الشهر",
     "monthlyExpenses": "مصروفات الشهر",
     "outstandingCustomers": "أرصدة العملاء المستحقة",
-    "printingPressCashTreasury": "خزينة المطبعة (كاش)",
+    "printingPressCashTreasury": "الخزينة النقدي (الكاش)",
     "financialBalance": "الرصيد المالي",
     "inventoryValue": "قيمة المخزون",
     "salesChart": "المبيعات (آخر 30 يوماً)",
@@ -650,7 +654,8 @@
     "receiptDeleteFailed": "تعذر حذف إذن الاستلام، يرجى المحاولة مرة أخرى",
     "reportTitle": "تقرير أحدث إذون الاستلام",
     "pdfExportError": "تعذر تصدير التقرير كملف PDF، يرجى المحاولة مرة أخرى.",
-    "missingUnitsPerPackage": "هذا الصنف لا يحتوي على عدد وحدات لكل عبوة صالح — يرجى تحديثه من بيانات الصنف قبل المتابعة."
+    "missingUnitsPerPackage": "هذا الصنف لا يحتوي على عدد وحدات لكل عبوة صالح — يرجى تحديثه من بيانات الصنف قبل المتابعة.",
+    "searchByTablePlaceholder": "بحث باسم المورد أو الصنف…"
   },
   "installments": {
     "newPlan": "عقد تقسيط جديد",
@@ -715,8 +720,8 @@
     "party": "العميل / المورد",
     "paymentAccount": "الحساب",
     "paymentAccounts": {
-      "CASH": "نقدي",
-      "BANK": "بنك"
+      "CASH": "الخزينة النقدي (الكاش)",
+      "BANK": "بنكي"
     },
     "debit": "مقبوضات",
     "credit": "مصروفات",
@@ -733,7 +738,7 @@
       "TRANSFER": "تحويل بين الحسابات"
     },
     "bankBalance": "رصيد البنك",
-    "cashBalance": "رصيد الخزنة (كاش)",
+    "cashBalance": "الخزينة النقدي (الكاش)",
     "transferBetweenAccounts": "تحويل بين الحسابات",
     "transferModalTitle": "تحويل أموال بين الحسابات",
     "fromAccount": "المصدر",
@@ -915,7 +920,10 @@
   "salesPayments": {
     "reportTitle": "تقرير المقبوضات",
     "pdfExportError": "تعذر تصدير التقرير كملف PDF، يرجى المحاولة مرة أخرى.",
-    "responsiblePersonColumn": "مدير الفرع / المسؤول"
+    "responsiblePersonColumn": "مدير الفرع / المسؤول",
+    "paymentSavedSuccess": "تم حفظ سند القبض بنجاح",
+    "depositAccountLabel": "حساب الإيداع",
+    "selectDepositAccount": "اختر حساب الإيداع…"
   },
   "commissionExceptions": {
     "title": "استثناءات العمولة",

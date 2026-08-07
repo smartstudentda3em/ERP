@@ -1,9 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { SalesPayment } from './entities/sales-payment.entity';
 import { SalesInvoice } from '../sales-invoices/entities/sales-invoice.entity';
-import { CreateSalesPaymentDto } from './dto/sales-payment.dto';
+import { CreateSalesPaymentDto, UpdateSalesPaymentDto } from './dto/sales-payment.dto';
 import {
   SalesDocumentStatus,
   CashMovementType,
@@ -13,6 +13,7 @@ import {
 } from '../../../entities/enums';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
+import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 import { SalesRepAccessService } from '../../../common/services/sales-rep-access.service';
 
 @Injectable()
@@ -56,13 +57,16 @@ export class SalesPaymentsService {
 
     const documentNumber = await this.numberingSeriesService.getNextNumber(companyId, 'SALES_PAYMENT');
 
-    const resolvedAccount = dto.paymentAccount ?? CashMovementAccount.CASH;
+    // Printing Press explicitly picks the treasury account (dto.paymentAccount). Every other
+    // company has no such field — its receipt only records `method` (cash in hand, bank transfer,
+    // cheque, card, online) — so the treasury account must be derived from that: CASH stays CASH,
+    // anything else settles into BANK. This used to default everything to CASH regardless of
+    // method, silently mis-crediting the cash drawer for money that was actually wired to the bank.
+    const resolvedAccount =
+      dto.paymentAccount ??
+      (dto.method && dto.method !== PaymentMethod.CASH ? CashMovementAccount.BANK : CashMovementAccount.CASH);
 
     return this.dataSource.transaction(async (manager) => {
-      // An incoming payment defaults to the CASH treasury account regardless of the payment
-      // method recorded (cash in hand, bank transfer, cheque, ...) — method is kept purely as
-      // descriptive metadata on the receipt. dto.paymentAccount lets a caller actually route the
-      // money to BANK instead when that distinction matters to them.
       const movement = await this.cashMovementsService.record(
         {
           companyId,
@@ -111,6 +115,136 @@ export class SalesPaymentsService {
       }
 
       return savedPayment;
+    });
+  }
+
+  /** Credits `amount` onto an invoice's amountPaid and recomputes its status — the same logic
+   * create() applies inline, extracted so update() can reuse it for the (possibly different)
+   * invoice a payment is re-attributed to. */
+  private async applyInvoicePayment(
+    manager: EntityManager,
+    companyId: string,
+    invoiceId: string,
+    amount: number,
+  ): Promise<void> {
+    const invoiceRepo = manager.getRepository(SalesInvoice);
+    const invoice = await invoiceRepo.findOne({ where: { id: invoiceId, companyId } });
+    if (!invoice) return;
+    invoice.amountPaid = Number(invoice.amountPaid) + amount;
+    invoice.status =
+      invoice.amountPaid >= Number(invoice.grandTotal) ? SalesDocumentStatus.PAID : SalesDocumentStatus.PARTIALLY_PAID;
+    await invoiceRepo.save(invoice);
+  }
+
+  /** Undoes applyInvoicePayment()'s effect — subtracts `amount` back off amountPaid and drops the
+   * status back down accordingly. Used by update() (reversing a payment's old invoice link before
+   * re-applying it to the new one) and remove() (reversing it entirely). */
+  private async reverseInvoicePayment(
+    manager: EntityManager,
+    companyId: string,
+    invoiceId: string,
+    amount: number,
+  ): Promise<void> {
+    const invoiceRepo = manager.getRepository(SalesInvoice);
+    const invoice = await invoiceRepo.findOne({ where: { id: invoiceId, companyId } });
+    if (!invoice) return;
+    invoice.amountPaid = Math.max(0, Number(invoice.amountPaid) - amount);
+    invoice.status =
+      invoice.amountPaid <= 0
+        ? SalesDocumentStatus.CONFIRMED
+        : invoice.amountPaid >= Number(invoice.grandTotal)
+          ? SalesDocumentStatus.PAID
+          : SalesDocumentStatus.PARTIALLY_PAID;
+    await invoiceRepo.save(invoice);
+  }
+
+  /**
+   * Edits an existing receipt in place: reverses its old effect on whichever invoice it was
+   * attributed to (if any), replaces its linked cash movement with a fresh one reflecting the
+   * edited date/amount/account, then re-applies the (possibly different) new amount to the
+   * (possibly different) new invoice. Mirrors PurchaseReceiptsService.update()'s
+   * remove-old-then-record-new approach for the cash movement, rather than patching its columns in
+   * place — see that method's own comment for why.
+   */
+  async update(id: string, dto: UpdateSalesPaymentDto, updatedById: string, companyId: string): Promise<SalesPayment> {
+    return this.dataSource.transaction(async (manager) => {
+      const existing = await manager.getRepository(SalesPayment).findOne({ where: { id, companyId } });
+      if (!existing) throw new NotFoundException('Sales payment not found');
+
+      const salesRepresentativeId = await this.salesRepAccess.resolveSalesRepresentativeId(
+        updatedById,
+        dto.salesRepresentativeId,
+        companyId,
+      );
+      const resolvedAccount =
+        dto.paymentAccount ??
+        (dto.method && dto.method !== PaymentMethod.CASH ? CashMovementAccount.BANK : CashMovementAccount.CASH);
+
+      if (existing.invoiceId) {
+        await this.reverseInvoicePayment(manager, companyId, existing.invoiceId, Number(existing.amount));
+      }
+
+      if (existing.cashMovementId) {
+        await manager.getRepository(CashMovement).delete({ id: existing.cashMovementId });
+      }
+      const movement = await this.cashMovementsService.record(
+        {
+          companyId,
+          branchId: dto.branchId,
+          movementDate: dto.paymentDate,
+          type: CashMovementType.INCOME,
+          account: resolvedAccount,
+          amount: dto.amount,
+          sourceType: CashMovementSourceType.SALES_PAYMENT,
+          partyCustomerId: dto.customerId,
+          description: `Payment ${existing.documentNumber}`,
+          createdById: updatedById,
+        },
+        manager,
+      );
+
+      Object.assign(existing, {
+        paymentDate: dto.paymentDate,
+        customerId: dto.customerId ?? null,
+        branchId: dto.branchId ?? null,
+        invoiceId: dto.invoiceId ?? null,
+        salesRepresentativeId,
+        method: dto.method ?? PaymentMethod.CASH,
+        paymentAccount: resolvedAccount,
+        amount: dto.amount,
+        referenceNumber: dto.referenceNumber ?? null,
+        notes: dto.notes ?? null,
+        cashMovementId: movement.id,
+      });
+      const savedPayment = await manager.getRepository(SalesPayment).save(existing);
+
+      if (dto.invoiceId) {
+        await this.applyInvoicePayment(manager, companyId, dto.invoiceId, Number(dto.amount));
+      }
+
+      return savedPayment;
+    });
+  }
+
+  /**
+   * Deletes a receipt entirely: reverses its effect on the invoice it was attributed to (if any,
+   * restoring the customer's outstanding balance), removes its linked cash movement (restoring
+   * whatever it settled onto the treasury balance), then deletes the receipt row itself.
+   */
+  async remove(id: string, companyId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const existing = await manager.getRepository(SalesPayment).findOne({ where: { id, companyId } });
+      if (!existing) throw new NotFoundException('Sales payment not found');
+
+      if (existing.invoiceId) {
+        await this.reverseInvoicePayment(manager, companyId, existing.invoiceId, Number(existing.amount));
+      }
+
+      if (existing.cashMovementId) {
+        await manager.getRepository(CashMovement).delete({ id: existing.cashMovementId });
+      }
+
+      await manager.getRepository(SalesPayment).remove(existing);
     });
   }
 }

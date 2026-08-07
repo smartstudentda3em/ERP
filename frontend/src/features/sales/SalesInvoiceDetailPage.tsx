@@ -5,11 +5,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
+import { useActiveCompany } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
-import { FormField, Input } from '../../components/ui/Input';
+import { FormField, Input, Select } from '../../components/ui/Input';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
@@ -47,6 +48,7 @@ interface Invoice {
   costOfGoodsSold: number;
   totalProfit: number;
   companyId: string;
+  branchId: string | null;
   customer: { id: string; name: string };
   customerName: string | null;
   customerPhone: string | null;
@@ -56,6 +58,12 @@ interface Invoice {
 
 interface Company extends LetterheadCompany {
   id: string;
+}
+
+interface Branch {
+  id: string;
+  nameEn: string;
+  nameAr?: string | null;
 }
 
 function money(n: number): string {
@@ -68,8 +76,13 @@ export function SalesInvoiceDetailPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
+  const { isPrintingPress } = useActiveCompany();
   const [payOpen, setPayOpen] = useState(false);
   const [amount, setAmount] = useState('0');
+  // Printing Press only — which treasury account this collected amount actually lands in. Starts
+  // unset (not defaulted to CASH) so the branch manager must explicitly say where the money went,
+  // same as the standalone سند قبض form's own paymentAccount field.
+  const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK' | ''>('');
   const [pdfLoading, setPdfLoading] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +97,19 @@ export function SalesInvoiceDetailPage() {
     queryFn: () => unwrap<Company[]>(apiClient.get('/settings/companies')),
   });
 
+  // Printing Press only — used solely to show which branch this collection is attributed to (the
+  // invoice's own branchId, not a user choice — a payment against a fixed invoice can only ever
+  // settle into that same invoice's branch).
+  const branchesQuery = useQuery({
+    queryKey: ['branches', companyId],
+    queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
+    enabled: isPrintingPress && payOpen && !!companyId,
+  });
+  const invoiceBranchName = (() => {
+    const b = (branchesQuery.data ?? []).find((br) => br.id === invoiceQuery.data?.branchId);
+    return b ? b.nameAr || b.nameEn : '—';
+  })();
+
   const payMutation = useMutation({
     mutationFn: () =>
       apiClient.post('/sales/payments', {
@@ -91,12 +117,19 @@ export function SalesInvoiceDetailPage() {
         customerId: invoiceQuery.data?.customer.id,
         invoiceId: id,
         companyId: invoiceQuery.data?.companyId,
-        method: 'CASH',
+        method: isPrintingPress ? undefined : 'CASH',
+        paymentAccount: isPrintingPress ? paymentAccount || undefined : undefined,
+        branchId: isPrintingPress ? invoiceQuery.data?.branchId ?? undefined : undefined,
         amount: Number(amount),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales-invoice', id] });
+      queryClient.invalidateQueries({ queryKey: ['sales-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-recent-tx'] });
+      queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
       setPayOpen(false);
+      setPaymentAccount('');
     },
   });
 
@@ -281,11 +314,29 @@ export function SalesInvoiceDetailPage() {
           <FormField label={t('fields.amount')}>
             <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </FormField>
+          {isPrintingPress && (
+            <FormField label={t('salesPayments.depositAccountLabel')} required>
+              <Select
+                required
+                value={paymentAccount}
+                onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK' | '')}
+              >
+                <option value="">{t('salesPayments.selectDepositAccount')}</option>
+                <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+                <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+              </Select>
+            </FormField>
+          )}
+          {isPrintingPress && (
+            <FormField label={t('fields.branch')}>
+              <Input disabled value={invoiceBranchName} />
+            </FormField>
+          )}
           <div className="col-span-2 mt-2 flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setPayOpen(false)}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={payMutation.isPending}>
+            <Button type="submit" disabled={payMutation.isPending || (isPrintingPress && !paymentAccount)}>
               {t('common.save')}
             </Button>
           </div>

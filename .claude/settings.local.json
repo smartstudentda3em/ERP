@@ -68,7 +68,8 @@
       "Bash(xargs -I{} sh -c 'echo ==={}===; cat {}')",
       "Bash(echo \"EXIT CODE: $?\")",
       "PowerShell(Get-NetTCPConnection -State Listen 2>&1 | Where-Object { $_.LocalPort -in @\\(3000,3001,3306,5432,5173,8080,4000\\) } | Select-Object LocalPort, OwningProcess | Format-Table -AutoSize)",
-      "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue)"
+      "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue)",
+      "Bash(xargs grep -l \"branchId\")"
     ]
   }
 }

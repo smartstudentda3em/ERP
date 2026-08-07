@@ -12,6 +12,7 @@ import { FormField, Input, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/DateRangeFilter';
 import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { useSalesRepLock } from './useSalesRepLock';
@@ -22,11 +23,20 @@ interface Company {
   nameAr?: string | null;
   nameEn?: string | null;
 }
+interface Branch {
+  id: string;
+  nameEn: string;
+  nameAr?: string | null;
+}
 
 interface SalesPayment {
   id: string;
   documentNumber: string;
   paymentDate: string;
+  customerId?: string | null;
+  invoiceId?: string | null;
+  branchId?: string | null;
+  salesRepresentativeId?: string | null;
   method: string;
   amount: number;
   notes?: string | null;
@@ -53,12 +63,16 @@ export function SalesPaymentsPage() {
   const { t } = useTranslation();
   const { isPrintingPress } = useActiveCompany();
   const toast = useToast();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
+  const canEdit = useAuthStore((s) => s.hasPermission('sales.payment.edit'));
+  const canDelete = useAuthStore((s) => s.hasPermission('sales.payment.delete'));
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [customerId, setCustomerId] = useState('');
   const [invoiceId, setInvoiceId] = useState('');
   const [salesRepresentativeId, setSalesRepresentativeId] = useState('');
@@ -66,8 +80,17 @@ export function SalesPaymentsPage() {
   const [amount, setAmount] = useState('0');
   const [notes, setNotes] = useState('');
   // Printing Press only — every other company's receipt always settles into CASH regardless of
-  // `method` (see sales-payments.service.ts, which defaults to CASH when this is omitted).
-  const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK'>('CASH');
+  // `method` (see sales-payments.service.ts, which defaults to CASH when this is omitted). Starts
+  // unset (rather than defaulting to CASH) so the branch manager must explicitly pick where the
+  // money actually went — a receipt can't be saved until this is chosen.
+  const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK' | ''>('');
+  // Printing Press only — which branch's cash/bank vault this receipt actually settles into. This
+  // used to be derived indirectly from the selected sales representative's branch, but that field
+  // is optional (a walk-in cash receipt has no sales rep at all), so plenty of receipts ended up
+  // with no branchId — invisible to the Dashboard's per-branch "خزينة الفرع (كاش)" card, which
+  // filters cash_movements by branchId. An explicit, required field (same pattern as
+  // ExpensesPage/PurchasingPage) guarantees every receipt is always attributed to a real branch.
+  const [branchId, setBranchId] = useState('');
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
 
   // Arriving from Outstanding Balances' "Record Payment / Collect" quick action prefills and
@@ -109,15 +132,40 @@ export function SalesPaymentsPage() {
     enabled: modalOpen,
   });
 
+  const branchesQuery = useQuery({
+    queryKey: ['branches', companyId],
+    queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
+    enabled: isPrintingPress && modalOpen && !!companyId,
+  });
+
   const { isAdmin, ownRep, currentUserName } = useSalesRepLock(salesRepsQuery.data);
   const effectiveSalesRepId = isAdmin ? salesRepresentativeId : ownRep?.id ?? '';
-  // Printing Press only — the receipt's cash movement is attributed to the payment's own sales
-  // representative's branch, same reliable signal used everywhere else, no separate field needed.
-  const resolvedBranchId = salesRepsQuery.data?.find((r) => r.id === effectiveSalesRepId)?.branchId ?? undefined;
 
-  const createMutation = useMutation({
-    mutationFn: () =>
-      apiClient.post('/sales/payments', {
+  function resetForm() {
+    setModalOpen(false);
+    setEditingId(null);
+    setCustomerId('');
+    setInvoiceId('');
+    setSalesRepresentativeId('');
+    setAmount('0');
+    setNotes('');
+    setPaymentAccount('');
+    setBranchId('');
+  }
+
+  function invalidateAfterSave() {
+    queryClient.invalidateQueries({ queryKey: ['sales-payments'] });
+    queryClient.invalidateQueries({ queryKey: ['customer-statement'] });
+    queryClient.invalidateQueries({ queryKey: ['customer-outstanding-invoices'] });
+    queryClient.invalidateQueries({ queryKey: ['customers'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard-recent-tx'] });
+    queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const payload = {
         paymentDate: localToday(),
         // Printing Press's simplified receipt form has neither field — the backend defaults
         // customerId to null and method to CASH when omitted (see CreateSalesPaymentDto).
@@ -128,36 +176,100 @@ export function SalesPaymentsPage() {
         method: isPrintingPress ? undefined : method,
         amount: Number(amount),
         notes: notes || undefined,
-        paymentAccount: isPrintingPress ? paymentAccount : undefined,
-        branchId: isPrintingPress ? resolvedBranchId : undefined,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sales-payments'] });
-      queryClient.invalidateQueries({ queryKey: ['customer-statement'] });
-      queryClient.invalidateQueries({ queryKey: ['customer-outstanding-invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['customers'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-recent-tx'] });
-      queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
-      setModalOpen(false);
-      setCustomerId('');
-      setInvoiceId('');
-      setSalesRepresentativeId('');
-      setAmount('0');
-      setNotes('');
-      setPaymentAccount('CASH');
+        paymentAccount: isPrintingPress ? paymentAccount || undefined : undefined,
+        branchId: isPrintingPress ? branchId || undefined : undefined,
+      };
+      return editingId
+        ? apiClient.patch(`/sales/payments/${editingId}`, payload)
+        : apiClient.post('/sales/payments', payload);
     },
+    onSuccess: () => {
+      invalidateAfterSave();
+      const wasEditing = !!editingId;
+      resetForm();
+      toast.success(wasEditing ? t('common.updatedSuccessfully') : t('salesPayments.paymentSavedSuccess'));
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/sales/payments/${id}`),
+    onSuccess: () => {
+      invalidateAfterSave();
+      toast.success(t('common.deletedSuccessfully'));
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
+  });
+
+  function startEdit(r: SalesPayment) {
+    setEditingId(r.id);
+    setCustomerId(r.customerId ?? '');
+    setInvoiceId(r.invoiceId ?? '');
+    setSalesRepresentativeId(r.salesRepresentativeId ?? '');
+    setMethod(r.method ?? 'CASH');
+    setAmount(String(r.amount));
+    setNotes(r.notes ?? '');
+    setPaymentAccount(r.paymentAccount ?? '');
+    setBranchId(r.branchId ?? '');
+    setModalOpen(true);
+  }
+
+  async function handleDelete(r: SalesPayment) {
+    const ok = await confirm({ message: t('common.confirmDelete', { name: r.documentNumber }) });
+    if (ok) deleteMutation.mutate(r.id);
+  }
 
   const filteredPayments = useMemo(
     () => (paymentsQuery.data ?? []).filter((p) => inDateRange(p.paymentDate, dateRange)),
     [paymentsQuery.data, dateRange],
   );
 
+  // Same edit/delete affordance used everywhere else in the app (Purchasing, Payroll, ...): a
+  // pencil and a trash-bin button, wired to PATCH/DELETE /sales/payments/:id with a confirmation
+  // dialog before the delete actually fires.
+  const actionsColumn: Column<SalesPayment> | null =
+    canEdit || canDelete
+      ? {
+          header: t('common.actions'),
+          accessor: (r) => (
+            <div className="flex justify-center gap-3">
+              {canEdit && (
+                <button
+                  type="button"
+                  className="text-primary-600 hover:underline"
+                  title={t('common.edit')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    startEdit(r);
+                  }}
+                >
+                  ✏️
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  className="text-red-600 hover:underline"
+                  title={t('common.delete')}
+                  disabled={deleteMutation.isPending}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(r);
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
+          ),
+          align: 'center',
+        }
+      : null;
+
   // Printing Press receipts aren't tied to a customer/invoice or a descriptive payment method —
   // they're a branch manager's cash deposit, so the table drops those three columns entirely and
   // surfaces the settled account instead. Every other company keeps the original column set.
-  const columns: Column<SalesPayment>[] = isPrintingPress
+  const baseColumns: Column<SalesPayment>[] = isPrintingPress
     ? [
         { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
         { header: t('common.date'), accessor: (r) => r.paymentDate },
@@ -172,10 +284,16 @@ export function SalesPaymentsPage() {
         { header: t('nav.customers'), accessor: (r) => r.customer?.name },
         { header: t('fields.salesRepresentative'), accessor: (r) => r.salesRepresentative?.name ?? '—' },
         { header: t('fields.method'), accessor: (r) => t(`paymentMethod.${r.method}`, r.method) },
+        // Which treasury account this receipt actually settled into — CASH or BANK, derived from
+        // `method` at creation time (see SalesPaymentsService.create()) rather than always CASH,
+        // so a bank-transfer receipt is visibly distinguishable from an actual cash receipt here,
+        // not just in the underlying (invisible) treasury balances.
+        { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.paymentAccount ?? 'CASH'}`) },
         { header: t('fields.invoice'), accessor: (r) => r.invoice?.documentNumber ?? '—' },
         { header: t('table.description'), accessor: (r) => r.notes ?? '—' },
         { header: t('common.total'), accessor: (r) => formatAmount(r.amount), align: 'right' },
       ];
+  const columns: Column<SalesPayment>[] = actionsColumn ? [...baseColumns, actionsColumn] : baseColumns;
 
   function handlePrint() {
     const previousTitle = document.title;
@@ -233,11 +351,13 @@ export function SalesPaymentsPage() {
       <div className="mb-3 flex justify-end print:hidden">
         <Button
           onClick={() => {
+            setEditingId(null);
             setCustomerId('');
             setInvoiceId('');
             setAmount('0');
             setNotes('');
-            setPaymentAccount('CASH');
+            setPaymentAccount('');
+            setBranchId('');
             setModalOpen(true);
           }}
         >
@@ -261,12 +381,12 @@ export function SalesPaymentsPage() {
         <DataTable columns={columns} data={filteredPayments} keyField={(r) => r.id} isLoading={paymentsQuery.isLoading} />
       </div>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={t('common.create')}>
+      <Modal open={modalOpen} onClose={resetForm} title={editingId ? t('common.edit') : t('common.create')}>
         <form
           className="grid grid-cols-2 gap-3"
           onSubmit={(e) => {
             e.preventDefault();
-            createMutation.mutate();
+            saveMutation.mutate();
           }}
         >
           {!isPrintingPress && (
@@ -296,10 +416,27 @@ export function SalesPaymentsPage() {
             <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </FormField>
           {isPrintingPress && (
-            <FormField label={t('treasury.paymentAccount')}>
-              <Select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}>
+            <FormField label={t('salesPayments.depositAccountLabel')} required>
+              <Select
+                required
+                value={paymentAccount}
+                onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK' | '')}
+              >
+                <option value="">{t('salesPayments.selectDepositAccount')}</option>
                 <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
                 <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+              </Select>
+            </FormField>
+          )}
+          {isPrintingPress && (
+            <FormField label={t('fields.branch')} required>
+              <Select required value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                <option value="">—</option>
+                {(branchesQuery.data ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nameAr || b.nameEn}
+                  </option>
+                ))}
               </Select>
             </FormField>
           )}
@@ -329,17 +466,13 @@ export function SalesPaymentsPage() {
             </FormField>
           </div>
           <div className="col-span-2 mt-2 flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setModalOpen(false);
-                setInvoiceId('');
-              }}
-            >
+            <Button type="button" variant="secondary" onClick={resetForm}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={createMutation.isPending}>
+            <Button
+              type="submit"
+              disabled={saveMutation.isPending || (isPrintingPress && (!branchId || !paymentAccount))}
+            >
               {t('common.save')}
             </Button>
           </div>

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Injectable, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Injectable, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -14,11 +14,22 @@ export class PartnersService extends CompanyScopedCrudService<Partner> {
     super(repo);
   }
 
-  /** The combined share across every partner IN THE SAME COMPANY (excluding the one being edited) can never exceed 100% — each company has its own independent ownership cap table. */
-  private async assertShareWithinLimit(companyId: string, sharePercentage: number, excludeId?: string): Promise<void> {
+  /**
+   * The combined share across every partner in the same cap-table scope (excluding the one being
+   * edited) can never exceed 100%. For every company but Printing Press, that scope is the whole
+   * company. For Printing Press, `branchId` splits the cap table per branch — each branch has its
+   * own independent 100% (partners with no branchId, i.e. every non-Press company, are grouped
+   * together via the `null` bucket, same as before this column existed).
+   */
+  private async assertShareWithinLimit(
+    companyId: string,
+    sharePercentage: number,
+    branchId?: string | null,
+    excludeId?: string,
+  ): Promise<void> {
     const partners = await this.repo.find({ where: { companyId } });
     const currentTotal = partners
-      .filter((p) => p.id !== excludeId)
+      .filter((p) => p.id !== excludeId && (p.branchId ?? null) === (branchId ?? null))
       .reduce((sum, p) => sum + Number(p.sharePercentage), 0);
     const projectedTotal = currentTotal + Number(sharePercentage);
     if (projectedTotal > 100) {
@@ -28,14 +39,21 @@ export class PartnersService extends CompanyScopedCrudService<Partner> {
     }
   }
 
+  findAllForBranch(companyId: string, branchId?: string): Promise<Partner[]> {
+    if (!branchId) return this.findAllForCompany(companyId);
+    return this.repo.find({ where: { companyId, branchId } as any, order: { createdAt: 'ASC' } as any });
+  }
+
   async createForCompany(companyId: string, dto: CreatePartnerDto): Promise<Partner> {
-    await this.assertShareWithinLimit(companyId, dto.sharePercentage);
-    return super.createForCompany(companyId, dto);
+    await this.assertShareWithinLimit(companyId, dto.sharePercentage, dto.branchId ?? null);
+    return super.createForCompany(companyId, { ...dto, branchId: dto.branchId ?? null } as any);
   }
 
   async updateForCompany(id: string, companyId: string, dto: UpdatePartnerDto): Promise<Partner> {
     if (dto.sharePercentage != null) {
-      await this.assertShareWithinLimit(companyId, dto.sharePercentage, id);
+      const existing = await this.findOneForCompany(id, companyId);
+      const branchId = dto.branchId !== undefined ? dto.branchId ?? null : existing.branchId;
+      await this.assertShareWithinLimit(companyId, dto.sharePercentage, branchId, id);
     }
     return super.updateForCompany(id, companyId, dto);
   }
@@ -46,8 +64,11 @@ export class PartnersService extends CompanyScopedCrudService<Partner> {
 export class PartnersController {
   constructor(private readonly service: PartnersService) {}
 
-  @Get() @Permissions('settings.partner.view') findAll(@CurrentUser('companyId') companyId: string) {
-    return this.service.findAllForCompany(companyId);
+  @Get() @Permissions('settings.partner.view') findAll(
+    @CurrentUser('companyId') companyId: string,
+    @Query('branchId') branchId?: string,
+  ) {
+    return this.service.findAllForBranch(companyId, branchId);
   }
   @Post() @Permissions('settings.partner.create') create(
     @Body() dto: CreatePartnerDto,

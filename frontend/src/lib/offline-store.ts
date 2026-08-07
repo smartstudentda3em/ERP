@@ -1599,8 +1599,18 @@ function buildExpenseReport(companyId: string, dateFrom?: string, dateTo?: strin
   return { dateFrom: dateFrom ?? null, dateTo: dateTo ?? null, rows, totalExpenses };
 }
 
-/** Company-wide dividend total for the period, or one partner's slice of it when `partnerId` is given — mirrors the backend's getDistributedDividendsTotal(). */
-function buildDistributedDividendsTotal(companyId: string, dateFrom?: string, dateTo?: string, partnerId?: string): number {
+/**
+ * Company-wide dividend total for the period, or one partner's slice of it when `partnerId` is
+ * given. `branchId` (Printing Press only) further narrows to payouts drawn from one branch —
+ * mirrors the backend's getDistributedDividendsTotal().
+ */
+function buildDistributedDividendsTotal(
+  companyId: string,
+  dateFrom?: string,
+  dateTo?: string,
+  partnerId?: string,
+  branchId?: string,
+): number {
   return readTable<any>('cashMovements')
     .filter(
       (m) =>
@@ -1608,7 +1618,8 @@ function buildDistributedDividendsTotal(companyId: string, dateFrom?: string, da
         m.sourceType === 'DIVIDEND' &&
         (!dateFrom || m.movementDate >= dateFrom) &&
         (!dateTo || m.movementDate <= dateTo) &&
-        (!partnerId || m.partnerId === partnerId),
+        (!partnerId || m.partnerId === partnerId) &&
+        (!branchId || m.branchId === branchId),
     )
     .reduce((sum, m) => sum + Number(m.amount ?? 0), 0);
 }
@@ -1627,6 +1638,20 @@ function quarterDateRange(year: number, quarter: number): { dateFrom: string; da
   };
 }
 
+/** An invoice's own attribution has a fallback beyond its exact salesRepresentativeId: the
+ * combined "مندوب/مستخدم" dropdown on SalesInvoicesPage lets an invoice be assigned directly to a
+ * system user (createdById) with no linked SalesRepresentative row at all — e.g. a مدير فرع whose
+ * SalesRepresentative link was never synced, or an admin who picked "المستخدم" instead of
+ * "المندوب" for them. Counting only exact salesRepresentativeId matches silently drops real sales
+ * from that manager's reports. Mirrors the backend's r2 LEFT JOIN: only kicks in when
+ * salesRepresentativeId itself is null, so an invoice with an explicit (different) rep is never
+ * reattributed. `repsByUserId` must be built from every rep in the company (not just the one the
+ * caller may already be filtering to), since the invoice's real owner might not be that rep. */
+function resolveInvoiceRepId(inv: any, repsByUserId: Map<string, any>): string | undefined {
+  if (inv.salesRepresentativeId) return inv.salesRepresentativeId;
+  return inv.createdById ? repsByUserId.get(inv.createdById)?.id : undefined;
+}
+
 /**
  * Mirrors the backend's getReportsSummary(): per-representative sales volume (invoices, by
  * invoice date) and collected amount (receipts, by payment date) over a date range. A receipt is
@@ -1634,11 +1659,11 @@ function quarterDateRange(year: number, quarter: number): { dateFrom: string; da
  * else the linked invoice's rep, else the customer's assigned rep.
  */
 function buildSalesRepresentativesReport(companyId: string, dateFrom?: string, dateTo?: string, representativeId?: string) {
-  const reps = readTable<any>('salesRepresentatives').filter(
-    (r) => r.companyId === companyId && (!representativeId || r.id === representativeId),
-  );
+  const allReps = readTable<any>('salesRepresentatives').filter((r) => r.companyId === companyId);
+  const reps = allReps.filter((r) => !representativeId || r.id === representativeId);
   if (reps.length === 0) return [];
 
+  const repsByUserId = new Map(allReps.filter((r) => r.userId).map((r) => [r.userId, r]));
   const invoices = readTable<any>('salesInvoices').filter((i) => i.companyId === companyId);
   const payments = readTable<any>('salesPayments').filter((p) => p.companyId === companyId);
   const customers = readTable<any>('customers');
@@ -1647,10 +1672,11 @@ function buildSalesRepresentativesReport(companyId: string, dateFrom?: string, d
 
   const salesByRepId = new Map<string, number>();
   for (const inv of invoices) {
-    if (!inv.salesRepresentativeId) continue;
+    const repId = resolveInvoiceRepId(inv, repsByUserId);
+    if (!repId) continue;
     if (dateFrom && inv.invoiceDate < dateFrom) continue;
     if (dateTo && inv.invoiceDate > dateTo) continue;
-    salesByRepId.set(inv.salesRepresentativeId, (salesByRepId.get(inv.salesRepresentativeId) ?? 0) + Number(inv.grandTotal ?? 0));
+    salesByRepId.set(repId, (salesByRepId.get(repId) ?? 0) + Number(inv.grandTotal ?? 0));
   }
 
   const collectedByRepId = new Map<string, number>();
@@ -1709,6 +1735,11 @@ function buildSalesRepresentativesQuarterlyTrend(
   addPeriod(year - 2, quarter);
   addPeriod(quarter > 1 ? year : year - 1, quarter > 1 ? quarter - 1 : 4);
 
+  const repsByUserId = new Map(
+    readTable<any>('salesRepresentatives')
+      .filter((r) => r.companyId === companyId && r.userId)
+      .map((r) => [r.userId, r]),
+  );
   const invoices = readTable<any>('salesInvoices').filter((i) => i.companyId === companyId);
   const payments = readTable<any>('salesPayments').filter((p) => p.companyId === companyId);
   const invoiceById = new Map(invoices.map((i) => [i.id, i]));
@@ -1719,8 +1750,9 @@ function buildSalesRepresentativesQuarterlyTrend(
     const { dateFrom, dateTo } = quarterDateRange(p.year, p.quarter);
     let salesVolume = 0;
     for (const inv of invoices) {
-      if (!inv.salesRepresentativeId) continue;
-      if (representativeId && inv.salesRepresentativeId !== representativeId) continue;
+      const repId = resolveInvoiceRepId(inv, repsByUserId);
+      if (!repId) continue;
+      if (representativeId && repId !== representativeId) continue;
       if (inv.invoiceDate < dateFrom || inv.invoiceDate > dateTo) continue;
       salesVolume += Number(inv.grandTotal ?? 0);
     }
@@ -1752,17 +1784,17 @@ function buildManagersProfitability(companyId: string, dateFrom: string, dateTo:
   const isPress = OFFLINE_COMPANY_DEFS.find((c) => c.code === 'PRESS')?.id === companyId;
   const branches = readTable<any>('branches');
 
+  const repsByUserId = new Map(reps.filter((r) => r.userId).map((r) => [r.userId, r]));
   const invoices = readTable<any>('salesInvoices').filter(
-    (i) => i.companyId === companyId && i.invoiceDate >= dateFrom && i.invoiceDate <= dateTo && i.salesRepresentativeId,
+    (i) => i.companyId === companyId && i.invoiceDate >= dateFrom && i.invoiceDate <= dateTo,
   );
   const revenueByRepId = new Map<string, number>();
   const invoiceCogsByRepId = new Map<string, number>();
   for (const inv of invoices) {
-    revenueByRepId.set(inv.salesRepresentativeId, (revenueByRepId.get(inv.salesRepresentativeId) ?? 0) + Number(inv.grandTotal ?? 0));
-    invoiceCogsByRepId.set(
-      inv.salesRepresentativeId,
-      (invoiceCogsByRepId.get(inv.salesRepresentativeId) ?? 0) + Number(inv.costOfGoodsSold ?? 0),
-    );
+    const repId = resolveInvoiceRepId(inv, repsByUserId);
+    if (!repId) continue;
+    revenueByRepId.set(repId, (revenueByRepId.get(repId) ?? 0) + Number(inv.grandTotal ?? 0));
+    invoiceCogsByRepId.set(repId, (invoiceCogsByRepId.get(repId) ?? 0) + Number(inv.costOfGoodsSold ?? 0));
   }
 
   const cogsByBranchId = new Map<string, number>();
@@ -2008,12 +2040,18 @@ function buildManagerDashboardForRep(rep: any, companyId: string, dateFrom?: str
 /** Mirrors the backend's getReportsInvoices(): same population and date range as buildSalesRepresentativesReport's sales-volume side, so the table always reconciles with the chart. */
 function buildSalesRepresentativesInvoices(companyId: string, dateFrom?: string, dateTo?: string, representativeId?: string) {
   const customers = readTable<any>('customers');
+  const repsByUserId = new Map(
+    readTable<any>('salesRepresentatives')
+      .filter((r) => r.companyId === companyId && r.userId)
+      .map((r) => [r.userId, r]),
+  );
   return readTable<any>('salesInvoices')
     .filter((inv) => {
       if (inv.companyId !== companyId) return false;
       if (dateFrom && inv.invoiceDate < dateFrom) return false;
       if (dateTo && inv.invoiceDate > dateTo) return false;
-      return representativeId ? inv.salesRepresentativeId === representativeId : !!inv.salesRepresentativeId;
+      const repId = resolveInvoiceRepId(inv, repsByUserId);
+      return representativeId ? repId === representativeId : !!repId;
     })
     .map((inv) => ({
       id: inv.id,
@@ -2106,20 +2144,19 @@ function buildConsumedMaterialsTotal(companyId: string, dateFrom?: string, dateT
 
 /**
  * `branchId` (Printing Press only) narrows Revenue/COGS/Expenses to one branch: Revenue via the
- * invoice's sales representative's branch (SalesInvoice.branchId is never actually populated
- * anywhere in this app — mirrors the same join the real backend's getProfitReport() and this
- * file's buildSalesRepresentativesReport()-adjacent Sales Report filter already use), COGS via
- * PurchaseReceipt.branchId, and operating expenses via CashMovement.branchId.
+ * invoice's own branchId column (set directly at creation — see the POST /sales/invoices handler
+ * above — not via a join through its optional salesRepresentativeId, which is frequently unset
+ * for a Press invoice and would silently zero out revenue for a branch the filter is applied to;
+ * mirrors the real backend's getProfitReport() fix), COGS via PurchaseReceipt.branchId, and
+ * operating expenses via CashMovement.branchId.
  */
 function buildProfitReport(companyId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
-  const reps = readTable<any>('salesRepresentatives');
-  const repBranchById = new Map(reps.map((r) => [r.id, r.branchId]));
   const invoices = readTable<any>('salesInvoices').filter(
     (i) =>
       i.companyId === companyId &&
       (!dateFrom || i.invoiceDate >= dateFrom) &&
       (!dateTo || i.invoiceDate <= dateTo) &&
-      (!branchId || repBranchById.get(i.salesRepresentativeId) === branchId),
+      (!branchId || i.branchId === branchId),
   );
   const isPress = OFFLINE_COMPANY_DEFS.find((c) => c.code === 'PRESS')?.id === companyId;
   const revenue = invoices.reduce((s, i) => s + Number(i.subtotal ?? 0), 0);
@@ -2130,7 +2167,7 @@ function buildProfitReport(companyId: string, dateFrom?: string, dateTo?: string
   const grossProfit = revenue - cogs;
   const { rows: expenses, totalExpenses } = buildExpenseReport(companyId, dateFrom, dateTo, branchId);
   const netProfit = grossProfit - totalExpenses;
-  const distributedDividends = buildDistributedDividendsTotal(companyId, dateFrom, dateTo);
+  const distributedDividends = buildDistributedDividendsTotal(companyId, dateFrom, dateTo, undefined, branchId);
   return {
     dateFrom: dateFrom ?? null,
     dateTo: dateTo ?? null,
@@ -2409,9 +2446,21 @@ function buildSalesLinesReport(
   return rows;
 }
 
-/** Mirrors PartnersService's server-side rule: the combined share across every partner IN THE SAME COMPANY (excluding the one being edited) can never exceed 100% — each company has its own independent ownership cap table. */
-function assertPartnerShareWithinLimit(companyId: string, sharePercentage: number, excludeId?: string): void {
-  const partners = readTable<any>('partners').filter((p) => p.id !== excludeId && p.companyId === companyId);
+/**
+ * Mirrors PartnersService's server-side rule: the combined share across every partner in the same
+ * cap-table scope (excluding the one being edited) can never exceed 100%. For every company but
+ * Printing Press that scope is the whole company (branchId always null/undefined there); Printing
+ * Press splits the cap table per branch, so each branch gets its own independent 100%.
+ */
+function assertPartnerShareWithinLimit(
+  companyId: string,
+  sharePercentage: number,
+  branchId?: string | null,
+  excludeId?: string,
+): void {
+  const partners = readTable<any>('partners').filter(
+    (p) => p.id !== excludeId && p.companyId === companyId && (p.branchId ?? null) === (branchId ?? null),
+  );
   const currentTotal = partners.reduce((sum, p) => sum + Number(p.sharePercentage ?? 0), 0);
   const projectedTotal = currentTotal + sharePercentage;
   if (projectedTotal > 100) {
@@ -2491,12 +2540,26 @@ function buildDashboardSummary(companyId: string, branchId?: string) {
   const monthPrefix = todayStr.slice(0, 7);
 
   const dailySales = invoices.filter((i) => i.invoiceDate === todayStr).reduce((s, i) => s + i.grandTotal, 0);
-  // Cash-basis revenue: only actual customer payments collected this month (paid up front at
-  // invoice creation or collected later against outstanding debt — both paths create a
-  // salesPayments row), never unpaid/credit invoice totals.
-  const monthlyRevenue = payments
-    .filter((p) => p.paymentDate.startsWith(monthPrefix))
-    .reduce((s, p) => s + Number(p.amount ?? 0), 0);
+  // Printing Press: accrual-basis revenue — the FULL value of every invoice issued this month,
+  // matching exactly what the Sales Chart and Sales Invoices log both total for the same branch
+  // (both read straight off salesInvoices, never off salesPayments). Filtered by the invoice's own
+  // branchId column directly, not through the salesRepresentativeId join `invoices` above uses —
+  // that join silently zeroes this for walk-in invoices with no rep (mirrors dashboard.service.ts).
+  //
+  // Every other company keeps the original cash-basis figure: only actual customer payments
+  // collected this month (paid up front at invoice creation or collected later against
+  // outstanding debt — both paths create a salesPayments row), never unpaid/credit invoice totals.
+  const isPress = OFFLINE_COMPANY_DEFS.find((c) => c.code === 'PRESS')?.id === companyId;
+  const monthlyRevenue = isPress
+    ? invoicesAllBranches
+        .filter(
+          (i) =>
+            i.invoiceDate.startsWith(monthPrefix) &&
+            i.status !== 'CANCELLED' &&
+            (!branchId || i.branchId === branchId),
+        )
+        .reduce((s, i) => s + Number(i.grandTotal ?? 0), 0)
+    : payments.filter((p) => p.paymentDate.startsWith(monthPrefix)).reduce((s, p) => s + Number(p.amount ?? 0), 0);
   const inventoryValue = stockLevels.reduce((s, l) => s + l.quantityOnHand * l.averageCost, 0);
 
   const todaysInvoices = invoices.filter((i) => i.invoiceDate === todayStr);
@@ -2566,8 +2629,14 @@ function buildRecentTransactions(companyId: string) {
     .map(({ createdAt, ...rest }) => rest);
 }
 
-function buildSalesChart(companyId: string) {
-  const invoices = readTable<any>('salesInvoices').filter((i) => i.companyId === companyId);
+// `branchId` (Printing Press only — the Dashboard's Branch filter) narrows this to one branch via
+// the invoice's own branchId column — the same source buildDashboardSummary()'s Press-only
+// monthlyRevenue reads, so this chart's total for a period always matches the "إيرادات الشهر"
+// card and the Sales Invoices log for that period/branch.
+function buildSalesChart(companyId: string, branchId?: string) {
+  const invoices = readTable<any>('salesInvoices').filter(
+    (i) => i.companyId === companyId && (!branchId || i.branchId === branchId),
+  );
   const byDate = new Map<string, number>();
   for (const inv of invoices) byDate.set(inv.invoiceDate, (byDate.get(inv.invoiceDate) ?? 0) + inv.grandTotal);
   return [...byDate.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([date, total]) => ({ date, total }));
@@ -3866,22 +3935,28 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
     return genericCreate('numberingSeries', body, { companyId, startNumber, nextNumber: startNumber });
   }
 
-  // --- Settings: partners (custom — combined share can never exceed 100%, per company) ----------------
+  // --- Settings: partners (custom — combined share can never exceed 100% within its own cap-table
+  // scope: company-wide for every company, or per-branch for Printing Press's branchId column) ----
   if (seg0 === 'settings' && seg1 === 'partners') {
     const companyId = getOfflineSessionUser()?.companyId ?? OFFLINE_COMPANY_ID;
-    if (!seg2 && method === 'get') return genericList('partners').filter((r: any) => r.companyId === companyId);
+    if (!seg2 && method === 'get') {
+      const rows = genericList('partners').filter((r: any) => r.companyId === companyId);
+      return params?.branchId ? rows.filter((r: any) => r.branchId === params.branchId) : rows;
+    }
     if (!seg2 && method === 'post') {
-      assertPartnerShareWithinLimit(companyId, Number(body.sharePercentage));
-      return genericCreate('partners', body, { companyId, isActive: true });
+      const branchId = body.branchId ?? null;
+      assertPartnerShareWithinLimit(companyId, Number(body.sharePercentage), branchId);
+      return genericCreate('partners', { ...body, branchId }, { companyId, isActive: true });
     }
     if (seg2 && method === 'patch') {
       const rows = readTable<any>('partners');
       const row = rows.find((r) => r.id === seg2 && r.companyId === companyId);
       if (!row) throw new OfflineApiError('Not found');
       if (body.sharePercentage != null) {
-        assertPartnerShareWithinLimit(companyId, Number(body.sharePercentage), seg2);
+        const branchId = body.branchId !== undefined ? body.branchId ?? null : row.branchId ?? null;
+        assertPartnerShareWithinLimit(companyId, Number(body.sharePercentage), branchId, seg2);
       }
-      Object.assign(row, body, { companyId });
+      Object.assign(row, body, { companyId, branchId: body.branchId !== undefined ? body.branchId ?? null : row.branchId });
       writeTable('partners', rows);
       return row;
     }
@@ -5760,7 +5835,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
   // --- Sales: payments -------------------------------------------------------------
   if (seg0 === 'sales' && seg1 === 'payments') {
     const paymentsCompanyId = getOfflineSessionUser()?.companyId ?? OFFLINE_COMPANY_ID;
-    if (method === 'get') {
+    if (!seg2 && method === 'get') {
       const customers = readTable<any>('customers');
       const invoices = readTable<any>('salesInvoices');
       const reps = readTable<any>('salesRepresentatives');
@@ -5781,7 +5856,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         }))
         .sort((a: any, b: any) => (a.createdAt < b.createdAt ? 1 : -1));
     }
-    if (method === 'post') {
+    if (!seg2 && method === 'post') {
       const documentNumber = nextDocNumber('salesPayments', 'RCV', paymentsCompanyId);
       if (body.invoiceId) {
         const invoices = readTable<any>('salesInvoices');
@@ -5792,9 +5867,12 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
           writeTable('salesInvoices', invoices);
         }
       }
-      // An incoming payment defaults to CASH regardless of the payment method recorded;
-      // body.paymentAccount (Printing Press only) lets it actually route to BANK instead.
-      const resolvedAccount = body.paymentAccount ?? 'CASH';
+      // Printing Press explicitly picks the treasury account (body.paymentAccount). Every other
+      // company only records `method` (cash/bank transfer/cheque/card/online) — mirrors
+      // SalesPaymentsService.create(): CASH stays CASH, anything else settles into BANK, instead
+      // of defaulting every receipt to CASH regardless of the method actually recorded.
+      const resolvedAccount =
+        body.paymentAccount ?? (body.method && body.method !== 'CASH' ? 'BANK' : 'CASH');
       const movement = recordCashMovement({
         companyId: paymentsCompanyId,
         branchId: body.branchId,
@@ -5825,6 +5903,107 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
           createdAt: new Date().toISOString(),
         },
       );
+    }
+    // Reverses a payment's old effect on whichever invoice/cash-movement it touched, then
+    // re-applies the edited amount — mirrors SalesPaymentsService.update()'s
+    // reverse-then-reapply approach exactly.
+    if (seg2 && method === 'patch') {
+      const payments = readTable<any>('salesPayments');
+      const existing = payments.find((p) => p.id === seg2 && p.companyId === paymentsCompanyId);
+      if (!existing) throw new OfflineApiError('Sales payment not found');
+
+      if (existing.invoiceId) {
+        const invoices = readTable<any>('salesInvoices');
+        const invoice = invoices.find((i) => i.id === existing.invoiceId);
+        if (invoice) {
+          invoice.amountPaid = Math.max(0, Number(invoice.amountPaid ?? 0) - Number(existing.amount));
+          invoice.status =
+            invoice.amountPaid <= 0
+              ? 'CONFIRMED'
+              : invoice.amountPaid >= invoice.grandTotal
+                ? 'PAID'
+                : 'PARTIALLY_PAID';
+          writeTable('salesInvoices', invoices);
+        }
+      }
+
+      if (existing.cashMovementId) {
+        const movements = readTable<any>('cashMovements');
+        writeTable(
+          'cashMovements',
+          movements.filter((m) => m.id !== existing.cashMovementId),
+        );
+      }
+
+      const resolvedAccount =
+        body.paymentAccount ?? (body.method && body.method !== 'CASH' ? 'BANK' : 'CASH');
+      const movement = recordCashMovement({
+        companyId: paymentsCompanyId,
+        branchId: body.branchId,
+        movementDate: body.paymentDate,
+        type: 'INCOME',
+        account: resolvedAccount,
+        amount: Number(body.amount),
+        sourceType: 'SALES_PAYMENT',
+        partyCustomerId: body.customerId,
+        description: `Payment ${existing.documentNumber}`,
+      });
+
+      Object.assign(existing, {
+        ...body,
+        customerId: body.customerId ?? null,
+        method: body.method ?? 'CASH',
+        paymentAccount: resolvedAccount,
+        salesRepresentativeId: resolveOfflineSalesRepId(body.salesRepresentativeId),
+        cashMovementId: movement.id,
+      });
+      writeTable('salesPayments', payments);
+
+      if (body.invoiceId) {
+        const invoices = readTable<any>('salesInvoices');
+        const invoice = invoices.find((i) => i.id === body.invoiceId);
+        if (invoice) {
+          invoice.amountPaid = Number(invoice.amountPaid ?? 0) + Number(body.amount);
+          invoice.status = invoice.amountPaid >= invoice.grandTotal ? 'PAID' : 'PARTIALLY_PAID';
+          writeTable('salesInvoices', invoices);
+        }
+      }
+
+      return existing;
+    }
+    if (seg2 && method === 'delete') {
+      const payments = readTable<any>('salesPayments');
+      const existing = payments.find((p) => p.id === seg2 && p.companyId === paymentsCompanyId);
+      if (!existing) throw new OfflineApiError('Sales payment not found');
+
+      if (existing.invoiceId) {
+        const invoices = readTable<any>('salesInvoices');
+        const invoice = invoices.find((i) => i.id === existing.invoiceId);
+        if (invoice) {
+          invoice.amountPaid = Math.max(0, Number(invoice.amountPaid ?? 0) - Number(existing.amount));
+          invoice.status =
+            invoice.amountPaid <= 0
+              ? 'CONFIRMED'
+              : invoice.amountPaid >= invoice.grandTotal
+                ? 'PAID'
+                : 'PARTIALLY_PAID';
+          writeTable('salesInvoices', invoices);
+        }
+      }
+
+      if (existing.cashMovementId) {
+        const movements = readTable<any>('cashMovements');
+        writeTable(
+          'cashMovements',
+          movements.filter((m) => m.id !== existing.cashMovementId),
+        );
+      }
+
+      writeTable(
+        'salesPayments',
+        payments.filter((p) => p.id !== seg2),
+      );
+      return { success: true };
     }
   }
 
@@ -6004,9 +6183,12 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       // equity attribution, no linked memo row needed.
       const isPress = OFFLINE_COMPANY_DEFS.find((c) => c.code === 'PRESS')?.id === injectionsCompanyId;
       if (isPress && body.account) {
+        // The partner's own branchId (when set) is authoritative — mirrors the backend's
+        // createCapitalInjection: a branch-bound partner's contribution can only ever be
+        // attributed to their own branch.
         return recordCashMovement({
           companyId: injectionsCompanyId,
-          branchId: body.branchId ?? null,
+          branchId: partner.branchId ?? body.branchId ?? null,
           movementDate: body.movementDate,
           type: 'INCOME',
           account: body.account,
@@ -6089,7 +6271,15 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
   // Contribution History log above, which reads the exact same filtered rows.
   if (seg0 === 'treasury' && seg1 === 'partners-balances' && method === 'get') {
     const partnersBalancesCompanyId = getOfflineSessionUser()?.companyId ?? OFFLINE_COMPANY_ID;
-    const partners = readTable<any>('partners').filter((p) => p.isActive && p.companyId === partnersBalancesCompanyId);
+    // Printing Press only — a partner's own branchId now scopes which cap table they belong to,
+    // so narrowing by branch here also narrows WHICH partners show up at all, not just their
+    // movement totals — mirrors the backend's getPartnersBalances.
+    const partners = readTable<any>('partners').filter(
+      (p) =>
+        p.isActive &&
+        p.companyId === partnersBalancesCompanyId &&
+        (!params?.branchId || p.branchId === params.branchId),
+    );
     const movements = readTable<any>('cashMovements').filter(
       (m) =>
         m.companyId === partnersBalancesCompanyId &&
@@ -6101,6 +6291,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       partnerId: p.id,
       name: p.name,
       sharePercentage: Number(p.sharePercentage),
+      branchId: p.branchId ?? null,
       balance: movements.filter((m) => m.partnerId === p.id).reduce((sum, m) => sum + Number(m.amount), 0),
     }));
     return { balances, total: balances.reduce((sum, b) => sum + b.balance, 0) };
@@ -6124,11 +6315,14 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         (p) => p.id === params?.partnerId && p.isActive && p.companyId === dividendsCompanyId,
       );
       if (!partner) throw new OfflineApiError('Selected partner was not found or is not active');
+      // Printing Press only — a branch-owned partner's available pool and distributed history are
+      // scoped to their own branch's profit and payouts, never mixed with another branch's.
+      const branchId = partner.branchId ?? undefined;
       const { dateFrom, dateTo } = quarterDateRange(Number(params?.year), Number(params?.quarter));
-      const { netProfit } = buildProfitReport(dividendsCompanyId, dateFrom, dateTo);
-      const totalAlreadyDistributed = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo);
+      const { netProfit } = buildProfitReport(dividendsCompanyId, dateFrom, dateTo, branchId);
+      const totalAlreadyDistributed = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo, undefined, branchId);
       const available = netProfit <= 0 ? 0 : Math.max(netProfit - totalAlreadyDistributed, 0);
-      const alreadyPaidToPartner = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo, partner.id);
+      const alreadyPaidToPartner = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo, partner.id, branchId);
       const sharePercentage = Number(partner.sharePercentage);
       const maxAmount = Math.max((sharePercentage / 100) * available - alreadyPaidToPartner, 0);
       return { sharePercentage, available, alreadyPaidToPartner, maxAmount };
@@ -6164,11 +6358,13 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       );
       if (!partner) throw new OfflineApiError('Selected partner was not found or is not active');
 
+      // Printing Press only — see partner-max's comment above.
+      const branchId = partner.branchId ?? undefined;
       const { dateFrom, dateTo } = quarterDateRange(Number(body.year), Number(body.quarter));
-      const { netProfit } = buildProfitReport(dividendsCompanyId, dateFrom, dateTo);
-      const totalAlreadyDistributed = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo);
+      const { netProfit } = buildProfitReport(dividendsCompanyId, dateFrom, dateTo, branchId);
+      const totalAlreadyDistributed = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo, undefined, branchId);
       const available = netProfit <= 0 ? 0 : Math.max(netProfit - totalAlreadyDistributed, 0);
-      const alreadyPaidToPartner = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo, partner.id);
+      const alreadyPaidToPartner = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo, partner.id, branchId);
       const maxAmount = Math.max((Number(partner.sharePercentage) / 100) * available - alreadyPaidToPartner, 0);
       const amount = Number(body.amount);
       if (amount > maxAmount) {
@@ -6180,10 +6376,11 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       // A dividend is real cash actually paid out to ONE partner, so it draws down the Bank
       // Balance (CASH) — not the Partners' Balance (BANK) memo account capital injections track
       // into. Never split across the other partners: each of them draws down their own share
-      // independently, whenever they choose to.
+      // independently, whenever they choose to. The partner's own branchId (when set) is
+      // authoritative over whatever branch the client sent.
       return recordCashMovement({
         companyId: dividendsCompanyId,
-        branchId: body.branchId ?? null,
+        branchId: partner.branchId ?? body.branchId ?? null,
         movementDate: body.movementDate,
         type: 'EXPENSE',
         account: 'CASH',
@@ -6435,7 +6632,8 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
   if (seg0 === 'dashboard') {
     const dashboardCompanyId = getOfflineSessionUser()?.companyId ?? OFFLINE_COMPANY_ID;
     if (seg1 === 'summary') return buildDashboardSummary(dashboardCompanyId, resolveOfflineBranchId(params?.branchId) ?? undefined);
-    if (seg1 === 'charts' && seg2 === 'sales') return buildSalesChart(dashboardCompanyId);
+    if (seg1 === 'charts' && seg2 === 'sales')
+      return buildSalesChart(dashboardCompanyId, resolveOfflineBranchId(params?.branchId) ?? undefined);
     if (seg1 === 'charts' && seg2 === 'purchases') return [];
     if (seg1 === 'top-selling-products') return buildTopSellingProducts(dashboardCompanyId);
     if (seg1 === 'expired-products') return [];

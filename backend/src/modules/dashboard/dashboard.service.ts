@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { CashMovementsService } from '../treasury/cash-movements.service';
 import { CashMovementAccount } from '../../entities/enums';
 import { SalesRepAccessService } from '../../common/services/sales-rep-access.service';
+import { Company } from '../settings/entities/company.entity';
+
+/** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
+const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
 
 // Fixed business timezone (Asia/Kuwait, UTC+3, no DST) rather than the Node process's own system
 // timezone (commonly UTC in production) — otherwise "today" flips a day early/late for roughly
@@ -32,6 +36,7 @@ export class DashboardService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly cashMovementsService: CashMovementsService,
     private readonly salesRepAccess: SalesRepAccessService,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
   ) {}
 
   /**
@@ -48,6 +53,8 @@ export class DashboardService {
     const branchId = (await this.salesRepAccess.resolveBranchId(userId, requestedBranchId, companyId)) ?? undefined;
     const todayDate = today();
     const monthStartDate = monthStart();
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
 
     const [
       dailySalesRow,
@@ -81,11 +88,30 @@ export class DashboardService {
         if (branchId) qb.andWhere('r."branchId" = :branchId', { branchId });
         return qb.getRawOne();
       })(),
-      // Cash-basis revenue: only actual customer payments collected this month — whether paid
-      // up front at invoice creation or collected later against outstanding debt — since both
-      // paths always create a sales_payments row. Unpaid/credit invoices never appear here; they
-      // only ever show up in outstandingCustomerBalances until they're actually paid.
+      // Printing Press: accrual-basis revenue — the FULL value of every invoice issued this month
+      // (i."grandTotal"), matching exactly what the Sales Chart and the Sales Invoices log both
+      // already total for the same branch (both read straight off sales_invoices, never off
+      // sales_payments). A Press invoice is filtered by its own i."branchId" column directly, not
+      // via a join through its optional salesRepresentativeId — that join is what silently zeroed
+      // this figure for walk-in invoices with no rep (see getProfitReport()'s identical fix).
+      //
+      // Every other company keeps the original cash-basis figure: only actual customer payments
+      // collected this month — whether paid up front at invoice creation or collected later
+      // against outstanding debt — since both paths always create a sales_payments row. Unpaid/
+      // credit invoices never appear here; they only ever show up in outstandingCustomerBalances
+      // until they're actually paid.
       (() => {
+        if (isPress) {
+          const qb = this.dataSource
+            .createQueryBuilder()
+            .select('COALESCE(SUM(i."grandTotal"),0)', 'total')
+            .from('sales_invoices', 'i')
+            .where('i."companyId" = :companyId', { companyId })
+            .andWhere('i."invoiceDate" >= :d', { d: monthStartDate })
+            .andWhere("i.status != 'CANCELLED'");
+          if (branchId) qb.andWhere('i."branchId" = :branchId', { branchId });
+          return qb.getRawOne();
+        }
         const qb = this.dataSource
           .createQueryBuilder()
           .select('COALESCE(SUM(p.amount),0)', 'total')
@@ -145,17 +171,25 @@ export class DashboardService {
     };
   }
 
-  async getSalesChart(companyId: string, days = 30) {
-    const rows = await this.dataSource
+  /**
+   * `branchId` (Printing Press only — the Dashboard's Branch filter, resolved the same way
+   * getSummary() resolves it: an admin gets whatever they request, a non-admin is pinned to their
+   * own branch) narrows this to one branch via the invoice's own i."branchId" column — the same
+   * source getSummary()'s Press-only monthlyRevenue query and the Sales Invoices log both read, so
+   * this chart's total for a given period always matches the "إيرادات الشهر" card and the invoices
+   * log for that period/branch.
+   */
+  async getSalesChart(companyId: string, userId: string, requestedBranchId?: string, days = 30) {
+    const branchId = (await this.salesRepAccess.resolveBranchId(userId, requestedBranchId, companyId)) ?? undefined;
+    const qb = this.dataSource
       .createQueryBuilder()
       .select('i."invoiceDate"', 'date')
       .addSelect('COALESCE(SUM(i."grandTotal"),0)', 'total')
       .from('sales_invoices', 'i')
       .where('i."companyId" = :companyId', { companyId })
-      .andWhere(`i."invoiceDate" >= (CURRENT_DATE - INTERVAL '${days} days')`)
-      .groupBy('i."invoiceDate"')
-      .orderBy('i."invoiceDate"', 'ASC')
-      .getRawMany();
+      .andWhere(`i."invoiceDate" >= (CURRENT_DATE - INTERVAL '${days} days')`);
+    if (branchId) qb.andWhere('i."branchId" = :branchId', { branchId });
+    const rows = await qb.groupBy('i."invoiceDate"').orderBy('i."invoiceDate"', 'ASC').getRawMany();
     return rows.map((r) => ({ date: r.date, total: Number(r.total) }));
   }
 

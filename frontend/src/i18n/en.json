@@ -395,6 +395,10 @@
     "salarySlipTitle": "Salary Slip",
     "exportPdf": "Export PDF",
     "pdfExportError": "Could not export the report as a PDF file, please try again.",
+    "reportViewLabel": "Report View",
+    "reportViewAll": "All (Salary + Attendance)",
+    "reportViewSalaryOnly": "Monthly Salary Details Only",
+    "reportViewAttendanceOnly": "Absence & Lateness Records Only",
     "newPayrollRun": "New Payroll Run",
     "backToList": "Back to List",
     "saveAndSubmit": "Save & Submit Payroll",
@@ -446,7 +450,7 @@
     "branchLabel": "Branch",
     "absenceDays": "Absence Days",
     "lateHours": "Late Hours",
-    "salesListTitle": "Commission-Eligible Sales",
+    "salesListTitle": "Branch Manager Sales",
     "commissionAmount": "Commission Amount",
     "noQualifyingSales": "No sales earn you a commission in this period"
   },
@@ -527,7 +531,7 @@
     "monthlyRevenue": "Monthly Revenue",
     "monthlyExpenses": "Monthly Expenses",
     "outstandingCustomers": "Outstanding Customer Balances",
-    "printingPressCashTreasury": "Printing Press Treasury (Cash)",
+    "printingPressCashTreasury": "Cash Treasury (Cash)",
     "financialBalance": "Financial Balance",
     "inventoryValue": "Inventory Value",
     "salesChart": "Sales (last 30 days)",
@@ -650,7 +654,8 @@
     "receiptDeleteFailed": "Failed to delete the purchase receipt. Please try again.",
     "reportTitle": "Recent Receiving Vouchers Report",
     "pdfExportError": "Failed to export the report as PDF. Please try again.",
-    "missingUnitsPerPackage": "This item has no valid units-per-package set — please update it from the item's data before continuing."
+    "missingUnitsPerPackage": "This item has no valid units-per-package set — please update it from the item's data before continuing.",
+    "searchByTablePlaceholder": "Search by supplier or item name…"
   },
   "installments": {
     "newPlan": "New Installment Plan",
@@ -715,7 +720,7 @@
     "party": "Customer / Supplier",
     "paymentAccount": "Account",
     "paymentAccounts": {
-      "CASH": "Cash",
+      "CASH": "Cash Treasury (Cash)",
       "BANK": "Bank"
     },
     "debit": "Cash In",
@@ -733,7 +738,7 @@
       "TRANSFER": "Transfer Between Accounts"
     },
     "bankBalance": "Bank Balance",
-    "cashBalance": "Cash Box Balance",
+    "cashBalance": "Cash Treasury (Cash)",
     "transferBetweenAccounts": "Transfer Between Accounts",
     "transferModalTitle": "Transfer Funds Between Accounts",
     "fromAccount": "From",
@@ -915,7 +920,10 @@
   "salesPayments": {
     "reportTitle": "Sales Payments Report",
     "pdfExportError": "Failed to export the report as PDF. Please try again.",
-    "responsiblePersonColumn": "Branch Manager / Responsible"
+    "responsiblePersonColumn": "Branch Manager / Responsible",
+    "paymentSavedSuccess": "Receipt saved successfully",
+    "depositAccountLabel": "Deposit Account",
+    "selectDepositAccount": "Select deposit account…"
   },
   "commissionExceptions": {
     "title": "Commission Exceptions",

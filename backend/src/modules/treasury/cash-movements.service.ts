@@ -745,9 +745,10 @@ export class CashMovementsService {
    * distribution is not an expense.
    *
    * `branchId` (Printing Press only — the Financial Reports screen's Branch filter) narrows all
-   * three figures to one branch: Revenue via the invoice's sales representative's branch (the only
-   * branch signal actually populated on sales_invoices today — the same join
-   * SalesInvoicesService.getSalesLines() already uses for the Sales Report's branch filter),
+   * three figures to one branch: Revenue via the invoice's own branchId column (set directly on
+   * every invoice at creation — see SalesInvoicesService.create()'s resolveBranchId() call — not
+   * via a join through its optional salesRepresentativeId, which a Press invoice frequently has no
+   * value for at all and would silently zero out revenue for a branch that filter is applied to),
    * COGS via PurchaseReceipt.branchId (set on the Purchase Invoice form), and operating expenses
    * via CashMovement.branchId (set on the Treasury Expenses form). Omitted/undefined means every
    * branch combined — identical to today's behavior.
@@ -758,15 +759,14 @@ export class CashMovementsService {
       .select('COALESCE(SUM(i.subtotal), 0)', 'revenue')
       .addSelect('COALESCE(SUM(i."costOfGoodsSold"), 0)', 'cogs')
       .from('sales_invoices', 'i')
-      .leftJoin('sales_representatives', 'rep', 'rep.id = i."salesRepresentativeId"')
       .where('i."companyId" = :companyId', { companyId })
       .andWhere('i."invoiceDate" >= :dateFrom', { dateFrom })
       .andWhere('i."invoiceDate" <= :dateTo', { dateTo });
-    if (branchId) salesQb.andWhere('rep."branchId" = :branchId', { branchId });
+    if (branchId) salesQb.andWhere('i."branchId" = :branchId', { branchId });
     const salesRow = await salesQb.getRawOne();
 
     const { totalExpenses, rows: expenseRows } = await this.getExpenseReport(companyId, dateFrom, dateTo, branchId);
-    const distributedDividends = await this.getDistributedDividendsTotal(companyId, dateFrom, dateTo);
+    const distributedDividends = await this.getDistributedDividendsTotal(companyId, dateFrom, dateTo, undefined, branchId);
 
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
     const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
@@ -900,12 +900,17 @@ export class CashMovementsService {
   }
 
   /** Sum of dividend payouts (sourceType DIVIDEND) recorded within a date range — used both for the Reports breakdown and to cap how much more a quarter can still distribute. */
-  /** Company-wide dividend total for the period, or one partner's slice of it when `partnerId` is given. */
+  /**
+   * Company-wide dividend total for the period, or one partner's slice of it when `partnerId` is
+   * given. `branchId` (Printing Press only) further narrows to payouts drawn from one branch — a
+   * branch-owned partner's distribution history must never include another branch's payouts.
+   */
   async getDistributedDividendsTotal(
     companyId: string,
     dateFrom: string,
     dateTo: string,
     partnerId?: string,
+    branchId?: string,
   ): Promise<number> {
     const qb = this.dataSource
       .createQueryBuilder()
@@ -916,6 +921,7 @@ export class CashMovementsService {
       .andWhere('m."movementDate" >= :dateFrom', { dateFrom })
       .andWhere('m."movementDate" <= :dateTo', { dateTo });
     if (partnerId) qb.andWhere('m."partnerId" = :partnerId', { partnerId });
+    if (branchId) qb.andWhere('m."branchId" = :branchId', { branchId });
     const row = await qb.getRawOne();
     return Number(row?.total ?? 0);
   }

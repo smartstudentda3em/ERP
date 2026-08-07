@@ -61,7 +61,14 @@ interface PartnerBalance {
   partnerId: string;
   name: string;
   sharePercentage: number;
+  branchId: string | null;
   balance: number;
+}
+
+interface PartnerRow {
+  id: string;
+  name: string;
+  branchId: string | null;
 }
 
 interface PartnersBalances {
@@ -117,6 +124,19 @@ export function PartnersPage() {
     enabled: isPrintingPress && !!companyId,
   });
 
+  // Printing Press only — narrows the per-partner balances (and thus the sharePercentage/balance
+  // shown) to one branch's own cap table, mirroring the same branchFilter/effectiveBranchId
+  // pattern used on the Dashboard. Left unselected, this stays the exact same "all partners,
+  // company-wide" fetch every other company always sees.
+  const [branchFilter, setBranchFilter] = useState('');
+  const effectiveBranchId = isPrintingPress && branchFilter ? branchFilter : undefined;
+
+  function branchName(id: string | null): string {
+    if (!id) return '—';
+    const b = (branchesQuery.data ?? []).find((br) => br.id === id);
+    return b ? b.nameAr || b.nameEn : '—';
+  }
+
   // Same query key as the Dashboard — one cache entry, so this screen and the Dashboard card
   // always reflect the exact same number, live.
   const summaryQuery = useQuery({
@@ -154,11 +174,32 @@ export function PartnersPage() {
     enabled: !!companyId && tab === 'contributions',
   });
 
+  // Unfiltered by the page-level branch filter — backs the Add Contribution / Edit Contribution /
+  // Distribute Dividend modals' own partner dropdown, which must always be able to reach every
+  // partner (then narrows locally to whichever branch that modal's own branch field has selected),
+  // regardless of which branch the page itself happens to be filtered to right now.
+  const allPartnersQuery = useQuery({
+    queryKey: ['partners', companyId],
+    queryFn: () => unwrap<PartnerRow[]>(apiClient.get('/settings/partners')),
+    enabled: !!companyId,
+  });
+  // Not yet having picked a branch in the form shows every partner (so the field order — partner
+  // first, branch further down — still works); once a branch IS picked, narrows to that branch's
+  // own partners only, so a mismatched partner/branch combination can never be submitted.
+  function partnersForBranch(branchId: string): PartnerRow[] {
+    const all = allPartnersQuery.data ?? [];
+    if (!isPrintingPress || !branchId) return all;
+    return all.filter((p) => p.branchId === branchId);
+  }
+
   // Also backs the Dividends tab's "filter by partner" dropdown and the combined print/PDF
   // report's partner balance table — not gated to a specific tab for that last reason.
   const partnersBalancesQuery = useQuery({
-    queryKey: ['partners-balances', companyId],
-    queryFn: () => unwrap<PartnersBalances>(apiClient.get('/treasury/partners-balances', { params: { companyId } })),
+    queryKey: effectiveBranchId ? ['partners-balances', companyId, effectiveBranchId] : ['partners-balances', companyId],
+    queryFn: () =>
+      unwrap<PartnersBalances>(
+        apiClient.get('/treasury/partners-balances', { params: { companyId, branchId: effectiveBranchId } }),
+      ),
     enabled: !!companyId,
   });
 
@@ -256,6 +297,9 @@ export function PartnersPage() {
 
   const partnerBalanceColumns: Column<PartnerBalance>[] = [
     { header: t('fields.partnerName'), accessor: (r) => r.name },
+    ...(isPrintingPress
+      ? [{ header: t('fields.branch'), accessor: (r: PartnerBalance) => branchName(r.branchId) } as Column<PartnerBalance>]
+      : []),
     { header: t('fields.sharePercentage'), accessor: (r) => `${formatAmount(r.sharePercentage)}%`, align: 'right' },
     { header: t('treasury.amount'), accessor: (r) => money(r.balance), align: 'right' },
   ];
@@ -481,16 +525,30 @@ export function PartnersPage() {
       />
 
       <div className="print:hidden">
-      <div className="mb-4 flex gap-2 text-sm">
-        {tabs.map((tb) => (
-          <button
-            key={tb.key}
-            className={`rounded-lg px-3 py-1.5 ${tab === tb.key ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
-            onClick={() => setTab(tb.key)}
-          >
-            {tb.label}
-          </button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2 text-sm">
+          {tabs.map((tb) => (
+            <button
+              key={tb.key}
+              className={`rounded-lg px-3 py-1.5 ${tab === tb.key ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+              onClick={() => setTab(tb.key)}
+            >
+              {tb.label}
+            </button>
+          ))}
+        </div>
+        {isPrintingPress && (
+          <FormField label={t('dashboard.branchFilter')}>
+            <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              <option value="">{t('accounting.allBranches')}</option>
+              {(branchesQuery.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nameAr || b.nameEn}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
       </div>
 
       {tab === 'contributions' && (
@@ -647,6 +705,7 @@ export function PartnersPage() {
             <thead>
               <tr>
                 <th>{t('fields.partnerName')}</th>
+                {isPrintingPress && <th>{t('fields.branch')}</th>}
                 <th>{t('fields.sharePercentage')}</th>
                 <th>{t('treasury.amount')}</th>
               </tr>
@@ -655,6 +714,7 @@ export function PartnersPage() {
               {(partnersBalancesQuery.data?.balances ?? []).map((r) => (
                 <tr key={r.partnerId}>
                   <td>{r.name}</td>
+                  {isPrintingPress && <td>{branchName(r.branchId)}</td>}
                   <td>{formatAmount(r.sharePercentage)}%</td>
                   <td>{money(r.balance)}</td>
                 </tr>
@@ -723,8 +783,8 @@ export function PartnersPage() {
                 onChange={(e) => setContribForm({ ...contribForm, partnerId: e.target.value })}
               >
                 <option value="">{t('actions.selectPartner')}</option>
-                {(partnersBalancesQuery.data?.balances ?? []).map((p) => (
-                  <option key={p.partnerId} value={p.partnerId}>
+                {partnersForBranch(contribForm.branchId).map((p) => (
+                  <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
@@ -765,7 +825,11 @@ export function PartnersPage() {
               <Select
                 required
                 value={contribForm.branchId}
-                onChange={(e) => setContribForm({ ...contribForm, branchId: e.target.value })}
+                onChange={(e) => {
+                  const nextBranchId = e.target.value;
+                  const stillValid = partnersForBranch(nextBranchId).some((p) => p.id === contribForm.partnerId);
+                  setContribForm({ ...contribForm, branchId: nextBranchId, partnerId: stillValid ? contribForm.partnerId : '' });
+                }}
               >
                 <option value="">{t('actions.selectBranch')}</option>
                 {(branchesQuery.data ?? []).map((b) => (
@@ -819,8 +883,8 @@ export function PartnersPage() {
                 onChange={(e) => setEditContribForm({ ...editContribForm, partnerId: e.target.value })}
               >
                 <option value="">{t('actions.selectPartner')}</option>
-                {(partnersBalancesQuery.data?.balances ?? []).map((p) => (
-                  <option key={p.partnerId} value={p.partnerId}>
+                {partnersForBranch(editContribForm.branchId).map((p) => (
+                  <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
@@ -861,7 +925,15 @@ export function PartnersPage() {
               <Select
                 required
                 value={editContribForm.branchId}
-                onChange={(e) => setEditContribForm({ ...editContribForm, branchId: e.target.value })}
+                onChange={(e) => {
+                  const nextBranchId = e.target.value;
+                  const stillValid = partnersForBranch(nextBranchId).some((p) => p.id === editContribForm.partnerId);
+                  setEditContribForm({
+                    ...editContribForm,
+                    branchId: nextBranchId,
+                    partnerId: stillValid ? editContribForm.partnerId : '',
+                  });
+                }}
               >
                 <option value="">{t('actions.selectBranch')}</option>
                 {(branchesQuery.data ?? []).map((b) => (
@@ -910,8 +982,8 @@ export function PartnersPage() {
                 onChange={(e) => setDividendForm({ ...dividendForm, partnerId: e.target.value, amount: '0' })}
               >
                 <option value="">{t('actions.selectPartner')}</option>
-                {(partnersBalancesQuery.data?.balances ?? []).map((p) => (
-                  <option key={p.partnerId} value={p.partnerId}>
+                {partnersForBranch(dividendForm.branchId).map((p) => (
+                  <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
@@ -962,7 +1034,16 @@ export function PartnersPage() {
               <Select
                 required
                 value={dividendForm.branchId}
-                onChange={(e) => setDividendForm({ ...dividendForm, branchId: e.target.value })}
+                onChange={(e) => {
+                  const nextBranchId = e.target.value;
+                  const stillValid = partnersForBranch(nextBranchId).some((p) => p.id === dividendForm.partnerId);
+                  setDividendForm({
+                    ...dividendForm,
+                    branchId: nextBranchId,
+                    partnerId: stillValid ? dividendForm.partnerId : '',
+                    amount: '0',
+                  });
+                }}
               >
                 <option value="">{t('actions.selectBranch')}</option>
                 {(branchesQuery.data ?? []).map((b) => (

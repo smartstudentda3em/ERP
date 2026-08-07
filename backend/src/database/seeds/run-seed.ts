@@ -109,7 +109,7 @@ const PERMISSION_MATRIX: Record<string, PermissionAction[]> = {
     PermissionAction.DELETE,
     PermissionAction.SELL_BELOW_COST,
   ],
-  'sales.payment': [PermissionAction.VIEW, PermissionAction.CREATE],
+  'sales.payment': [PermissionAction.VIEW, PermissionAction.CREATE, PermissionAction.EDIT, PermissionAction.DELETE],
   // Separate from sales.payment.view: gates only the standalone /sales/payments list page and
   // its sidebar entry, so a role can keep sales.payment.view/create (needed for the embedded
   // receipts list and "collect payment" action on Customer Balance / Sales Invoice pages)
@@ -335,6 +335,8 @@ async function main() {
     'sales.invoice.delete',
     'sales.payment.view',
     'sales.payment.create',
+    'sales.payment.edit',
+    'sales.payment.delete',
     'sales.paymentList.view',
     'sales-representatives.view',
     // Finance & Treasury — expenses and payroll fully managed, cash-box movements tracked (view)

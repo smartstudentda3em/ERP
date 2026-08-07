@@ -91,9 +91,17 @@ export function DashboardPage() {
     enabled: !!companyId,
   });
 
+  // Same branchId/query-key pattern as summaryQuery above — so the chart's total for a given day
+  // always matches "إيرادات الشهر" and the Sales Invoices log for whichever branch is selected.
   const salesChartQuery = useQuery({
-    queryKey: ['dashboard-sales-chart'],
-    queryFn: () => unwrap<{ date: string; total: number }[]>(apiClient.get('/dashboard/charts/sales')),
+    queryKey: effectiveBranchId
+      ? ['dashboard-sales-chart', companyId, effectiveBranchId]
+      : ['dashboard-sales-chart', companyId],
+    queryFn: () =>
+      unwrap<{ date: string; total: number }[]>(
+        apiClient.get('/dashboard/charts/sales', { params: { branchId: effectiveBranchId } }),
+      ),
+    enabled: !!companyId,
   });
 
   const topProductsQuery = useQuery({

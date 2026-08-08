@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
@@ -47,6 +47,17 @@ export function PartnersTab() {
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
     enabled: isPrintingPress && !!companyId,
   });
+
+  // Press partners always belong to a real branch (server-enforced), so leaving this on "all
+  // branches" (branchFilter === '') makes the summary line below compare against a branchId of
+  // null that no Press partner can ever have — silently showing 0% / 100% remaining regardless
+  // of how many partners actually exist. Defaulting to the first branch as soon as the branch
+  // list loads keeps the summary meaningful without needing the user to pick one manually first.
+  useEffect(() => {
+    if (isPrintingPress && !branchFilter && branchesQuery.data && branchesQuery.data.length > 0) {
+      setBranchFilter(branchesQuery.data[0].id);
+    }
+  }, [isPrintingPress, branchFilter, branchesQuery.data]);
 
   // Unfiltered — the table's own branch filter and the form's own live 100%-cap math both need
   // the full list to group/recompute against, independent of whichever branch the table is

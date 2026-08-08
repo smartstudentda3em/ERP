@@ -116,7 +116,18 @@
       "PowerShell(Get-Process \"Docker Desktop\")",
       "Bash(where curl *)",
       "Bash(cmd.exe /c \"Open Website.bat\")",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173)",
+      "Bash(curl -s -X POST https://erp.smartstudent.live/api/auth/login -H \"Content-Type: application/json\" -d '{\"phone\":\"99970766\",\"password\":\"Ayman987654#\"}')",
+      "Bash(curl -s https://erp.smartstudent.live/)",
+      "Bash(curl -s https://erp.smartstudent.live/assets/index-CJ-gZ7Fz.js -o /tmp/live-bundle.js)",
+      "Bash(curl -s https://erp.smartstudent.live/assets/index-CJ-gZ7Fz.js -o \"C:\\\\Users\\\\surface\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\E--ERP\\\\64c070fe-5c10-46a9-81f3-c9be8d1e25e5\\\\scratchpad\\\\live-bundle.js\")",
+      "Bash(curl -s \"https://erp.smartstudent.live/assets/index-CJ-gZ7Fz.js\" -o \"C:/Users/surface/AppData/Local/Temp/claude/E--ERP/64c070fe-5c10-46a9-81f3-c9be8d1e25e5/scratchpad/live-bundle.js\")",
+      "Bash(curl -sI https://erp.smartstudent.live/assets/index-CJ-gZ7Fz.js)",
+      "Bash(curl -s \"https://erp.smartstudent.live/?_=$\\(date +%s\\)\" -H \"Cache-Control: no-cache\")",
+      "Bash(curl -s \"https://erp.smartstudent.live/?_=$\\(date +%s\\)\")",
+      "Bash(docker info *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173 --max-time 5)",
+      "Bash(curl -s \"https://erp.smartstudent.live/assets/index-IH63R-zq.js\" -o \"C:/Users/surface/AppData/Local/Temp/claude/E--ERP/64c070fe-5c10-46a9-81f3-c9be8d1e25e5/scratchpad/live-bundle2.js\")"
     ]
   }
 }

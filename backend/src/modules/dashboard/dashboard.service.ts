@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { CashMovementsService } from '../treasury/cash-movements.service';
@@ -32,6 +32,8 @@ function monthStart(): string {
 
 @Injectable()
 export class DashboardService {
+  private readonly logger = new Logger(DashboardService.name);
+
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly cashMovementsService: CashMovementsService,
@@ -153,7 +155,16 @@ export class DashboardService {
         if (branchId) qb.andWhere('rep."branchId" = :branchId', { branchId });
         return qb.getRawOne();
       })(),
-      this.cashMovementsService.getExpenseReport(companyId, monthStartDate, todayDate, branchId).catch(() => null),
+      // "مصروفات الشهر": the exact same query the Expenses screen's own report reads (manually
+      // recorded operating expenses + payroll postings, grouped by category — see
+      // getExpenseReport()'s own doc comment), scoped to this calendar month and the requested
+      // branch. A failure here used to be swallowed into a silent `null` (rendering as an
+      // innocent-looking 0.00 with no indication anything was wrong) — now logged so a genuine
+      // query failure is diagnosable instead of masquerading as "no expenses this month".
+      this.cashMovementsService.getExpenseReport(companyId, monthStartDate, todayDate, branchId).catch((err) => {
+        this.logger.error(`getExpenseReport failed for company ${companyId}: ${err?.message ?? err}`, err?.stack);
+        return null;
+      }),
     ]);
 
     const profitToday = Number(todaySalesRows?.revenue ?? 0) - Number(todaySalesRows?.cogs ?? 0);

@@ -237,6 +237,16 @@ const PERMISSION_MATRIX: Record<string, PermissionAction[]> = {
   // logins) — deliberately its own module rather than folded into settings.*, and deliberately
   // never granted to Manager, so only a true Administrator can ever reach it.
   system: [PermissionAction.DELETE],
+  // Database backup/restore — VIEW covers listing + downloading, CREATE triggers a manual
+  // backup, DELETE removes a saved one, and APPROVE (reused rather than adding a new
+  // PermissionAction enum value, which would need a Postgres ALTER TYPE) authorizes the
+  // destructive restore action. Same reasoning as system above: never granted to Manager.
+  'admin.backup': [
+    PermissionAction.VIEW,
+    PermissionAction.CREATE,
+    PermissionAction.DELETE,
+    PermissionAction.APPROVE,
+  ],
   // "الموظفين" — applies to every company/branch. Sensitive payroll data, so deliberately never
   // granted to Manager (same reasoning as system above) — only Administrator has it by default.
   'hr.employee': [
@@ -296,8 +306,12 @@ async function main() {
   // alter or erase what's already been recorded (supplier terms, received-material counts, invoice
   // history) is exactly what the business wants to prevent, and inventory.product is shared by both
   // the raw-materials screen and the Press-only sellable-products catalog so this single view+create
-  // grant applies to both uses; Sales (quotations/invoices/payments), Treasury expenses, and Payroll
-  // get full management since nothing in the spec restricts those verbs; hr.employee.view is a
+  // grant applies to both uses; Sales (quotations/invoices/payments) and Treasury expenses get full
+  // management since nothing in the spec restricts those verbs; Payroll gets view+create+edit+delete
+  // but deliberately NOT approve — a Manager can save a run (status stays CONFIRMED, nothing posted
+  // to CashMovement) but only Administrator can approve it and trigger the actual financial posting
+  // (see PayrollService.approve()) — a two-step save/approve workflow, mirroring how Monthly Stock
+  // Audit below reserves its own approve step for Administrator only. hr.employee.view is a
   // technical prerequisite only (PayrollPage's "new run" flow reads GET /hr/employees to build line
   // items) — it does NOT grant employee CRUD, which was never requested; Financial Reports and
   // treasury cash-box tracking stay view-only; Monthly Stock Audit gets view+create ("conduct and
@@ -349,7 +363,6 @@ async function main() {
     'hr.payroll.create',
     'hr.payroll.edit',
     'hr.payroll.delete',
-    'hr.payroll.approve',
     'hr.employee.view',
     // Financial Reports — view only
     'accounting.reports.view',

@@ -10,6 +10,7 @@ import { Input, FormField, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
+import { localToday } from '../../lib/date-utils';
 
 interface SalesRepresentative {
   id: string;
@@ -41,7 +42,7 @@ interface CommissionPayout {
   createdAt: string;
 }
 
-const emptyForm = { branchId: '', amount: '', account: 'CASH' as 'CASH' | 'BANK' };
+const emptyForm = { branchId: '', amount: '', account: 'CASH' as 'CASH' | 'BANK', movementDate: localToday() };
 
 function money(n: number): string {
   return formatAmount(n);
@@ -119,7 +120,13 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const payload = { movementDate: dateTo, amount: Number(form.amount) || 0, account: form.account };
+      // The actual date this payout leaves the treasury account — defaults to today, editable
+      // like every other treasury form (dividends, contributions, manual expenses). Previously
+      // this silently reused `dateTo` (the last day of whichever report month was selected), so a
+      // mid-month payout got dated at the end of that month — a future date the "as of today"
+      // balance query correctly excludes, making the deduction invisible everywhere until that
+      // date arrived even though the ledger row itself was created correctly.
+      const payload = { movementDate: form.movementDate, amount: Number(form.amount) || 0, account: form.account };
       if (editingId) {
         return apiClient.patch(`/treasury/commission-payouts/${editingId}`, payload);
       }
@@ -149,7 +156,7 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
 
   function openCreate() {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, movementDate: localToday() });
     setError(null);
     setModalOpen(true);
   }
@@ -157,7 +164,12 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
   function openEdit(row: (typeof rows)[number]) {
     if (!row.lastPayout) return;
     setEditingId(row.lastPayout.id);
-    setForm({ branchId: row.branchId, amount: String(row.lastPayout.amount), account: row.lastPayout.account });
+    setForm({
+      branchId: row.branchId,
+      amount: String(row.lastPayout.amount),
+      account: row.lastPayout.account,
+      movementDate: row.lastPayout.date,
+    });
     setError(null);
     setModalOpen(true);
   }
@@ -251,6 +263,15 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
               <Input disabled value={selectedManagerName || t('salesRepresentativesReports.noManagerForBranch')} />
             </FormField>
           )}
+
+          <FormField label={t('common.date')}>
+            <Input
+              type="date"
+              required
+              value={form.movementDate}
+              onChange={(e) => setForm({ ...form, movementDate: e.target.value })}
+            />
+          </FormField>
 
           <FormField label={t('salesRepresentativesReports.amountToPay')}>
             <Input

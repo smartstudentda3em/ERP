@@ -366,7 +366,11 @@ export function PayrollPage() {
             {t('common.cancel')}
           </Button>
           <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || lines.length === 0}>
-            {t('hr.saveAndSubmit')}
+            {/* Press pays out immediately at save time (see PayrollService.create()'s balance-check
+                design), so "save and approve" is literally accurate there; every other company saves
+                as a pending draft only — nothing posts to expenses until an Administrator approves it
+                on the run's detail page (see PayrollRunDetailPage.tsx). */}
+            {isPrintingPress ? t('hr.saveAndSubmit') : t('hr.saveDraft')}
           </Button>
         </div>
       </div>

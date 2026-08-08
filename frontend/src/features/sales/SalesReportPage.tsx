@@ -44,6 +44,7 @@ interface SalesLine {
   unitsPerPackage: number | null;
   packageTypeName: string | null;
   salesRepresentativeName: string | null;
+  branchName: string | null;
   customerName: string | null;
   lineTotal: number;
   costOfGoodsSold: number;
@@ -175,10 +176,9 @@ export function SalesReportPage() {
       ),
       align: 'right',
     },
-    {
-      header: t(isPrintingPress ? 'fields.salesRepresentativePress' : 'fields.salesRepresentative'),
-      accessor: (r) => r.salesRepresentativeName ?? '—',
-    },
+    isPrintingPress
+      ? { header: t('fields.branch'), accessor: (r: SalesLine) => r.branchName ?? '—' }
+      : { header: t('fields.salesRepresentative'), accessor: (r: SalesLine) => r.salesRepresentativeName ?? '—' },
     ...(isPrintingPress
       ? [
           {

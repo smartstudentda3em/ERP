@@ -193,6 +193,29 @@ export class PartnersTreasuryController {
   }
 
   /**
+   * A Printing Press partner with no branchId has no valid profit pool to draw against — Press's
+   * dividend model is entirely per-branch (see Partner.branchId's own doc comment), so unlike
+   * every other company (where a null branchId correctly means "the one company-wide pool"),
+   * falling back to `getProfitReport(..., undefined)` here would silently hand a Press partner
+   * the FULL company profit as their own scope. In a single-branch company that's numerically
+   * identical to their real branch's profit — so a partner who (by data-entry mistake) ended up
+   * with both a legacy branchless row and a proper branch-scoped row would have their share
+   * computed against the same pool twice, then summed by the frontend's per-person merge into an
+   * inflated total (this is exactly how "72.13" for a partner whose real share is "36.06" can
+   * happen: 2 × the correct amount). Surfacing this as a hard error is more useful than silently
+   * returning 0 — an admin needs to actually assign the missing branch in Settings > Partners.
+   */
+  private async assertPressPartnerHasBranch(companyId: string, partner: Partner): Promise<void> {
+    if (partner.branchId) return;
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code === PRINTING_PRESS_COMPANY_CODE) {
+      throw new BadRequestException(
+        `Partner "${partner.name}" has no branch assigned — assign one in Settings > Partners before computing or distributing their dividend share.`,
+      );
+    }
+  }
+
+  /**
    * How much MORE a specific partner can still be paid out this quarter — their share of the
    * quarter's available profit, minus whatever's already been paid to them (not to the other
    * partners) within the same period. Backs the dividend modal's read-only "الحد الأقصى المتاح
@@ -209,6 +232,7 @@ export class PartnersTreasuryController {
   ) {
     const partner = await this.partnerRepo.findOne({ where: { id: partnerId, companyId, isActive: true } });
     if (!partner) throw new BadRequestException('Selected partner was not found or is not active');
+    await this.assertPressPartnerHasBranch(companyId, partner);
 
     // Printing Press only — a branch-owned partner's available pool and distributed history are
     // scoped to their own branch's profit and payouts, never mixed with another branch's, exactly
@@ -238,12 +262,77 @@ export class PartnersTreasuryController {
     return { sharePercentage, available, alreadyPaidToPartner, maxAmount };
   }
 
+  /**
+   * Per-partner breakdown of the selected quarter's profit distribution — one row per active
+   * partner with their own share % applied to net profit, what's already been paid to them this
+   * period, and how much of their share remains available (the exact same `maxAmount` formula
+   * getPartnerMaxDividend/createDividend already enforce, just computed for every partner in one
+   * call instead of one at a time). Backs the "توزيع الأرباح حسب الشركاء" table on the Dividends
+   * tab, and lets the top summary cards switch to one partner's own figures when the partner
+   * filter is set — both read this same array so they can never disagree.
+   */
+  @Get('dividends/partners-breakdown')
+  @Permissions('partners.view')
+  async getPartnersDividendsBreakdown(
+    @CurrentUser('companyId') companyId: string,
+    @Query('year') year: string,
+    @Query('quarter') quarter: string,
+  ) {
+    const partners = await this.partnerRepo.find({ where: { companyId, isActive: true }, order: { createdAt: 'ASC' } });
+    const { dateFrom, dateTo } = quarterDateRange(Number(year), Number(quarter));
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
+
+    const rows = await Promise.all(
+      partners.map(async (p) => {
+        // Printing Press only — see getPartnerMaxDividend's comment: a branch-owned partner's
+        // pool and distribution history are scoped to their own branch's profit/payouts. A
+        // branchless Press partner (see assertPressPartnerHasBranch's doc comment) has no valid
+        // pool to report a share against — surfaced as a missing row here (rather than a thrown
+        // error, since this endpoint covers every partner at once) so it doesn't silently borrow
+        // the whole company's profit and double-count alongside that same person's real,
+        // branch-scoped row once merged by name on the frontend.
+        if (isPress && !p.branchId) return null;
+        const branchId = p.branchId ?? undefined;
+        const { netProfit } = await this.cashMovementsService.getProfitReport(companyId, dateFrom, dateTo, branchId);
+        const totalAlreadyDistributed = await this.cashMovementsService.getDistributedDividendsTotal(
+          companyId,
+          dateFrom,
+          dateTo,
+          undefined,
+          branchId,
+        );
+        const available = netProfit <= 0 ? 0 : Math.max(netProfit - totalAlreadyDistributed, 0);
+        const alreadyPaidToPartner = await this.cashMovementsService.getDistributedDividendsTotal(
+          companyId,
+          dateFrom,
+          dateTo,
+          p.id,
+          branchId,
+        );
+        const sharePercentage = Number(p.sharePercentage);
+        const netProfitShare = netProfit > 0 ? (sharePercentage / 100) * netProfit : 0;
+        const availableToDistribute = Math.max((sharePercentage / 100) * available - alreadyPaidToPartner, 0);
+        return {
+          partnerId: p.id,
+          name: p.name,
+          sharePercentage,
+          netProfitShare,
+          alreadyPaidToPartner,
+          availableToDistribute,
+        };
+      }),
+    );
+    return rows.filter((r): r is NonNullable<typeof r> => r !== null);
+  }
+
   @Post('dividends')
   @Permissions('partners.create')
   async createDividend(@Body() dto: CreateDividendDto, @CurrentUser() user: AuthenticatedUser) {
     const companyId = user.companyId!;
     const partner = await this.partnerRepo.findOne({ where: { id: dto.partnerId, companyId, isActive: true } });
     if (!partner) throw new BadRequestException('Selected partner was not found or is not active');
+    await this.assertPressPartnerHasBranch(companyId, partner);
 
     // Printing Press only — see getPartnerMaxDividend's comment: a branch-owned partner's payout
     // is capped by their own branch's profit/distribution history, never another branch's.

@@ -1,69 +1,81 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, Unique } from 'typeorm';
-import { BaseEntity } from '../../../../entities/base.entity';
-import { Warehouse } from '../../../settings/entities/warehouse.entity';
-import { Product } from '../../products/entities/product.entity';
-import { DocumentStatus } from '../../../../entities/enums';
-import { Company } from '../../../settings/entities/company.entity';
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  Unique,
+} from "typeorm";
+import { BaseEntity } from "../../../../entities/base.entity";
+import { Warehouse } from "../../../settings/entities/warehouse.entity";
+import { Product } from "../../products/entities/product.entity";
+import { DocumentStatus } from "../../../../entities/enums";
+import { Company } from "../../../settings/entities/company.entity";
 
-@Entity('stock_transfers')
-@Unique(['companyId', 'documentNumber'])
+@Entity("stock_transfers")
+@Unique(["companyId", "documentNumber"])
 export class StockTransfer extends BaseEntity {
-  @Column('uuid')
+  @Column("uuid")
   companyId: string;
 
-  @ManyToOne(() => Company, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'companyId' })
+  @ManyToOne(() => Company, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "companyId" })
   company: Company;
 
-  @Column({ length: 50 })
+  @Column({
+    type: "varchar",
+    length: 50,
+  })
   documentNumber: string;
 
-  @Column({ type: 'date' })
+  @Column({ type: "date" })
   transferDate: string;
 
-  @Column('uuid')
+  @Column("uuid")
   fromWarehouseId: string;
 
-  @ManyToOne(() => Warehouse, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'fromWarehouseId' })
+  @ManyToOne(() => Warehouse, { onDelete: "RESTRICT" })
+  @JoinColumn({ name: "fromWarehouseId" })
   fromWarehouse: Warehouse;
 
-  @Column('uuid')
+  @Column("uuid")
   toWarehouseId: string;
 
-  @ManyToOne(() => Warehouse, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'toWarehouseId' })
+  @ManyToOne(() => Warehouse, { onDelete: "RESTRICT" })
+  @JoinColumn({ name: "toWarehouseId" })
   toWarehouse: Warehouse;
 
-  @Column({ type: 'enum', enum: DocumentStatus, default: DocumentStatus.DRAFT })
+  @Column({ type: "enum", enum: DocumentStatus, default: DocumentStatus.DRAFT })
   status: DocumentStatus;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   notes: string | null;
 
-  @Column('uuid')
+  @Column("uuid")
   createdById: string;
 
-  @OneToMany(() => StockTransferLine, (line) => line.transfer, { cascade: true })
+  @OneToMany(() => StockTransferLine, (line) => line.transfer, {
+    cascade: true,
+  })
   lines: StockTransferLine[];
 }
 
-@Entity('stock_transfer_lines')
+@Entity("stock_transfer_lines")
 export class StockTransferLine extends BaseEntity {
-  @Column('uuid')
+  @Column("uuid")
   transferId: string;
 
-  @ManyToOne(() => StockTransfer, (t) => t.lines, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'transferId' })
+  @ManyToOne(() => StockTransfer, (t) => t.lines, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "transferId" })
   transfer: StockTransfer;
 
-  @Column('uuid')
+  @Column("uuid")
   productId: string;
 
-  @ManyToOne(() => Product, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'productId' })
+  @ManyToOne(() => Product, { onDelete: "RESTRICT" })
+  @JoinColumn({ name: "productId" })
   product: Product;
 
-  @Column({ type: 'numeric', precision: 18, scale: 4 })
+  @Column({ type: "numeric", precision: 18, scale: 4 })
   quantity: number;
 }

@@ -6,9 +6,18 @@ const colorMap: Record<string, string> = {
   blue: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
 };
 
-export function Badge({ color = 'gray', children }: { color?: keyof typeof colorMap; children: React.ReactNode }) {
+export function Badge({
+  color = 'gray',
+  title,
+  children,
+}: {
+  color?: keyof typeof colorMap;
+  /** Native browser tooltip shown on hover — e.g. a fuller explanation than the badge's own short label. */
+  title?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${colorMap[color]}`}>
+    <span title={title} className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${colorMap[color]}`}>
       {children}
     </span>
   );

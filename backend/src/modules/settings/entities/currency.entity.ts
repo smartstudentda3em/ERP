@@ -1,36 +1,56 @@
-import { Column, Entity, JoinColumn, ManyToOne, Unique } from 'typeorm';
-import { BaseEntity } from '../../../entities/base.entity';
-import { Company } from './company.entity';
+import { Column, Entity, JoinColumn, ManyToOne, Unique } from "typeorm";
+import { BaseEntity } from "../../../entities/base.entity";
+import { Company } from "./company.entity";
 
 // Per-company, not global — two companies may each define their own USD/EGP row.
-@Entity('currencies')
-@Unique(['companyId', 'code'])
+@Entity("currencies")
+@Unique(["companyId", "code"])
 export class Currency extends BaseEntity {
-  @Column('uuid')
+  @Column("uuid")
   companyId: string;
 
-  @ManyToOne(() => Company, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'companyId' })
+  @ManyToOne(() => Company, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "companyId" })
   company: Company;
 
-  @Column({ length: 10 })
+  @Column({
+    type: "varchar",
+    length: 10,
+  })
   code: string; // ISO 4217, e.g. USD, EUR, EGP
 
-  @Column({ length: 100 })
+  @Column({
+    type: "varchar",
+    length: 100,
+  })
   nameEn: string;
 
-  @Column({ length: 100, nullable: true })
+  @Column({
+    type: "varchar",
+    length: 100,
+    nullable: true,
+  })
   nameAr: string;
 
-  @Column({ length: 10, nullable: true })
+  @Column({
+    type: "varchar",
+    length: 10,
+    nullable: true,
+  })
   symbol: string;
 
-  @Column({ type: 'int', default: 2 })
+  @Column({ type: "int", default: 2 })
   decimalPlaces: number;
 
-  @Column({ default: false })
+  @Column({
+    type: "boolean",
+    default: false,
+  })
   isBaseCurrency: boolean;
 
-  @Column({ default: true })
+  @Column({
+    type: "boolean",
+    default: true,
+  })
   isActive: boolean;
 }

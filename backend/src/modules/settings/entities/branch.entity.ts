@@ -1,34 +1,60 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { BaseEntity } from '../../../entities/base.entity';
-import { Company } from './company.entity';
+import { Column, Entity, JoinColumn, ManyToOne } from "typeorm";
+import { BaseEntity } from "../../../entities/base.entity";
+import { Company } from "./company.entity";
 
-@Entity('branches')
+@Entity("branches")
 export class Branch extends BaseEntity {
-  @Column({ length: 50 })
+  @Column({
+    type: "varchar",
+    length: 50,
+  })
   code: string;
 
-  @Column({ length: 200 })
+  @Column({
+    type: "varchar",
+    length: 200,
+  })
   nameEn: string;
 
-  @Column({ length: 200, nullable: true })
+  @Column({
+    type: "varchar",
+    length: 200,
+    nullable: true,
+  })
   nameAr: string;
 
-  @Column({ length: 300, nullable: true })
+  @Column({
+    type: "varchar",
+    length: 300,
+    nullable: true,
+  })
   address: string;
 
-  @Column({ length: 50, nullable: true })
+  @Column({
+    type: "varchar",
+    length: 50,
+    nullable: true,
+  })
   phone: string;
 
-  @Column({ default: false })
+  @Column({
+    type: "boolean",
+    default: false,
+  })
   isMainBranch: boolean;
 
-  @Column({ default: true })
+  @Column({
+    type: "boolean",
+    default: true,
+  })
   isActive: boolean;
 
-  @Column('uuid')
+  @Column("uuid")
   companyId: string;
 
-  @ManyToOne(() => Company, (company) => company.branches, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'companyId' })
+  @ManyToOne(() => Company, (company) => company.branches, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn({ name: "companyId" })
   company: Company;
 }

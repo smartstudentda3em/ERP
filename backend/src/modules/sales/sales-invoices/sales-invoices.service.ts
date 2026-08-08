@@ -48,7 +48,7 @@ export class SalesInvoicesService {
     const branchId = await this.salesRepAccess.resolveBranchId(userId, undefined, companyId);
     const invoices = await this.repo.find({
       where: { companyId, ...(branchId ? { branchId } : {}) },
-      relations: ['customer', 'warehouse', 'salesRepresentative'],
+      relations: ['customer', 'warehouse', 'salesRepresentative', 'branch'],
       order: { createdAt: 'DESC' },
     });
     const userRows = await this.dataSource
@@ -364,10 +364,13 @@ export class SalesInvoicesService {
    * Flattened sales-line report backing the "المبيعات" screen: one row per sold line item, with
    * the rep recorded on its invoice and the quantity expressed in packages (via baseQuantity /
    * unitsPerPackage) — the same package-first convention PackageQuantity uses everywhere else in
-   * the UI. `branchId` filters to one branch via the invoice's sales rep (the only branch signal
-   * actually populated anywhere in this app — see SalesRepresentative.branchId); non-admin callers
-   * always have it re-pinned to their own rep's branch by SalesRepAccessService, regardless of what
-   * they requested.
+   * the UI. `branchId` filters to one branch via the invoice's own branchId column — the actual
+   * branch a Press sale was made under, set directly at invoice creation via a branch selector.
+   * Filtering via the invoice's sales rep's branchId (as this used to) silently dropped every
+   * Press invoice with no salesRepresentativeId, which is most of them, since Press invoicing
+   * never asks for a rep — see SalesInvoicesPage's branch selector replacing the rep selector.
+   * Non-admin callers always have it re-pinned to their own rep's branch by SalesRepAccessService,
+   * regardless of what they requested.
    */
   async getSalesLines(companyId: string, userId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
     const effectiveBranchId = await this.salesRepAccess.resolveBranchId(userId, branchId, companyId);
@@ -381,6 +384,7 @@ export class SalesInvoicesService {
       .addSelect('p."unitsPerPackage"', 'unitsPerPackage')
       .addSelect('pt."nameEn"', 'packageTypeName')
       .addSelect('r.name', 'salesRepresentativeName')
+      .addSelect('COALESCE(br."nameAr", br."nameEn")', 'branchName')
       .addSelect('c.name', 'customerName')
       .addSelect('l."lineTotal"', 'lineTotal')
       .addSelect('l."totalProfit"', 'totalProfit')
@@ -392,11 +396,12 @@ export class SalesInvoicesService {
       .innerJoin('products', 'p', 'p.id = l."productId"')
       .leftJoin('package_types', 'pt', 'pt.id = p."packageTypeId"')
       .leftJoin('sales_representatives', 'r', 'r.id = i."salesRepresentativeId"')
+      .leftJoin('branches', 'br', 'br.id = i."branchId"')
       .leftJoin('customers', 'c', 'c.id = i."customerId"')
       .where('i."companyId" = :companyId', { companyId })
       .andWhere(dateFrom ? 'i."invoiceDate" >= :dateFrom' : '1=1', { dateFrom })
       .andWhere(dateTo ? 'i."invoiceDate" <= :dateTo' : '1=1', { dateTo })
-      .andWhere(effectiveBranchId ? 'r."branchId" = :effectiveBranchId' : '1=1', { effectiveBranchId })
+      .andWhere(effectiveBranchId ? 'i."branchId" = :effectiveBranchId' : '1=1', { effectiveBranchId })
       .orderBy('i."createdAt"', 'DESC')
       .getRawMany();
 
@@ -422,6 +427,7 @@ export class SalesInvoicesService {
         unitsPerPackage: r.unitsPerPackage != null ? Number(r.unitsPerPackage) : null,
         packageTypeName: r.packageTypeName ?? null,
         salesRepresentativeName: r.salesRepresentativeName ?? null,
+        branchName: r.branchName ?? null,
         customerName: r.customerName ?? null,
         lineTotal,
         costOfGoodsSold,

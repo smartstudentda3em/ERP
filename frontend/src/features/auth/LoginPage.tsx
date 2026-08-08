@@ -22,7 +22,7 @@ export function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: () => apiClient.post('/auth/login', { phone, password }),
     onSuccess: (res) => {
-      setSession(res.data.accessToken, res.data.user);
+      setSession(res.data.data.accessToken, res.data.data.user);
       navigate('/select-company');
     },
     onError: () => {

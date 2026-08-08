@@ -11,6 +11,7 @@ import { NumberingSeriesTab } from './NumberingSeriesTab';
 import { PartnersTab } from './PartnersTab';
 import { ShippingExpenseTypesTab } from './ShippingExpenseTypesTab';
 import { FactoryResetTab } from './FactoryResetTab';
+import { BackupsTab } from './BackupsTab';
 
 interface Branch {
   id: string;
@@ -29,7 +30,8 @@ type Tab =
   | 'shipping-expense-types'
   | 'numbering-series'
   | 'partners'
-  | 'factory-reset';
+  | 'factory-reset'
+  | 'backups';
 
 export function SettingsPage() {
   const { t } = useTranslation();
@@ -43,6 +45,7 @@ export function SettingsPage() {
   const isSuperAdmin = useAuthStore((s) => s.user?.isSystemRole ?? false);
   const canFactoryReset = hasFactoryResetPermission && isSuperAdmin;
   const canViewPartners = useAuthStore((s) => s.hasPermission('settings.partner.view'));
+  const canViewBackups = useAuthStore((s) => s.hasPermission('admin.backup.view'));
   const { isPrintingPress } = useActiveCompany();
   const [tab, setTab] = useState<Tab>('companies');
 
@@ -72,6 +75,7 @@ export function SettingsPage() {
     { key: 'numbering-series', label: t('settingsTabs.numberingSeries') },
     ...(canViewPartners ? [{ key: 'partners' as Tab, label: t('settingsTabs.partners') }] : []),
     ...(canFactoryReset ? [{ key: 'factory-reset' as Tab, label: t('settingsTabs.factoryReset') }] : []),
+    ...(canViewBackups ? [{ key: 'backups' as Tab, label: t('settingsTabs.backups') }] : []),
   ];
 
   return (
@@ -193,6 +197,8 @@ export function SettingsPage() {
       {tab === 'partners' && canViewPartners && <PartnersTab />}
 
       {tab === 'factory-reset' && canFactoryReset && <FactoryResetTab />}
+
+      {tab === 'backups' && canViewBackups && <BackupsTab />}
     </div>
   );
 }

@@ -31,6 +31,8 @@ interface SalesInvoice {
   customerPhone: string | null;
   paymentAccount: 'CASH' | 'BANK' | null;
   salesRepresentativeId: string | null;
+  branchId: string | null;
+  branch: { nameAr?: string | null; nameEn?: string | null } | null;
   createdById: string;
   createdByName: string;
   notes: string | null;
@@ -365,7 +367,9 @@ export function SalesInvoicesPage() {
       accessor: (r) => formatAmount(Number(r.grandTotal) - Number(r.amountPaid)),
       align: 'right',
     },
-    { header: t(isPrintingPress ? 'fields.invoiceOwnerPress' : 'fields.invoiceOwner'), accessor: (r) => r.createdByName ?? '—' },
+    isPrintingPress
+      ? { header: t('fields.branch'), accessor: (r: SalesInvoice) => r.branch?.nameAr || r.branch?.nameEn || '—' }
+      : { header: t('fields.invoiceOwner'), accessor: (r: SalesInvoice) => r.createdByName ?? '—' },
     {
       header: t('common.actions'),
       accessor: (r) => (

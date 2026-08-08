@@ -6,11 +6,18 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CompanyScopedCrudService } from '../../common/services/base-crud.service';
 import { Partner } from './entities/partner.entity';
+import { Company } from './entities/company.entity';
 import { CreatePartnerDto, UpdatePartnerDto } from './dto/settings.dto';
+
+/** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
+const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
 
 @Injectable()
 export class PartnersService extends CompanyScopedCrudService<Partner> {
-  constructor(@InjectRepository(Partner) repo: Repository<Partner>) {
+  constructor(
+    @InjectRepository(Partner) repo: Repository<Partner>,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
+  ) {
     super(repo);
   }
 
@@ -44,12 +51,33 @@ export class PartnersService extends CompanyScopedCrudService<Partner> {
     return this.repo.find({ where: { companyId, branchId } as any, order: { createdAt: 'ASC' } as any });
   }
 
+  /**
+   * Printing Press's whole dividend/cap-table model is split per branch (see Partner.branchId's
+   * own doc comment) — a Press partner left without one is not "company-wide", it's an orphaned
+   * record with no pool to belong to. Left unenforced, that orphan silently borrowed the entire
+   * company's profit in getPartnersDividendsBreakdown()'s old branchId-defaults-to-undefined
+   * fallback, and — once a proper branch-scoped row for the same person existed alongside it —
+   * had that person's share counted twice when the frontend merged both rows by name (a real
+   * partner's dividend share showing as exactly double what it should be). Every other company
+   * has no branches at all, so branchId staying null there is the normal, only valid state.
+   */
+  private async assertBranchRequiredForPress(companyId: string, branchId: string | null | undefined): Promise<void> {
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code === PRINTING_PRESS_COMPANY_CODE && !branchId) {
+      throw new BadRequestException('A branch must be selected for this partner.');
+    }
+  }
+
   async createForCompany(companyId: string, dto: CreatePartnerDto): Promise<Partner> {
+    await this.assertBranchRequiredForPress(companyId, dto.branchId ?? null);
     await this.assertShareWithinLimit(companyId, dto.sharePercentage, dto.branchId ?? null);
     return super.createForCompany(companyId, { ...dto, branchId: dto.branchId ?? null } as any);
   }
 
   async updateForCompany(id: string, companyId: string, dto: UpdatePartnerDto): Promise<Partner> {
+    if (dto.branchId !== undefined) {
+      await this.assertBranchRequiredForPress(companyId, dto.branchId ?? null);
+    }
     if (dto.sharePercentage != null) {
       const existing = await this.findOneForCompany(id, companyId);
       const branchId = dto.branchId !== undefined ? dto.branchId ?? null : existing.branchId;

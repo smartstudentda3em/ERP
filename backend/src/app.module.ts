@@ -31,6 +31,7 @@ import { SystemModule } from './modules/system/system.module';
 import { InstallmentPlansModule } from './modules/sales/installment-plans/installment-plans.module';
 import { WhatsAppModule } from './modules/whatsapp/whatsapp.module';
 import { HrModule } from './modules/hr/hr.module';
+import { BackupsModule } from './modules/backups/backups.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { HrModule } from './modules/hr/hr.module';
     WhatsAppModule,
     InstallmentPlansModule,
     HrModule,
+    BackupsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

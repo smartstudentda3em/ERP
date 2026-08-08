@@ -35,7 +35,7 @@ export function CompanySelectPage() {
         result = switchOfflineCompanyRequest(companyId);
       } else {
         const res = await apiClient.post('/auth/switch-company', { companyId });
-        result = res.data;
+        result = res.data.data;
       }
       setSession(result.accessToken, result.user);
       await queryClient.clear();

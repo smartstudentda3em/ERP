@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
@@ -14,6 +14,17 @@ export class StockAuditsController {
   @Permissions('inventory.stockAudit.view')
   findAll(@CurrentUser('companyId') companyId: string) {
     return this.service.findAll(companyId);
+  }
+
+  // Declared before ':id' so 'setup-lines' is never swallowed by the :id param route.
+  @Get('setup-lines')
+  @Permissions('inventory.stockAudit.create')
+  getSetupLines(
+    @Query('warehouseId', ParseUUIDPipe) warehouseId: string,
+    @Query('auditDate') auditDate: string,
+    @CurrentUser('companyId') companyId: string,
+  ) {
+    return this.service.getSetupLines(companyId, warehouseId, auditDate);
   }
 
   @Get(':id')

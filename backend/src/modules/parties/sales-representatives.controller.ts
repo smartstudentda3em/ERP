@@ -280,14 +280,82 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     addPeriod(year - 2, quarter);
     addPeriod(quarter > 1 ? year : year - 1, quarter > 1 ? quarter - 1 : 4);
 
+    // When a specific manager is selected, sales must be resolved the exact same way "لوحة
+    // المدير" resolves them (buildManagerDashboardForRep): by that manager's own branchId, not by
+    // matching SalesInvoice.salesRepresentativeId / createdById — Printing Press invoices are
+    // created via a branch selector, not a rep selector, so most never get salesRepresentativeId
+    // set at all, and createdById only matches when the manager's own login happened to create
+    // the invoice. That mismatch is exactly what made a manager's dashboard total (branch-scoped)
+    // disagree with this chart's total (rep-id-scoped) for the same period. Resolved once here,
+    // outside the per-period loop below, since it never changes across periods.
+    let repBranchId: string | null = null;
+    let generalRate = 0;
+    let exceptions = { byProductId: new Map<string, number>(), byCategoryId: new Map<string, number>() };
+    if (representativeId) {
+      const rep = await this.repo.findOne({ where: { id: representativeId, companyId } as any });
+      if (rep) {
+        repBranchId = rep.branchId ?? null;
+        generalRate = Number(rep.commissionRate ?? 0);
+        const exceptionRows = await this.commissionExceptionsRepo.find({
+          where: { companyId, salesRepresentativeId: representativeId },
+        });
+        for (const e of exceptionRows) {
+          if (e.productId) exceptions.byProductId.set(e.productId, Number(e.commissionRate));
+          else if (e.categoryId) exceptions.byCategoryId.set(e.categoryId, Number(e.commissionRate));
+        }
+      }
+    }
+
     const results = await Promise.all(
       periods.map(async (p) => {
         const { dateFrom, dateTo } = quarterDateRange(p.year, p.quarter);
+        if (representativeId && repBranchId) {
+          const [salesVolume, { collectedAmount }] = await Promise.all([
+            this.getManagerBranchSalesForPeriod(companyId, repBranchId, dateFrom, dateTo, generalRate, exceptions),
+            this.getPeriodTotals(companyId, dateFrom, dateTo, representativeId),
+          ]);
+          return { year: p.year, quarter: p.quarter, salesVolume, collectedAmount };
+        }
         const totals = await this.getPeriodTotals(companyId, dateFrom, dateTo, representativeId);
         return { year: p.year, quarter: p.quarter, ...totals };
       }),
     );
     return { periods: results, earliestYear };
+  }
+
+  /** The exact same totalSales computation "لوحة المدير" uses for a manager
+   * (buildManagerDashboardForRep below): branch-scoped invoice lines, excluding any line whose
+   * resolved commission rate is 0 ("not his sale for commission purposes"). Reused here so the
+   * quarterly-trend chart's per-manager sales figure can never drift from what that same manager's
+   * own dashboard shows for the same period. */
+  private async getManagerBranchSalesForPeriod(
+    companyId: string,
+    branchId: string,
+    dateFrom: string,
+    dateTo: string,
+    generalRate: number,
+    exceptions: { byProductId: Map<string, number>; byCategoryId: Map<string, number> },
+  ): Promise<number> {
+    const lineRows = await this.dataSource
+      .createQueryBuilder()
+      .select('l."lineTotal"', 'lineTotal')
+      .addSelect('l."productId"', 'productId')
+      .addSelect('p."categoryId"', 'categoryId')
+      .from('sales_invoice_lines', 'l')
+      .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+      .innerJoin('products', 'p', 'p.id = l."productId"')
+      .where('i."companyId" = :companyId', { companyId })
+      .andWhere('i."branchId" = :branchId', { branchId })
+      .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
+      .getRawMany();
+
+    let totalSales = 0;
+    for (const line of lineRows) {
+      const rate = this.resolveLineRate(line, exceptions, generalRate);
+      if (rate <= 0) continue;
+      totalSales += Number(line.lineTotal);
+    }
+    return totalSales;
   }
 
   /**
@@ -486,8 +554,13 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
         let totalSales = 0;
         let commissionAmount = 0;
         for (const line of lines) {
-          const lineTotal = Number(line.lineTotal);
           const rate = this.resolveLineRate(line, exceptions, generalRate);
+          // Same exclusion as getManagerBranchSalesForPeriod/buildManagerDashboardForRep: a
+          // resolved rate of 0% means this sale isn't commissionable, so it's excluded from
+          // totalSales too, not just from commissionAmount — this column represents commissionable
+          // sales only, not the branch's raw revenue.
+          if (rate <= 0) continue;
+          const lineTotal = Number(line.lineTotal);
           totalSales += lineTotal;
           commissionAmount += (lineTotal * rate) / 100;
         }

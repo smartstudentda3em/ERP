@@ -13,6 +13,7 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/DateRangeFilter';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
+import { Badge } from '../../components/ui/Badge';
 import { localToday } from '../../lib/date-utils';
 
 interface ExpenseCategory {
@@ -375,14 +376,22 @@ export function ExpensesPage() {
   // adds to this screen's comprehensive expense figure.
   const grandTotal = totalExpenses + secondTabTotal + totalSalaries + (isPrintingPress ? totalProfitsPaidOut : 0);
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: 'operating', label: t('accounting.operatingExpenses') },
+  const secondTabCount = isPrintingPress ? dateFilteredRawMaterialPurchases.length : (cogsQuery.data ?? []).length;
+  // The transaction-count badge next to each tab's name — the whole reason this exists is so a
+  // grand total that doesn't match what's visible on the currently-open tab (e.g. "المصروفات
+  // التشغيلية" showing 0.00 while "إجمالي المصروفات الكلي" shows a nonzero figure) is no longer a
+  // mystery: the nonzero count sits right on whichever OTHER tab is actually holding that amount.
+  const tabs: { key: Tab; label: string; count: number }[] = [
+    { key: 'operating', label: t('accounting.operatingExpenses'), count: filteredExpenses.length },
     {
       key: 'cogs',
       label: isPrintingPress ? t('accounting.rawMaterialPurchases') : t('accounting.costOfGoodsSold'),
+      count: secondTabCount,
     },
-    { key: 'salaries', label: t('accounting.salaries') },
-    ...(isPrintingPress ? [{ key: 'profits' as Tab, label: t('accounting.managerPartnerProfits') }] : []),
+    { key: 'salaries', label: t('accounting.salaries'), count: filteredSalaries.length },
+    ...(isPrintingPress
+      ? [{ key: 'profits' as Tab, label: t('accounting.managerPartnerProfits'), count: filteredProfits.length }]
+      : []),
   ];
 
   const cogsColumns: Column<CogsTransaction>[] = [
@@ -515,10 +524,11 @@ export function ExpensesPage() {
           {tabs.map((tb) => (
             <button
               key={tb.key}
-              className={`rounded-lg px-3 py-1.5 ${tab === tb.key ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+              className={`flex items-center gap-2 rounded-lg px-3 py-1.5 ${tab === tb.key ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
               onClick={() => setTab(tb.key)}
             >
               {tb.label}
+              <Badge color={tb.count > 0 ? 'blue' : 'gray'}>{tb.count}</Badge>
             </button>
           ))}
         </div>
@@ -592,30 +602,34 @@ export function ExpensesPage() {
 
       {tab === 'profits' && (
         <>
-          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-              <div className="text-xs text-[var(--text-muted)]">{t('accounting.totalManagerPartnerProfits')}</div>
-              <div className="mt-1 text-2xl font-semibold">{money(totalProfitsPaidOut)}</div>
-            </div>
+          {/* 1st: per-beneficiary breakdown — always derived from profitsByPerson, itself derived
+              from filteredProfits, so this list and the detail table below it can never disagree,
+              and it recomputes automatically whenever the date range or branch filter changes.
+              Managers and partners get distinct label formats ("ربح مدير فرع <الاسم>" vs the bare
+              partner name) so each beneficiary reads clearly on its own, not just as a raw name. */}
+          <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <div className="mb-2 text-xs text-[var(--text-muted)]">{t('accounting.profitsByPersonTitle')}</div>
+            {profitsByPerson.length === 0 ? (
+              <div className="text-sm text-[var(--text-muted)]">{t('common.noData')}</div>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {profitsByPerson.map((p) => (
+                  <li
+                    key={`${p.subType}:${p.name}`}
+                    className="flex items-center justify-between gap-2 border-b border-[var(--border)] py-1.5 last:border-b-0"
+                  >
+                    <span>{p.subType === 'MANAGER' ? t('accounting.managerProfitLabel', { name: p.name }) : p.name}</span>
+                    <span className="font-semibold">{money(p.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-            {/* Per-beneficiary breakdown — always derived from profitsByPerson, itself derived from
-                filteredProfits, so this list and the detail table below it can never disagree, and
-                it recomputes automatically whenever the date range or branch filter changes. */}
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-              <div className="mb-2 text-xs text-[var(--text-muted)]">{t('accounting.profitsByPersonTitle')}</div>
-              {profitsByPerson.length === 0 ? (
-                <div className="text-sm text-[var(--text-muted)]">{t('common.noData')}</div>
-              ) : (
-                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
-                  {profitsByPerson.map((p) => (
-                    <li key={`${p.subType}:${p.name}`} className="flex items-center justify-between gap-2">
-                      <span>{t('accounting.totalProfitForPerson', { name: p.name })}</span>
-                      <span className="font-semibold">{money(p.amount)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+          {/* 2nd, directly beneath: the final grand total across every manager + partner payout. */}
+          <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <div className="text-xs text-[var(--text-muted)]">{t('accounting.totalManagerPartnerProfits')}</div>
+            <div className="mt-1 text-2xl font-semibold">{money(totalProfitsPaidOut)}</div>
           </div>
 
           <DataTable

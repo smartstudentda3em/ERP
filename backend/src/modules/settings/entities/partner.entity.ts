@@ -10,22 +10,28 @@ import { Branch } from './branch.entity';
  * scope — company-wide for every company, except Printing Press where `branchId` splits the cap
  * table per branch instead (see `branchId` below).
  */
-@Entity('partners')
+@Entity("partners")
 export class Partner extends BaseEntity {
-  @Column('uuid')
+  @Column("uuid")
   companyId: string;
 
-  @ManyToOne(() => Company, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'companyId' })
+  @ManyToOne(() => Company, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "companyId" })
   company: Company;
 
-  @Column({ length: 150 })
+  @Column({
+    type: "varchar",
+    length: 150,
+  })
   name: string;
 
-  @Column({ type: 'numeric', precision: 5, scale: 2 })
+  @Column({ type: "numeric", precision: 5, scale: 2 })
   sharePercentage: number;
 
-  @Column({ default: true })
+  @Column({
+    type: "boolean",
+    default: true,
+  })
   isActive: boolean;
 
   /**

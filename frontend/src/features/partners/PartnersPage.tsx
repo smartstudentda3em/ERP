@@ -83,6 +83,23 @@ interface PartnerMaxDividend {
   maxAmount: number;
 }
 
+interface PartnerDividendBreakdown {
+  partnerId: string;
+  name: string;
+  sharePercentage: number;
+  netProfitShare: number;
+  alreadyPaidToPartner: number;
+  availableToDistribute: number;
+}
+
+/** partnersBreakdown's actual row shape once same-name records are merged — see its own comment
+ * below for why. `partnerId` stays the first-encountered record's id (only used as a React key);
+ * `partnerIds` is the real source of truth for matching against any of that person's underlying
+ * records (the partner filter, and the outstanding-balance lookup, both need every one of them). */
+interface MergedPartnerDividendBreakdown extends PartnerDividendBreakdown {
+  partnerIds: string[];
+}
+
 function money(n: number): string {
   return formatAmount(n);
 }
@@ -361,16 +378,6 @@ export function PartnersPage() {
     enabled: !!companyId,
   });
 
-  // The customers' total outstanding balance as it stood at the end of the selected quarter/year
-  // (asOfDate = dateTo) — not today's live figure — so it moves with the same period filter as
-  // every other card on this tab.
-  const outstandingTotalQuery = useQuery({
-    queryKey: ['customers-outstanding-total', companyId, dateTo],
-    queryFn: () =>
-      unwrap<number>(apiClient.get('/customers/outstanding-total', { params: { companyId, asOfDate: dateTo } })),
-    enabled: !!companyId,
-  });
-
   const dividendsQuery = useQuery({
     queryKey: ['dividends', companyId, dateFrom, dateTo, dividendPartnerFilter],
     queryFn: () =>
@@ -392,7 +399,73 @@ export function PartnersPage() {
     enabled: !!companyId,
   });
 
+  // Per-partner breakdown of the selected quarter's profit — one row per active partner, backing
+  // both the "توزيع الأرباح حسب الشركاء" table below and the top summary cards' partner-filtered view.
+  const partnersBreakdownQuery = useQuery({
+    queryKey: ['dividends-partners-breakdown', companyId, year, quarter],
+    queryFn: () =>
+      unwrap<PartnerDividendBreakdown[]>(
+        apiClient.get('/treasury/dividends/partners-breakdown', { params: { companyId, year, quarter } }),
+      ),
+    enabled: !!companyId,
+  });
+  // One person can have more than one underlying Partner record (e.g. a separate row per
+  // Printing Press branch they hold a stake in) — grouped here by name so "الشركاء" only ever
+  // lists a partner once, with sharePercentage and every money figure SUMMED across all of that
+  // person's records into one total. `partnerIds` keeps every contributing record's id, since the
+  // partner filter below (sourced from the un-merged partners-balances list) and the outstanding
+  // balance column further down both still need to match against whichever specific record id
+  // they're given, not just the first one folded into this row.
+  const partnersBreakdown: MergedPartnerDividendBreakdown[] = useMemo(() => {
+    const raw = partnersBreakdownQuery.data ?? [];
+    const byName = new Map<string, MergedPartnerDividendBreakdown>();
+    for (const p of raw) {
+      const key = p.name.trim();
+      const existing = byName.get(key);
+      if (existing) {
+        // netProfitShare/alreadyPaidToPartner/availableToDistribute are resolved dollar amounts —
+        // each already computed backend-side from that one record's own sharePercentage against
+        // its own branch's profit pool (see Partner.branchId's doc comment: Printing Press splits
+        // the cap table per branch), so summing them across this person's records is correct.
+        // sharePercentage itself is NOT summed: it's a ratio scoped to each record's own pool, so
+        // adding two branches' percentages together produces a number with no real meaning (and is
+        // exactly how a partner listed at 75% in two branches previously rendered as "150%"). It's
+        // taken directly from Settings > Partners instead — the first record's value stands in for
+        // the person's percentage, since duplicate/multi-branch rows for the same person are always
+        // provisioned with the same intended share.
+        existing.netProfitShare += p.netProfitShare;
+        existing.alreadyPaidToPartner += p.alreadyPaidToPartner;
+        existing.availableToDistribute += p.availableToDistribute;
+        existing.partnerIds.push(p.partnerId);
+      } else {
+        byName.set(key, { ...p, partnerIds: [p.partnerId] });
+      }
+    }
+    return Array.from(byName.values());
+  }, [partnersBreakdownQuery.data]);
+  // When a specific partner is chosen in the filter below, the top summary cards switch from
+  // company-wide totals to this one partner's own share/paid/available figures.
+  const selectedPartnerBreakdown = dividendPartnerFilter
+    ? partnersBreakdown.find((p) => p.partnerIds.includes(dividendPartnerFilter))
+    : undefined;
+
   const available = availableQuery.data?.available ?? 0;
+  const displayedNetProfit = selectedPartnerBreakdown
+    ? selectedPartnerBreakdown.netProfitShare
+    : (availableQuery.data?.netProfit ?? 0);
+  const displayedAlreadyDistributed = selectedPartnerBreakdown
+    ? selectedPartnerBreakdown.alreadyPaidToPartner
+    : (availableQuery.data?.alreadyDistributed ?? 0);
+  const displayedAvailable = selectedPartnerBreakdown ? selectedPartnerBreakdown.availableToDistribute : available;
+  // Same source the "الرصيد المستحق" table column itself sums from (partnersBalancesQuery), so
+  // the top summary card and the table below can never disagree — previously this card was wired
+  // to the customers' outstanding-balance total instead (a different, unrelated figure), which is
+  // why it could show 0.00 while the table showed a real per-partner balance.
+  const displayedOutstandingBalance = selectedPartnerBreakdown
+    ? (partnersBalancesQuery.data?.balances ?? [])
+        .filter((b) => selectedPartnerBreakdown.partnerIds.includes(b.partnerId))
+        .reduce((sum, b) => sum + b.balance, 0)
+    : (partnersBalancesQuery.data?.total ?? 0);
   const dividendAmount = Number(dividendForm.amount || 0);
 
   // Fetched from the same cap the backend will actually enforce, so the read-only max-allowed
@@ -429,6 +502,7 @@ export function PartnersPage() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
       queryClient.invalidateQueries({ queryKey: ['dividends-available'] });
       queryClient.invalidateQueries({ queryKey: ['dividend-partner-max'] });
+      queryClient.invalidateQueries({ queryKey: ['dividends-partners-breakdown'] });
       queryClient.invalidateQueries({ queryKey: ['dividends'] });
       queryClient.invalidateQueries({ queryKey: ['partners-balances'] });
       queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
@@ -437,6 +511,28 @@ export function PartnersPage() {
     },
     onError: (err: any) => toast.error(err?.response?.data?.message ?? String(err?.message ?? err)),
   });
+
+  const partnerBreakdownColumns: Column<MergedPartnerDividendBreakdown>[] = [
+    { header: t('fields.partnerName'), accessor: (r) => r.name },
+    { header: t('fields.sharePercentage'), accessor: (r) => `${formatAmount(r.sharePercentage)}%`, align: 'right' },
+    { header: t('partners.netProfitShare'), accessor: (r) => money(r.netProfitShare), align: 'right' },
+    { header: t('partners.dividendsPaidToPartner'), accessor: (r) => money(r.alreadyPaidToPartner), align: 'right' },
+    {
+      header: t('partners.availableForPartner'),
+      accessor: (r) => <span className="font-semibold text-green-600">{money(r.availableToDistribute)}</span>,
+      align: 'right',
+    },
+    {
+      header: t('partners.outstandingBalanceForPartner'),
+      accessor: (r) =>
+        money(
+          (partnersBalancesQuery.data?.balances ?? [])
+            .filter((b) => r.partnerIds.includes(b.partnerId))
+            .reduce((sum, b) => sum + b.balance, 0),
+        ),
+      align: 'right',
+    },
+  ];
 
   const dividendColumns: Column<Transaction>[] = [
     { header: t('common.date'), accessor: (r) => r.date },
@@ -537,7 +633,9 @@ export function PartnersPage() {
             </button>
           ))}
         </div>
-        {isPrintingPress && (
+        {/* The Dividends tab gets its own copy of this filter, grouped together with the
+            year/quarter/صرف الأرباح controls in one row instead — see below. */}
+        {isPrintingPress && tab !== 'dividends' && (
           <FormField label={t('dashboard.branchFilter')}>
             <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
               <option value="">{t('accounting.allBranches')}</option>
@@ -615,48 +713,79 @@ export function PartnersPage() {
 
       {tab === 'dividends' && (
         <div>
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <FormField label={t('salesReport.year')}>
-              <Input type="number" value={year} onChange={(e) => setYear(Number(e.target.value) || now.getFullYear())} />
-            </FormField>
-            <FormField label={t('partners.quarter')}>
-              <Select value={quarter} onChange={(e) => setQuarter(Number(e.target.value) as Quarter)}>
-                <option value={1}>{t('partners.q1')}</option>
-                <option value={2}>{t('partners.q2')}</option>
-                <option value={3}>{t('partners.q3')}</option>
-                <option value={4}>{t('partners.q4')}</option>
-                <option value={0}>{t('partners.fullYear')}</option>
-              </Select>
-            </FormField>
+          {/* The 4 controls the user works with together — period filter, branch scope, and the
+              action that actually pays out — grouped into one horizontal row at the same visual
+              level, instead of scattered across 3 separate places on the page. Split into two
+              sub-groups with `justify-between` rather than one flat gap: year/quarter stay tight
+              together on their own, while branch filter + صرف الأرباح sit as a visually separate
+              cluster pushed to the row's far edge — so the branch filter doesn't read as glued to
+              the quarter selector, and صرف الأرباح lands at the true end of the row (not just
+              "whichever control happens to render last"). */}
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <FormField label={t('salesReport.year')}>
+                <Input
+                  type="number"
+                  className="w-28"
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value) || now.getFullYear())}
+                />
+              </FormField>
+              <FormField label={t('partners.quarter')}>
+                <Select className="w-44" value={quarter} onChange={(e) => setQuarter(Number(e.target.value) as Quarter)}>
+                  <option value={1}>{t('partners.q1')}</option>
+                  <option value={2}>{t('partners.q2')}</option>
+                  <option value={3}>{t('partners.q3')}</option>
+                  <option value={4}>{t('partners.q4')}</option>
+                  <option value={0}>{t('partners.fullYear')}</option>
+                </Select>
+              </FormField>
+            </div>
+            <div className="flex flex-wrap items-end gap-4">
+              {isPrintingPress && (
+                <FormField label={t('dashboard.branchFilter')}>
+                  <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+                    <option value="">{t('accounting.allBranches')}</option>
+                    {(branchesQuery.data ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.nameAr || b.nameEn}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              )}
+              <Button onClick={() => setDividendModalOpen(true)} disabled={available <= 0}>
+                {t('partners.distributeDividends')}
+              </Button>
+            </div>
           </div>
 
           <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
               <div className="text-xs text-[var(--text-muted)]">{t('partners.netProfitForQuarter')}</div>
-              <div className="mt-1 text-xl font-semibold">{money(availableQuery.data?.netProfit ?? 0)}</div>
+              <div className="mt-1 text-xl font-semibold">{money(displayedNetProfit)}</div>
             </Card>
             <Card>
               <div className="text-xs text-[var(--text-muted)]">{t('partners.alreadyDistributed')}</div>
-              <div className="mt-1 text-xl font-semibold">{money(availableQuery.data?.alreadyDistributed ?? 0)}</div>
+              <div className="mt-1 text-xl font-semibold">{money(displayedAlreadyDistributed)}</div>
             </Card>
             <Card>
               <div className="text-xs text-[var(--text-muted)]">{t('partners.availableToDistribute')}</div>
-              <div className="mt-1 text-xl font-semibold text-green-600">{money(available)}</div>
+              <div className="mt-1 text-xl font-semibold text-green-600">{money(displayedAvailable)}</div>
             </Card>
             <Card>
               <div className="text-xs text-[var(--text-muted)]">{t('partners.outstandingBalances')}</div>
-              <div className="mt-1 text-xl font-semibold text-red-600">{money(outstandingTotalQuery.data ?? 0)}</div>
+              <div className="mt-1 text-xl font-semibold text-red-600">{money(displayedOutstandingBalance)}</div>
             </Card>
           </div>
 
-          <div className="mb-3 flex justify-end">
-            <Button onClick={() => setDividendModalOpen(true)} disabled={available <= 0}>
-              {t('partners.distributeDividends')}
-            </Button>
-          </div>
-
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-            <h3 className="font-semibold">{t('partners.dividendHistory')}</h3>
+          {/* تصفية حسب الشريك lives here now (moved up from above the dividend history table
+              below) since it's this breakdown table's own filter first and foremost — it also
+              drives the summary cards above and the dividend history table below, both of which
+              share this same state. Pushed to the row's far edge, same "two ends of one row"
+              pattern as the controls row above. */}
+          <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
+            <h3 className="font-semibold">{t('partners.partnerDividendBreakdown')}</h3>
             <FormField label={t('partners.filterByPartner')}>
               <Select value={dividendPartnerFilter} onChange={(e) => setDividendPartnerFilter(e.target.value)}>
                 <option value="">{t('common.all')}</option>
@@ -668,6 +797,15 @@ export function PartnersPage() {
               </Select>
             </FormField>
           </div>
+          <DataTable
+            columns={partnerBreakdownColumns}
+            data={partnersBreakdown}
+            keyField={(r) => r.partnerId}
+            isLoading={partnersBreakdownQuery.isLoading}
+            searchable={false}
+          />
+
+          <h3 className="mb-3 mt-6 font-semibold">{t('partners.dividendHistory')}</h3>
 
           <Card className="mb-4">
             <div className="text-xs text-[var(--text-muted)]">{t('partners.selectedPartnerPayoutTotal')}</div>
@@ -736,7 +874,7 @@ export function PartnersPage() {
               {t('partners.availableToDistribute')}: {money(available)}
             </div>
             <div>
-              {t('partners.outstandingBalances')}: {money(outstandingTotalQuery.data ?? 0)}
+              {t('partners.outstandingBalances')}: {money(partnersBalancesQuery.data?.total ?? 0)}
             </div>
           </div>
           <table className="app-table">

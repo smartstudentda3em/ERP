@@ -50,7 +50,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
     mutationFn: async (companyId: string) => {
       if (accessToken === OFFLINE_TOKEN) return switchOfflineCompanyRequest(companyId);
       const res = await apiClient.post('/auth/switch-company', { companyId });
-      return res.data as { accessToken: string; user: any };
+      return res.data.data as { accessToken: string; user: any };
     },
     onSuccess: async (result) => {
       setSession(result.accessToken, result.user);

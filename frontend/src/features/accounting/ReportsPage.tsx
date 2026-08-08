@@ -275,6 +275,11 @@ export function ReportsPage() {
   }
 
   const netProfit = (profitQuery.data?.revenue ?? 0) - (profitQuery.data?.expenseBreakdown?.total ?? 0);
+  // A negative result is an accounting deficit, not a "negative profit" — shown with its own label
+  // and the amount parenthesized (accounting convention) rather than a leading minus sign.
+  const isNetLoss = netProfit < 0;
+  const netProfitLabel = t(isNetLoss ? 'accounting.netLoss' : 'accounting.netProfit');
+  const netProfitDisplay = isNetLoss ? `(${formatAmount(Math.abs(netProfit))})` : formatAmount(netProfit);
 
   return (
     <div>
@@ -349,8 +354,8 @@ export function ReportsPage() {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td className="font-semibold">{t('accounting.netProfit')}</td>
-                    <td className="font-semibold">{formatAmount(netProfit)}</td>
+                    <td className="font-semibold">{netProfitLabel}</td>
+                    <td className="font-semibold">{netProfitDisplay}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -559,7 +564,7 @@ export function ReportsPage() {
             </tbody>
           </table>
           <div className="financial-report-print-total">
-            {t('accounting.netProfit')}: {formatAmount(netProfit)}
+            {netProfitLabel}: {netProfitDisplay}
           </div>
         </div>
       </div>

@@ -25,6 +25,7 @@ import { User } from '../modules/users/entities/user.entity';
 import { Role } from '../modules/users/entities/role.entity';
 import { Permission } from '../modules/users/entities/permission.entity';
 import { Session } from '../modules/users/entities/session.entity';
+import { UserCompany } from '../modules/users/entities/user-company.entity';
 
 // Audit
 import { AuditLog } from '../modules/audit-log/entities/audit-log.entity';
@@ -107,6 +108,7 @@ import { ShipmentExpense } from '../modules/imports/entities/shipment-expense.en
 import { ShipmentPayment } from '../modules/imports/entities/shipment-payment.entity';
 import { ShippingExpenseType } from '../modules/imports/entities/shipping-expense-type.entity';
 import { WhatsAppOutboxMessage } from '../modules/whatsapp/entities/whatsapp-outbox-message.entity';
+import { BackupRecord } from '../modules/backups/entities/backup-record.entity';
 
 export const allEntities = [
   Company,
@@ -127,6 +129,7 @@ export const allEntities = [
   Role,
   Permission,
   Session,
+  UserCompany,
   AuditLog,
   Customer,
   Supplier,
@@ -185,6 +188,7 @@ export const allEntities = [
   ShipmentPayment,
   ShippingExpenseType,
   WhatsAppOutboxMessage,
+  BackupRecord,
 ];
 
 export const AppDataSource = new DataSource({

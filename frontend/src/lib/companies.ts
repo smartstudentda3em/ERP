@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from './api-client';
+import { apiClient, unwrap } from './api-client';
 import { getOfflineAccessibleCompanies } from './offline-store';
 import { OFFLINE_TOKEN, useAuthStore } from '../store/auth-store';
 
@@ -24,8 +24,7 @@ export function useAccessibleCompanies(enabled = true) {
     queryKey: ['accessible-companies'],
     queryFn: async (): Promise<CompanyOption[]> => {
       if (accessToken === OFFLINE_TOKEN) return getOfflineAccessibleCompanies();
-      const res = await apiClient.get('/auth/my-companies');
-      return res.data;
+      return unwrap<CompanyOption[]>(apiClient.get('/auth/my-companies'));
     },
     enabled,
   });

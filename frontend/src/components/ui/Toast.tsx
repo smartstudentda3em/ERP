@@ -1,6 +1,6 @@
 import { ReactNode, createContext, useCallback, useContext, useState } from 'react';
 
-type ToastKind = 'success' | 'error';
+type ToastKind = 'success' | 'error' | 'warning';
 
 interface ToastItem {
   id: string;
@@ -11,6 +11,7 @@ interface ToastItem {
 interface ToastApi {
   success: (message: string) => void;
   error: (message: string) => void;
+  warning: (message: string) => void;
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -26,17 +27,25 @@ const ICONS: Record<ToastKind, ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
     </svg>
   ),
+  warning: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a1 1 0 0 0 .86 1.5h18.64a1 1 0 0 0 .86-1.5L13.71 3.86a1 1 0 0 0-1.72 0Z" />
+    </svg>
+  ),
 };
 
 const KIND_CLASSES: Record<ToastKind, string> = {
   success:
     'bg-green-50 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800/60',
   error: 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/60',
+  warning:
+    'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/60',
 };
 
 const ICON_CLASSES: Record<ToastKind, string> = {
   success: 'text-green-600 dark:text-green-400',
   error: 'text-red-600 dark:text-red-400',
+  warning: 'text-amber-600 dark:text-amber-400',
 };
 
 /** Global toast/snackbar system — mounted once at the app root; call sites just `toast.success(...)`/`toast.error(...)`. */
@@ -59,6 +68,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const api: ToastApi = {
     success: (message) => push('success', message),
     error: (message) => push('error', message),
+    warning: (message) => push('warning', message),
   };
 
   return (

@@ -1,28 +1,42 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { BaseEntity } from '../../../entities/base.entity';
-import { User } from './user.entity';
+import { Column, Entity, JoinColumn, ManyToOne } from "typeorm";
+import { BaseEntity } from "../../../entities/base.entity";
+import { User } from "./user.entity";
 
-@Entity('sessions')
+@Entity("sessions")
 export class Session extends BaseEntity {
-  @Column('uuid')
+  @Column("uuid")
   userId: string;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
+  @ManyToOne(() => User, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "userId" })
   user: User;
 
-  @Column({ length: 500 })
+  @Column({
+    type: "varchar",
+    length: 500,
+  })
   refreshTokenHash: string;
 
-  @Column({ length: 64, nullable: true })
+  @Column({
+    type: "varchar",
+    length: 64,
+    nullable: true,
+  })
   ipAddress: string;
 
-  @Column({ length: 300, nullable: true })
+  @Column({
+    type: "varchar",
+    length: 300,
+    nullable: true,
+  })
   userAgent: string;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: "timestamptz" })
   expiresAt: Date;
 
-  @Column({ default: false })
+  @Column({
+    type: "boolean",
+    default: false,
+  })
   revoked: boolean;
 }

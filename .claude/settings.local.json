@@ -69,7 +69,18 @@
       "Bash(echo \"EXIT CODE: $?\")",
       "PowerShell(Get-NetTCPConnection -State Listen 2>&1 | Where-Object { $_.LocalPort -in @\\(3000,3001,3306,5432,5173,8080,4000\\) } | Select-Object LocalPort, OwningProcess | Format-Table -AutoSize)",
       "PowerShell(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue)",
-      "Bash(xargs grep -l \"branchId\")"
+      "Bash(xargs grep -l \"branchId\")",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts, null, 2\\)\\);\")",
+      "Bash(npm ls *)",
+      "Bash(awk -F: '$1>3032')",
+      "Bash(awk 'NR==5500,NR==5545' \"E:\\\\ERP\\\\frontend\\\\src\\\\lib\\\\offline-store.ts\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/api/backups)",
+      "Bash(curl -s http://localhost:3000/api/backups)",
+      "Bash(where pg_dump)",
+      "PowerShell(Test-NetConnection -ComputerName localhost -Port 5432 -WarningAction SilentlyContinue)",
+      "PowerShell(Get-Service | Where-Object { $_.Name -match 'postgres' -or $_.DisplayName -match 'postgres' } | Format-Table -AutoSize)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://localhost:5173/api/settings/branches?companyId=offline-company-press\")"
     ]
   }
 }

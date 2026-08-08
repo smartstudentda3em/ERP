@@ -57,10 +57,9 @@ interface Product {
   isSellable?: boolean;
 }
 
-interface StockLevel {
-  quantityOnHand: number;
-  product: { id: string };
-  warehouse: { id: string };
+interface SetupLine {
+  productId: string;
+  previousStock: number;
 }
 
 interface LineDraft {
@@ -69,6 +68,7 @@ interface LineDraft {
   systemQuantity: number;
   unitCost: number;
   actualQuantity: string;
+  isSellable: boolean;
 }
 
 const AUDIT_STATUS_COLOR: Record<string, 'gray' | 'green' | 'yellow'> = {
@@ -134,10 +134,14 @@ export function StockAuditPage() {
     enabled: entryOpen && !!companyId,
   });
 
-  const levelsQuery = useQuery({
-    queryKey: ['stock-levels', companyId],
-    queryFn: () => unwrap<StockLevel[]>(apiClient.get('/inventory/stock/levels', { params: { companyId } })),
-    enabled: entryOpen && !!companyId,
+  // "المخزون السابق (بالوحدة)" per product — computed server-side from the last APPROVED audit
+  // plus everything received since (or, with no prior audit, everything ever received), never
+  // from live stockLevels.quantityOnHand (see StockAuditsService.getSetupLines() for why).
+  const setupLinesQuery = useQuery({
+    queryKey: ['stock-audit-setup-lines', warehouseId, auditDate],
+    queryFn: () =>
+      unwrap<SetupLine[]>(apiClient.get('/inventory/stock-audits/setup-lines', { params: { warehouseId, auditDate } })),
+    enabled: entryOpen && !!warehouseId && !!auditDate,
   });
 
   function branchLabel(b: Branch): string {
@@ -174,8 +178,20 @@ export function StockAuditPage() {
   const lockedWarehouse = (warehousesQuery.data ?? []).find((w) => w.id === warehouseId);
   const lockedBranch = (branchesQuery.data ?? []).find((b) => b.id === lockedWarehouse?.branchId);
 
-  function updateActual(productId: string, value: string) {
-    setActualOverrides((prev) => ({ ...prev, [productId]: value }));
+  // Takes the row directly rather than looking it up from `lines` by id — `lineColumns` below is
+  // memoized on `[t]` only, so the accessor closures (and whatever they capture from the outer
+  // scope) are frozen to the render where that memo first ran; a `lines?.find(...)` lookup inside
+  // this function would silently keep resolving against that first render's (empty) `lines`
+  // forever. The row itself doesn't have that problem — DataTable calls `accessor(r)` fresh on
+  // every render with the current row, so `r` passed in from there is always up to date.
+  function updateActual(line: LineDraft, value: string) {
+    setActualOverrides((prev) => ({ ...prev, [line.productId]: value }));
+    // A surplus (actual count higher than what the system expected) is the opposite of the normal
+    // consumption case this screen is built around, so it's worth flagging the moment it's typed
+    // rather than only showing up as a passive "زيادة" badge the user might not notice.
+    if (value.trim() !== '' && Number(value) > line.systemQuantity) {
+      toast.warning(t('stockAudit.surplusWarning', { product: line.nameEn, actual: value, previous: line.systemQuantity }));
+    }
   }
 
   const lines: LineDraft[] | null = useMemo(() => {
@@ -183,8 +199,8 @@ export function StockAuditPage() {
     return (productsQuery.data ?? [])
       .filter((p) => p.isActive)
       .map((p) => {
-        const level = levelsQuery.data?.find((l) => l.product?.id === p.id && l.warehouse?.id === warehouseId);
-        const systemQuantity = level ? Number(level.quantityOnHand) : 0;
+        const setupLine = setupLinesQuery.data?.find((l) => l.productId === p.id);
+        const systemQuantity = setupLine ? Number(setupLine.previousStock) : 0;
         const override = actualOverrides[p.id];
         return {
           productId: p.id,
@@ -195,9 +211,10 @@ export function StockAuditPage() {
           // system quantity (still editable, via actualOverrides once touched); manual materials
           // start blank for a real count.
           actualQuantity: override !== undefined ? override : p.isSellable ? String(systemQuantity) : '',
+          isSellable: p.isSellable ?? false,
         };
       });
-  }, [warehouseId, productsQuery.data, levelsQuery.data, actualOverrides]);
+  }, [warehouseId, productsQuery.data, setupLinesQuery.data, actualOverrides]);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -332,9 +349,55 @@ export function StockAuditPage() {
   const varianceOf = (l: LineDraft): number | null =>
     l.actualQuantity.trim() === '' ? null : Number(l.actualQuantity) - l.systemQuantity;
 
+  // "الكمية المستهلكة" = الكمية بالنظام - الكمية الفعلية المدخلة — نفس الاتفاقية المستخدمة في
+  // عمود "الكمية المستهلكة" بصفحة تفاصيل الجرد (StockAuditDetailPage.tsx). عكس varianceOf أعلاه
+  // عمداً: تلك تبقى كما هي لتغذية شارة الحالة (متطابق/زيادة/نقص) دون أي تغيير في سلوكها.
+  const consumedQuantityOf = (l: LineDraft): number | null =>
+    l.actualQuantity.trim() === '' ? null : l.systemQuantity - Number(l.actualQuantity);
+
+  // "السعر الإجمالي" = الكمية المستهلكة × سعر الوحدة — نفس معادلة StockAuditDetailPage.tsx's
+  // totalPriceOf، معروضة هنا مسبقاً أثناء الإدخال بدلاً من الانتظار حتى بعد الحفظ.
+  const totalPriceOf = (l: LineDraft): number | null => {
+    const consumed = consumedQuantityOf(l);
+    return consumed === null ? null : consumed * l.unitCost;
+  };
+
+  const totalConsumedValue = useMemo(
+    () => (lines ?? []).reduce((sum, l) => sum + (totalPriceOf(l) ?? 0), 0),
+    [lines],
+  );
+
   const lineColumns: Column<LineDraft>[] = useMemo(
     () => [
-      { header: t('fields.product'), accessor: (r) => r.nameEn },
+      {
+        header: t('fields.product'),
+        accessor: (r) => (
+          <div className="flex items-center gap-2">
+            {/* Catalog products never appear in this table at all (Printing Press never tracks
+                warehouse stock for them — see ProductsService.findAllForCompany, which scopes this
+                screen's item list to RAW_MATERIAL only), so the only distinction ever meaningful
+                here is sellable vs. plain raw material — flagged with a small icon rather than a
+                full-text badge so a row full of items doesn't read as visually noisy; the actual
+                "مادة خام - للبيع" label only shows up as a native hover tooltip on the icon. */}
+            {r.isSellable && (
+              <span
+                title={t('stockAudit.sellableRawMaterialTooltip')}
+                className="inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M20.59 13.41 11 3.83 3.83 11l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z"
+                  />
+                  <circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
+                </svg>
+              </span>
+            )}
+            <span>{r.nameEn}</span>
+          </div>
+        ),
+      },
       { header: t('stockAudit.systemQuantity'), accessor: (r) => r.systemQuantity, align: 'right' },
       {
         header: t('stockAudit.actualQuantity'),
@@ -343,19 +406,26 @@ export function StockAuditPage() {
             type="number"
             step="0.0001"
             value={r.actualQuantity}
-            onChange={(e) => updateActual(r.productId, e.target.value)}
+            onChange={(e) => updateActual(r, e.target.value)}
             className="w-28"
           />
         ),
         align: 'center',
       },
       {
-        header: t('stockAudit.variance'),
+        header: t('stockAudit.consumedQuantity'),
         accessor: (r) => {
-          const v = varianceOf(r);
-          if (v === null) return '—';
-          const color = v > 0 ? 'text-green-600' : v < 0 ? 'text-red-600' : 'text-[var(--text-muted)]';
-          return <span className={color}>{v > 0 ? `+${v}` : v}</span>;
+          const c = consumedQuantityOf(r);
+          return c === null ? '—' : c;
+        },
+        align: 'right',
+      },
+      { header: t('stockAudit.unitPrice'), accessor: (r) => formatAmount(r.unitCost), align: 'right' },
+      {
+        header: t('stockAudit.totalPrice'),
+        accessor: (r) => {
+          const total = totalPriceOf(r);
+          return total === null ? '—' : formatAmount(total);
         },
         align: 'right',
       },
@@ -384,7 +454,7 @@ export function StockAuditPage() {
           {t('stockAudit.backToList')}
         </Button>
 
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('fields.branch')}</div>
             <div className="mt-1 font-semibold">{lockedBranch ? branchLabel(lockedBranch) : '—'}</div>
@@ -396,6 +466,12 @@ export function StockAuditPage() {
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('stockAudit.auditMonth')}</div>
             <div className="mt-1 font-semibold">{auditMonthName(auditMonthKey(auditDate), i18n.language)}</div>
+          </Card>
+          {/* حياً أثناء الإدخال — نفس معادلة إجمالي المستهلك المعروضة بعد الحفظ في
+              StockAuditDetailPage.tsx، بحيث يرى المستخدم الأثر المالي قبل الضغط على "حفظ واعتماد". */}
+          <Card>
+            <div className="text-xs text-[var(--text-muted)]">{t('stockAudit.totalConsumedValue')}</div>
+            <div className="mt-1 font-semibold">{formatAmount(totalConsumedValue)}</div>
           </Card>
         </div>
 

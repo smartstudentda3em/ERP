@@ -58,9 +58,18 @@ export function DashboardPage() {
   const companyId = useAuthStore((s) => s.user?.companyId);
   const { isPrintingPress } = useActiveCompany();
 
-  // Printing Press only — "تصفية حسب الفرع"; empty string means every branch (الإجمالي / جميع الفروع).
-  const [branchFilter, setBranchFilter] = useState('');
-  const effectiveBranchId = isPrintingPress && branchFilter ? branchFilter : undefined;
+  // Printing Press only — "تصفية حسب الفرع". A non-empty sentinel (never ''), same trick
+  // SalesReportPage's own branch filter uses and for the exact same reason: the shared Select
+  // component auto-fires onChange the moment a dropdown's real option list resolves to exactly
+  // one choice while its value is still '' (see Input.tsx's Select) — meant for data-entry fields
+  // with one obviously-correct choice, not for a view filter. A company with only one branch would
+  // otherwise have this filter silently jump from "كل الفروع" to that one branch on page load,
+  // narrowing every card here (e.g. "مصروفات الشهر") away from unassigned/branch-less records
+  // (branchId IS NULL) without the user ever choosing a branch — exactly what made a real expense
+  // recorded with no branch picked vanish from the Dashboard while still showing in "المصروفات".
+  const ALL_BRANCHES = 'all';
+  const [branchFilter, setBranchFilter] = useState(ALL_BRANCHES);
+  const effectiveBranchId = isPrintingPress && branchFilter !== ALL_BRANCHES ? branchFilter : undefined;
 
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
@@ -177,7 +186,7 @@ export function DashboardPage() {
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
             >
-              <option value="">{t('accounting.allBranches')}</option>
+              <option value={ALL_BRANCHES}>{t('accounting.allBranches')}</option>
               {(branchesQuery.data ?? []).map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.nameAr || b.nameEn}

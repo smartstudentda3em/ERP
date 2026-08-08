@@ -51,10 +51,13 @@ const OFFLINE_ADMIN_PHONE = '99970766';
  * backend/src/database/seeds/run-seed.ts — widened per the Printing Press branch spec: full
  * Dashboard access; Purchasing (suppliers, products/raw-materials, purchase receipts) capped at
  * view+create only (inventory.product is shared by the raw-materials screen and the Press-only
- * sellable-products catalog, so this one grant covers both); Sales (quotations/invoices/payments),
- * Treasury expenses, and Payroll get full management; hr.employee.view is a technical prerequisite
- * only (PayrollPage's "new run" flow reads GET /hr/employees), not employee CRUD; Financial
- * Reports and treasury cash-box tracking stay view-only; Monthly Stock Audit gets view+create
+ * sellable-products catalog, so this one grant covers both); Sales (quotations/invoices/payments)
+ * and Treasury expenses get full management; Payroll gets view+create+edit+delete but deliberately
+ * NOT approve — a Manager can save a run (stays CONFIRMED, nothing posted) but only Administrator
+ * can approve it and trigger the actual financial posting — a two-step save/approve workflow, same
+ * reasoning as Stock Audit's own approve-is-Administrator-only rule below. hr.employee.view is a
+ * technical prerequisite only (PayrollPage's "new run" flow reads GET /hr/employees), not employee
+ * CRUD; Financial Reports and treasury cash-box tracking stay view-only; Monthly Stock Audit gets view+create
  * ("conduct and record") but never approve (Administrator-only); Settings gets full management
  * except settings.partner (Partners/percentages) and system (factory reset, already gated by
  * isSuperAdmin regardless of permissions — see SettingsPage.tsx's canFactoryReset).
@@ -96,7 +99,6 @@ const MANAGER_PERMISSION_CODES = [
   'hr.payroll.create',
   'hr.payroll.edit',
   'hr.payroll.delete',
-  'hr.payroll.approve',
   'hr.employee.view',
   // Financial Reports — view only
   'accounting.reports.view',
@@ -1716,6 +1718,37 @@ function earliestActivityYear(companyId: string): number {
  * year-1 when n=1) — backs the Printing Press-only quarterly/YoY comparison chart. `earliestYear`
  * lets the frontend skip any comparison year that predates the company's actual first activity.
  */
+/** Mirrors SalesRepresentativesService.getManagerBranchSalesForPeriod(): the exact same
+ * totalSales computation "لوحة المدير" uses for a manager (buildManagerDashboardForRep above) —
+ * branch-scoped invoice lines, excluding any line whose resolved commission rate is 0. Reused by
+ * the quarterly-trend chart below so a manager's per-period sales figure can never drift from
+ * what that same manager's own dashboard shows for the same period. */
+function getManagerBranchSalesForPeriod(companyId: string, branchId: string, dateFrom: string, dateTo: string, rep: any): number {
+  const products = readTable<any>('products');
+  const invoices = readTable<any>('salesInvoices').filter(
+    (i) => i.companyId === companyId && i.branchId === branchId && i.invoiceDate >= dateFrom && i.invoiceDate <= dateTo,
+  );
+  const exceptions = readTable<any>('commissionExceptions').filter(
+    (e) => e.companyId === companyId && e.salesRepresentativeId === rep.id,
+  );
+  const generalRate = Number(rep.commissionRate ?? 0);
+
+  let totalSales = 0;
+  for (const inv of invoices) {
+    for (const line of inv.lines ?? []) {
+      const product = products.find((p) => p.id === line.productId);
+      const categoryId = product?.categoryId ?? null;
+      const productException = exceptions.find((e) => e.productId === line.productId);
+      const categoryException =
+        !productException && categoryId ? exceptions.find((e) => e.categoryId === categoryId) : undefined;
+      const rate = Number(productException?.commissionRate ?? categoryException?.commissionRate ?? generalRate);
+      if (rate <= 0) continue;
+      totalSales += Number(line.lineTotal ?? 0);
+    }
+  }
+  return totalSales;
+}
+
 function buildSalesRepresentativesQuarterlyTrend(
   companyId: string,
   year: number,
@@ -1746,16 +1779,34 @@ function buildSalesRepresentativesQuarterlyTrend(
   const customers = readTable<any>('customers');
   const customerById = new Map(customers.map((c) => [c.id, c]));
 
+  // When a specific manager is selected, sales must be resolved the exact same way "لوحة المدير"
+  // resolves them: by that manager's own branchId, not by matching SalesInvoice's
+  // salesRepresentativeId/createdById — Printing Press invoices are created via a branch selector,
+  // not a rep selector, so most never get salesRepresentativeId set at all, and the createdById
+  // fallback only matches when the manager's own login happened to create the invoice. That
+  // mismatch is exactly what made a manager's dashboard total (branch-scoped) disagree with this
+  // chart's total (rep-id-scoped) for the same period.
+  const selectedRep = representativeId
+    ? readTable<any>('salesRepresentatives').find((r) => r.id === representativeId && r.companyId === companyId)
+    : undefined;
+
   const results = periods.map((p) => {
     const { dateFrom, dateTo } = quarterDateRange(p.year, p.quarter);
-    let salesVolume = 0;
-    for (const inv of invoices) {
-      const repId = resolveInvoiceRepId(inv, repsByUserId);
-      if (!repId) continue;
-      if (representativeId && repId !== representativeId) continue;
-      if (inv.invoiceDate < dateFrom || inv.invoiceDate > dateTo) continue;
-      salesVolume += Number(inv.grandTotal ?? 0);
+
+    let salesVolume: number;
+    if (representativeId && selectedRep?.branchId) {
+      salesVolume = getManagerBranchSalesForPeriod(companyId, selectedRep.branchId, dateFrom, dateTo, selectedRep);
+    } else {
+      salesVolume = 0;
+      for (const inv of invoices) {
+        const repId = resolveInvoiceRepId(inv, repsByUserId);
+        if (!repId) continue;
+        if (representativeId && repId !== representativeId) continue;
+        if (inv.invoiceDate < dateFrom || inv.invoiceDate > dateTo) continue;
+        salesVolume += Number(inv.grandTotal ?? 0);
+      }
     }
+
     let collectedAmount = 0;
     for (const pay of payments) {
       if (pay.paymentDate < dateFrom || pay.paymentDate > dateTo) continue;
@@ -1891,6 +1942,7 @@ function buildBranchManagersCommission(companyId: string, dateFrom: string, date
             ? managerExceptions.find((e) => e.categoryId === line.categoryId)
             : undefined;
         const rate = Number(productException?.commissionRate ?? categoryException?.commissionRate ?? generalRate);
+        if (rate <= 0) continue;
         totalSales += line.lineTotal;
         commissionAmount += (line.lineTotal * rate) / 100;
       }
@@ -2140,6 +2192,95 @@ function buildConsumedMaterialsTotal(companyId: string, dateFrom?: string, dateT
       }, 0)
     );
   }, 0);
+}
+
+// Mirrors StockAuditsService.INCOMING_ADD_TYPES exactly.
+const INCOMING_ADD_STOCK_MOVEMENT_TYPES = new Set(['PURCHASE_RECEIPT', 'ADJUSTMENT_IN', 'TRANSFER_IN', 'OPENING_STOCK']);
+// Mirrors StockAuditsService.INCOMING_SUBTRACT_TYPES — nets out a cancelled/edited-down purchase
+// receipt, whose original PURCHASE_RECEIPT movement is never removed: deleting/editing a receipt
+// (the purchase-receipts handler's issueStock(..., 'PURCHASE_RETURN') calls) posts a compensating
+// PURCHASE_RETURN issue instead, leaving that original movement in the ledger untouched. SALES_RETURN
+// is deliberately absent from both sets: it only ever reverses a SALES_ISSUE that was never
+// subtracted here in the first place, so counting it either way would double it.
+const INCOMING_SUBTRACT_STOCK_MOVEMENT_TYPES = new Set(['PURCHASE_RETURN']);
+
+/** First day of the month after `dateStr` — mirrors the backend's firstDayOfNextMonth() exactly. */
+function firstDayOfNextMonth(dateStr: string): string {
+  const [y, m] = dateStr.split('-').map(Number);
+  const nextMonth = m === 12 ? 1 : m + 1;
+  const nextYear = m === 12 ? y + 1 : y;
+  return `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
+}
+
+/**
+ * Mirrors the backend's StockAuditsService.getSetupLines(): backs the "بدء جرد جديد" setup
+ * screen's "المخزون السابق (بالوحدة)" column. Never reads live stockLevels.quantityOnHand —
+ * per product, previous stock = (last APPROVED audit's actualQuantity for this warehouse, or 0 if
+ * none exists yet) + net genuine receipts into the warehouse since that audit's month (or, with no
+ * prior audit, since the beginning) through the current audit's month — purchases/adjustments-in/
+ * transfers-in minus any purchase returns. Outgoing movements are otherwise never subtracted, and
+ * SALES_RETURN is never added — see the backend method's own comment for why. Both queries filter
+ * by companyId AND warehouseId together (never just one), so another branch's or another
+ * company's movements can never bleed into this warehouse's total; movements are additionally
+ * deduped by their originating document reference before summing, so a receipt/invoice whose
+ * stock effect somehow got posted twice is only ever counted once.
+ */
+function buildStockAuditSetupLines(
+  companyId: string,
+  warehouseId: string,
+  auditDate: string,
+): { productId: string; previousStock: number }[] {
+  const products = readTable<any>('products').filter((p) => p.companyId === companyId && p.isActive);
+  const upperBoundExclusive = firstDayOfNextMonth(auditDate);
+
+  const approvedLines = readTable<any>('stockAudits')
+    .filter((a) => a.companyId === companyId && a.warehouseId === warehouseId && a.status === 'APPROVED' && a.auditDate < upperBoundExclusive)
+    .flatMap((audit) =>
+      readTable<any>('stockAuditLines')
+        .filter((l) => l.auditId === audit.id)
+        .map((l) => ({ productId: l.productId, actualQuantity: Number(l.actualQuantity ?? 0), auditDate: audit.auditDate })),
+    )
+    .sort((a, b) => (a.auditDate < b.auditDate ? 1 : -1));
+
+  const lastApprovedByProductId = new Map<string, { actualQuantity: number; auditDate: string }>();
+  for (const l of approvedLines) {
+    if (!lastApprovedByProductId.has(l.productId)) lastApprovedByProductId.set(l.productId, l);
+  }
+
+  const movements = readTable<any>('stockMovements').filter(
+    (m) =>
+      m.companyId === companyId &&
+      m.warehouseId === warehouseId &&
+      (INCOMING_ADD_STOCK_MOVEMENT_TYPES.has(m.type) || INCOMING_SUBTRACT_STOCK_MOVEMENT_TYPES.has(m.type)) &&
+      m.createdAt < upperBoundExclusive,
+  );
+
+  // Same dedup as the backend: keeps the first-seen row per (referenceType, referenceNumber,
+  // type, productId) so the same receipt/invoice's stock effect is never double-counted if it was
+  // somehow posted twice — never collapses genuinely separate purchases (different reference
+  // numbers) of the same product on the same day.
+  const seenReferenceKeys = new Set<string>();
+  const dedupedMovements = movements.filter((m) => {
+    if (!m.referenceNumber) return true;
+    const key = `${m.referenceType ?? ''}|${m.referenceNumber}|${m.type}|${m.productId}`;
+    if (seenReferenceKeys.has(key)) return false;
+    seenReferenceKeys.add(key);
+    return true;
+  });
+
+  const incomingByProductId = new Map<string, number>();
+  for (const m of dedupedMovements) {
+    const last = lastApprovedByProductId.get(m.productId);
+    if (last && m.createdAt < firstDayOfNextMonth(last.auditDate)) continue;
+    const signedQuantity = INCOMING_SUBTRACT_STOCK_MOVEMENT_TYPES.has(m.type) ? -Number(m.quantity) : Number(m.quantity);
+    incomingByProductId.set(m.productId, (incomingByProductId.get(m.productId) ?? 0) + signedQuantity);
+  }
+
+  return products.map((p) => {
+    const last = lastApprovedByProductId.get(p.id);
+    const incoming = incomingByProductId.get(p.id) ?? 0;
+    return { productId: p.id, previousStock: (last?.actualQuantity ?? 0) + incoming };
+  });
 }
 
 /**
@@ -2393,23 +2534,26 @@ function buildSalesLinesReport(
   const products = readTable<any>('products');
   const packageTypes = readTable<any>('packageTypes');
   const reps = readTable<any>('salesRepresentatives');
+  const branches = readTable<any>('branches');
   const customers = readTable<any>('customers');
   const effectiveBranchId = resolveOfflineBranchId(branchId);
+  // Filters by the invoice's own branchId directly — not the invoice's sales rep's branchId,
+  // which is null on most Press invoices (Press invoicing uses a branch selector, never a rep
+  // selector) and would silently drop them all whenever a branch filter was active.
   const invoices = readTable<any>('salesInvoices')
     .filter((i) => !companyId || i.companyId === companyId)
     .filter((i) => !dateFrom || i.invoiceDate >= dateFrom)
     .filter((i) => !dateTo || i.invoiceDate <= dateTo)
-    .filter((i) => {
-      if (!effectiveBranchId) return true;
-      const rep = i.salesRepresentativeId ? reps.find((r) => r.id === i.salesRepresentativeId) : null;
-      return rep?.branchId === effectiveBranchId;
-    })
+    .filter((i) => !effectiveBranchId || i.branchId === effectiveBranchId)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
   const rows: any[] = [];
   for (const inv of invoices) {
     const repName = inv.salesRepresentativeId
       ? reps.find((r) => r.id === inv.salesRepresentativeId)?.name ?? null
+      : null;
+    const branchName = inv.branchId
+      ? branches.find((b) => b.id === inv.branchId)?.nameAr ?? branches.find((b) => b.id === inv.branchId)?.nameEn ?? null
       : null;
     const customerName = customers.find((c) => c.id === inv.customerId)?.name ?? null;
     const invoiceGrandTotal = Number(inv.grandTotal ?? 0);
@@ -2431,6 +2575,7 @@ function buildSalesLinesReport(
           ? packageTypes.find((pt) => pt.id === product.packageTypeId)?.nameEn ?? null
           : null,
         salesRepresentativeName: repName,
+        branchName,
         customerName,
         lineTotal,
         // The actual weighted-average stock cost at time of sale, mirroring the backend — this is
@@ -2467,6 +2612,24 @@ function assertPartnerShareWithinLimit(
     throw new OfflineApiError(
       `Total partner share would be ${projectedTotal.toFixed(2)}%, which exceeds 100% (current total: ${currentTotal.toFixed(2)}%).`,
     );
+  }
+}
+
+/**
+ * Mirrors partners-treasury.controller.ts's assertPressPartnerHasBranch(): a Printing Press
+ * partner with no branchId has no valid profit pool (Press's dividend model is entirely
+ * per-branch), so unlike every other company — where null correctly means "the one company-wide
+ * pool" — silently falling back to a company-wide buildProfitReport() here would hand a Press
+ * partner the whole company's profit as their own scope. In a single-branch company that's
+ * numerically identical to their real branch's profit, so a partner with both a legacy
+ * branchless row and a proper branch-scoped row would have their share computed against the same
+ * pool twice, then summed by the frontend's per-person merge into a doubled total.
+ */
+function assertPressPartnerHasBranch(companyId: string, partner: any): void {
+  if (partner.branchId) return;
+  const company = OFFLINE_COMPANY_DEFS.find((c) => c.id === companyId);
+  if (company?.code === 'PRESS') {
+    throw new OfflineApiError(`Partner "${partner.name}" has no branch assigned — assign one in Settings > Partners before computing or distributing their dividend share.`);
   }
 }
 
@@ -3945,6 +4108,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
     }
     if (!seg2 && method === 'post') {
       const branchId = body.branchId ?? null;
+      assertBranchRequiredForPress(companyId, branchId);
       assertPartnerShareWithinLimit(companyId, Number(body.sharePercentage), branchId);
       return genericCreate('partners', { ...body, branchId }, { companyId, isActive: true });
     }
@@ -3952,6 +4116,9 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       const rows = readTable<any>('partners');
       const row = rows.find((r) => r.id === seg2 && r.companyId === companyId);
       if (!row) throw new OfflineApiError('Not found');
+      if (body.branchId !== undefined) {
+        assertBranchRequiredForPress(companyId, body.branchId ?? null);
+      }
       if (body.sharePercentage != null) {
         const branchId = body.branchId !== undefined ? body.branchId ?? null : row.branchId ?? null;
         assertPartnerShareWithinLimit(companyId, Number(body.sharePercentage), branchId, seg2);
@@ -4607,6 +4774,12 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         .filter((a) => a.companyId === auditsCompanyId)
         .map(hydrateAudit)
         .sort((a: any, b: any) => (a.createdAt < b.createdAt ? 1 : -1));
+    }
+
+    // Declared before the generic seg2-as-id GET below, or 'setup-lines' would be looked up as an
+    // audit id and throw "not found" — mirrors StockAuditsController's own route ordering.
+    if (seg2 === 'setup-lines' && method === 'get') {
+      return buildStockAuditSetupLines(auditsCompanyId, params?.warehouseId, params?.auditDate);
     }
 
     if (seg2 && !seg3 && method === 'get') {
@@ -5634,6 +5807,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
     if (!seg2 && method === 'get') {
       const customers = readTable<any>('customers');
       const users = readTable<any>('users');
+      const branches = readTable<any>('branches');
       // Branch-scoped exactly like the Sales report's "الفرع" filter: a non-admin pinned to a
       // branch (via their own linked SalesRepresentative) only ever sees that branch's invoices.
       const invoicesBranchId = resolveOfflineBranchId(undefined);
@@ -5643,6 +5817,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
           ...i,
           customer: customers.find((c) => c.id === i.customerId) ?? { name: 'Unknown' },
           createdByName: users.find((u) => u.id === i.createdById)?.fullName ?? '—',
+          branch: i.branchId ? branches.find((b) => b.id === i.branchId) ?? null : null,
         }))
         .sort((a: any, b: any) => (a.createdAt < b.createdAt ? 1 : -1));
     }
@@ -6315,6 +6490,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         (p) => p.id === params?.partnerId && p.isActive && p.companyId === dividendsCompanyId,
       );
       if (!partner) throw new OfflineApiError('Selected partner was not found or is not active');
+      assertPressPartnerHasBranch(dividendsCompanyId, partner);
       // Printing Press only — a branch-owned partner's available pool and distributed history are
       // scoped to their own branch's profit and payouts, never mixed with another branch's.
       const branchId = partner.branchId ?? undefined;
@@ -6326,6 +6502,35 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
       const sharePercentage = Number(partner.sharePercentage);
       const maxAmount = Math.max((sharePercentage / 100) * available - alreadyPaidToPartner, 0);
       return { sharePercentage, available, alreadyPaidToPartner, maxAmount };
+    }
+    // Per-partner breakdown of the selected quarter's profit distribution — one row per active
+    // partner, using the exact same maxAmount formula as partner-max above, just computed for
+    // every partner in one call. Backs the Dividends tab's "توزيع الأرباح حسب الشركاء" table and
+    // lets the top summary cards switch to one partner's own figures when filtered.
+    if (seg2 === 'partners-breakdown' && method === 'get') {
+      const isPress = OFFLINE_COMPANY_DEFS.find((c) => c.id === dividendsCompanyId)?.code === 'PRESS';
+      const partners = readTable<any>('partners').filter((p) => p.isActive && p.companyId === dividendsCompanyId);
+      const { dateFrom, dateTo } = quarterDateRange(Number(params?.year), Number(params?.quarter));
+      return partners
+        .filter((p) => !(isPress && !p.branchId))
+        .map((p) => {
+          const branchId = p.branchId ?? undefined;
+          const { netProfit } = buildProfitReport(dividendsCompanyId, dateFrom, dateTo, branchId);
+          const totalAlreadyDistributed = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo, undefined, branchId);
+          const available = netProfit <= 0 ? 0 : Math.max(netProfit - totalAlreadyDistributed, 0);
+          const alreadyPaidToPartner = buildDistributedDividendsTotal(dividendsCompanyId, dateFrom, dateTo, p.id, branchId);
+          const sharePercentage = Number(p.sharePercentage);
+          const netProfitShare = netProfit > 0 ? (sharePercentage / 100) * netProfit : 0;
+          const availableToDistribute = Math.max((sharePercentage / 100) * available - alreadyPaidToPartner, 0);
+          return {
+            partnerId: p.id,
+            name: p.name,
+            sharePercentage,
+            netProfitShare,
+            alreadyPaidToPartner,
+            availableToDistribute,
+          };
+        });
     }
     if (!seg2 && method === 'get') {
       const users = readTable<any>('users');
@@ -6357,6 +6562,7 @@ export function resolveOfflineRequest(method: Method, path: string, params: Reco
         (p) => p.id === body.partnerId && p.isActive && p.companyId === dividendsCompanyId,
       );
       if (!partner) throw new OfflineApiError('Selected partner was not found or is not active');
+      assertPressPartnerHasBranch(dividendsCompanyId, partner);
 
       // Printing Press only — see partner-max's comment above.
       const branchId = partner.branchId ?? undefined;

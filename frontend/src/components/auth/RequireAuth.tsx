@@ -26,7 +26,7 @@ export function AuthBootstrap({ children }: { children: React.ReactNode }) {
 
     apiClient
       .post('/auth/refresh')
-      .then((res) => setSession(res.data.accessToken, res.data.user))
+      .then((res) => setSession(res.data.data.accessToken, res.data.data.user))
       .catch(() => undefined)
       .finally(() => setHydrated());
     // eslint-disable-next-line react-hooks/exhaustive-deps

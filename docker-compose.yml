@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: erp_password
       POSTGRES_DB: erp_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - erp_pgdata:/var/lib/postgresql/data
     healthcheck:

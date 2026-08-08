@@ -1,6 +1,5 @@
 import axios, { AxiosError } from 'axios';
 import { useAuthStore } from '../store/auth-store';
-import { resolveOfflineRequest } from './offline-store';
 
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -51,39 +50,6 @@ apiClient.interceptors.response.use(
         originalRequest.headers = originalRequest.headers ?? {};
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return apiClient(originalRequest);
-      }
-    }
-
-    // No real backend reachable — serve the request from the local offline store instead of
-    // failing outright, so the app stays usable without Docker/Postgres. This must NOT trigger
-    // when a real backend responded with a business-rule error (400/403/422/...): the app's
-    // HttpExceptionFilter always shapes those as `{ success: false, message, ... }`, so that
-    // shape is the signal that a *real* backend actually rejected the request — as opposed to no
-    // response at all, or Vite's dev proxy answering with its own 500 because nothing is
-    // listening on :3000 (still "no real backend", just wrapped in an HTTP response by the
-    // proxy). Real rejections (e.g. "insufficient stock", "selling below cost requires
-    // permission") must still surface to the user instead of being masked by a fake offline
-    // success.
-    // /auth/* is excluded: login has its own explicit offline-password check, and logout
-    // already clears the session locally regardless of the API result.
-    const path = (originalRequest?.url ?? '').split('?')[0].replace(/^\/+/, '');
-    const responseData = error.response?.data as { success?: boolean } | undefined;
-    const isRealBackendRejection =
-      responseData !== null && typeof responseData === 'object' && responseData?.success === false;
-    if (originalRequest && !path.startsWith('auth/') && !isRealBackendRejection) {
-      try {
-        const method = (originalRequest.method ?? 'get').toLowerCase() as 'get' | 'post' | 'patch' | 'delete';
-        const body = typeof originalRequest.data === 'string' ? JSON.parse(originalRequest.data || '{}') : (originalRequest.data ?? {});
-        const data = resolveOfflineRequest(method, path, originalRequest.params ?? {}, body);
-        return Promise.resolve({
-          data: { success: true, data },
-          status: 200,
-          statusText: 'OK (offline)',
-          headers: {},
-          config: originalRequest,
-        });
-      } catch (offlineError) {
-        return Promise.reject(offlineError);
       }
     }
 

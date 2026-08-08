@@ -32,32 +32,12 @@ interface AuthState {
   updateUser: (patch: Partial<AuthUser>) => void;
 }
 
-export const OFFLINE_TOKEN = 'offline-demo-token';
-const OFFLINE_SESSION_KEY = 'erp_offline_session';
-
-export function restoreOfflineSession(): { accessToken: string; user: AuthUser } | null {
-  try {
-    const raw = localStorage.getItem(OFFLINE_SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
 export const useAuthStore = create<AuthState>((set, get) => ({
   accessToken: null,
   user: null,
   isHydrated: false,
-  setSession: (accessToken, user) => {
-    if (accessToken === OFFLINE_TOKEN) {
-      localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify({ accessToken, user }));
-    }
-    set({ accessToken, user });
-  },
-  clearSession: () => {
-    localStorage.removeItem(OFFLINE_SESSION_KEY);
-    set({ accessToken: null, user: null });
-  },
+  setSession: (accessToken, user) => set({ accessToken, user }),
+  clearSession: () => set({ accessToken: null, user: null }),
   hasPermission: (code: string) => {
     const permissions = get().user?.permissions ?? [];
     return permissions.includes('*') || permissions.includes(code);
@@ -70,10 +50,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   updateUser: (patch) => {
     const current = get();
     if (!current.user) return;
-    const nextUser = { ...current.user, ...patch };
-    if (current.accessToken === OFFLINE_TOKEN) {
-      localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify({ accessToken: current.accessToken, user: nextUser }));
-    }
-    set({ user: nextUser });
+    set({ user: { ...current.user, ...patch } });
   },
 }));

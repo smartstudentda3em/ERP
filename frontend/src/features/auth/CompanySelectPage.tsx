@@ -3,9 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../lib/api-client';
-import { switchOfflineCompanyRequest } from '../../lib/offline-store';
 import { useAccessibleCompanies } from '../../lib/companies';
-import { OFFLINE_TOKEN, useAuthStore } from '../../store/auth-store';
+import { useAuthStore } from '../../store/auth-store';
 import { Button } from '../../components/ui/Button';
 
 /**
@@ -18,7 +17,6 @@ export function CompanySelectPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const accessToken = useAuthStore((s) => s.accessToken);
   const setSession = useAuthStore((s) => s.setSession);
   const [switching, setSwitching] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,13 +28,8 @@ export function CompanySelectPage() {
     setError(null);
     setSwitching(companyId);
     try {
-      let result: { accessToken: string; user: any };
-      if (accessToken === OFFLINE_TOKEN) {
-        result = switchOfflineCompanyRequest(companyId);
-      } else {
-        const res = await apiClient.post('/auth/switch-company', { companyId });
-        result = res.data.data;
-      }
+      const res = await apiClient.post('/auth/switch-company', { companyId });
+      const result: { accessToken: string; user: any } = res.data.data;
       setSession(result.accessToken, result.user);
       await queryClient.clear();
       navigate('/dashboard', { replace: true });

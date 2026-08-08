@@ -3,13 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { apiClient } from '../../lib/api-client';
-import { OfflineApiError, resolveOfflineUser } from '../../lib/offline-store';
-import { OFFLINE_TOKEN, useAuthStore } from '../../store/auth-store';
+import { useAuthStore } from '../../store/auth-store';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 
 const ADMIN_PHONE = '99970766';
-const OFFLINE_DEMO_PASSWORD = 'Ayman987654#';
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -26,27 +24,6 @@ export function LoginPage() {
       navigate('/select-company');
     },
     onError: () => {
-      // No backend reachable (or real credentials rejected) — fall back to an offline demo
-      // session so the UI shell is still explorable without a running API. Real data won't
-      // load anywhere until the actual backend + database are up; see docs/INSTALLATION.md.
-      // Any seeded/created offline user can log in this way (not just the admin account), so
-      // roles like Manager can actually be tried out — the shared demo password stands in for
-      // per-user passwords, since the mock never stores real credentials.
-      if (password.trim() === OFFLINE_DEMO_PASSWORD) {
-        try {
-          const offlineUser = resolveOfflineUser(phone);
-          if (offlineUser) {
-            setSession(OFFLINE_TOKEN, offlineUser);
-            navigate('/select-company');
-            return;
-          }
-        } catch (err) {
-          // Distinguishes "not authorized for any company" from "wrong credentials" — thrown by
-          // resolveOfflineUser() when a non-admin user has no accessible companies at all.
-          setError(err instanceof OfflineApiError ? err.message : t('auth.invalidCredentials'));
-          return;
-        }
-      }
       setError(t('auth.invalidCredentials'));
     },
   });

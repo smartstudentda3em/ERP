@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
-import { restoreOfflineSession, useAuthStore } from '../../store/auth-store';
+import { useAuthStore } from '../../store/auth-store';
 import { apiClient } from '../../lib/api-client';
 
 export function AuthBootstrap({ children }: { children: React.ReactNode }) {
@@ -11,15 +11,6 @@ export function AuthBootstrap({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (accessToken) {
-      setHydrated();
-      return;
-    }
-
-    // Restore a locally-saved offline demo session before trying the real backend, so
-    // reloading the page doesn't force logging in again when there's no backend to ask.
-    const offline = restoreOfflineSession();
-    if (offline) {
-      setSession(offline.accessToken, offline.user);
       setHydrated();
       return;
     }

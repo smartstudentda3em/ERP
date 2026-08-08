@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { apiClient, unwrap } from '../../lib/api-client';
-import { changeOfflinePassword } from '../../lib/offline-store';
-import { OFFLINE_TOKEN, useAuthStore } from '../../store/auth-store';
+import { useAuthStore } from '../../store/auth-store';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { FormField, Input } from '../../components/ui/Input';
@@ -27,7 +26,6 @@ export function ProfileSettingsModal({ open, onClose }: { open: boolean; onClose
   const toast = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const accessToken = useAuthStore((s) => s.accessToken);
   const updateUser = useAuthStore((s) => s.updateUser);
   const clearSession = useAuthStore((s) => s.clearSession);
 
@@ -64,9 +62,6 @@ export function ProfileSettingsModal({ open, onClose }: { open: boolean; onClose
     mutationFn: () => {
       if (passwordForm.newPassword !== passwordForm.confirmPassword) {
         throw new Error(t('profile.passwordMismatch') ?? 'Passwords do not match');
-      }
-      if (accessToken === OFFLINE_TOKEN) {
-        return Promise.resolve(changeOfflinePassword(passwordForm.oldPassword, passwordForm.newPassword));
       }
       return apiClient
         .post('/auth/change-password', {

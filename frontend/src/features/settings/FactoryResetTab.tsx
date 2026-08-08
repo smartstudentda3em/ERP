@@ -14,8 +14,7 @@ const RESET_CODE = '0145';
 
 /**
  * Wipes every transactional/demo-master-data table back to empty while leaving configuration and
- * every login untouched (see backend SystemService.factoryReset() / offline-store.ts's
- * factoryResetDemoData() — both implement the exact same table scope).
+ * every login untouched (see backend SystemService.factoryReset()).
  *
  * Gated by two independent layers, neither of which alone is trusted:
  *  1. This tab only renders for a true Administrator/Super-Admin (see SettingsPage.tsx) — but

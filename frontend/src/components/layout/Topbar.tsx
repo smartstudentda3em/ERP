@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { OFFLINE_TOKEN, useAuthStore } from '../../store/auth-store';
+import { useAuthStore } from '../../store/auth-store';
 import { useThemeStore } from '../../store/theme-store';
 import { setLanguage } from '../../i18n';
 import { apiClient } from '../../lib/api-client';
-import { switchOfflineCompanyRequest } from '../../lib/offline-store';
 import { useAccessibleCompanies } from '../../lib/companies';
 import { ProfileSettingsModal } from '../../features/profile/ProfileSettingsModal';
 
@@ -14,7 +13,6 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useThemeStore();
   const user = useAuthStore((s) => s.user);
-  const accessToken = useAuthStore((s) => s.accessToken);
   const clearSession = useAuthStore((s) => s.clearSession);
   const setSession = useAuthStore((s) => s.setSession);
   const navigate = useNavigate();
@@ -48,7 +46,6 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
 
   const switchMutation = useMutation({
     mutationFn: async (companyId: string) => {
-      if (accessToken === OFFLINE_TOKEN) return switchOfflineCompanyRequest(companyId);
       const res = await apiClient.post('/auth/switch-company', { companyId });
       return res.data.data as { accessToken: string; user: any };
     },

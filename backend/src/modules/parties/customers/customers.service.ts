@@ -108,11 +108,12 @@ export class CustomersService extends BaseCrudService<Customer> {
       // whenever the customer has no directly-assigned rep of their own.
       this.dataSource
         .createQueryBuilder()
-        .select('DISTINCT ON (i."customerId") i."customerId"', 'customerId')
+        .select('i."customerId"', 'customerId')
         .addSelect('r.name', 'repName')
         .from('sales_invoices', 'i')
         .innerJoin('sales_representatives', 'r', 'r.id = i."salesRepresentativeId"')
         .where('i."customerId" IN (:...ids)', { ids })
+        .distinctOn(['i."customerId"'])
         .orderBy('i."customerId"')
         .addOrderBy('i."invoiceDate"', 'DESC')
         .getRawMany(),
@@ -121,11 +122,12 @@ export class CustomersService extends BaseCrudService<Customer> {
       // the column never falls back to an empty dash just because no rep was ever chosen.
       this.dataSource
         .createQueryBuilder()
-        .select('DISTINCT ON (i."customerId") i."customerId"', 'customerId')
+        .select('i."customerId"', 'customerId')
         .addSelect('u."fullName"', 'creatorName')
         .from('sales_invoices', 'i')
         .innerJoin('users', 'u', 'u.id = i."createdById"')
         .where('i."customerId" IN (:...ids)', { ids })
+        .distinctOn(['i."customerId"'])
         .orderBy('i."customerId"')
         .addOrderBy('i."invoiceDate"', 'DESC')
         .getRawMany(),

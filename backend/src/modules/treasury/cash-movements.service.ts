@@ -282,13 +282,13 @@ export class CashMovementsService {
   async getExpenseReport(companyId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
     const qb = this.dataSource
       .createQueryBuilder()
-      .select(`COALESCE(m.category, m."sourceType")`, 'label')
+      .select(`COALESCE(m.category, m."sourceType"::text)`, 'label')
       .addSelect('COALESCE(SUM(m.amount), 0)', 'total')
       .from('cash_movements', 'm')
       .where('m."companyId" = :companyId', { companyId })
       .andWhere(`m.type = 'EXPENSE'`)
       .andWhere(`m."sourceType" IN ('MANUAL', 'PAYROLL')`)
-      .groupBy(`COALESCE(m.category, m."sourceType")`)
+      .groupBy(`COALESCE(m.category, m."sourceType"::text)`)
       .orderBy('total', 'DESC');
 
     if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });

@@ -150,6 +150,11 @@ export function UsersRolesPage() {
       queryClient.invalidateQueries({ queryKey: ['sales-representatives'] });
       setModalOpen(false);
       setForm({ email: '', fullName: '', phone: '', password: '', roleId: '', branchId: '', companyIds: [] });
+      toast.success(t('userMgmt.userCreated'));
+    },
+    onError: (err: any) => {
+      console.error(err);
+      toast.error(err?.response?.data?.message ?? t('common.saveFailed'));
     },
   });
 

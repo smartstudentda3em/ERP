@@ -23,6 +23,7 @@ import { Input, FormField, Select } from '../../components/ui/Input';
 import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 
 interface Company {
   id: string;
@@ -215,55 +216,11 @@ export function ReportsPage() {
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-
-      const scale = 2;
-      const canvas = await html2canvas(printRef.current, { scale, useCORS: true });
-
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidthMm = pdf.internal.pageSize.getWidth();
-      const pageHeightMm = pdf.internal.pageSize.getHeight();
-      const pxPerMm = canvas.width / pageWidthMm;
-      const pageHeightPx = pageHeightMm * pxPerMm;
-
-      // Row-boundary-aware page breaks — a plain fixed-height slice could cut a table row (or a
-      // section title) in half at a page edge, so each break snaps back to the nearest element
-      // boundary that still fits, keeping the two sections' content visually intact.
-      const rowEdgesPx = Array.from(
-        printRef.current.querySelectorAll('tr, .financial-report-print-section-title, .financial-report-print-total'),
-      ).map((el) => ((el as HTMLElement).offsetTop + (el as HTMLElement).offsetHeight) * scale);
-      const sliceBoundaries: number[] = [];
-      let cursor = 0;
-      while (cursor < canvas.height) {
-        const maxEnd = cursor + pageHeightPx;
-        if (maxEnd >= canvas.height) {
-          sliceBoundaries.push(canvas.height);
-          break;
-        }
-        const fittingEdges = rowEdgesPx.filter((e) => e > cursor && e <= maxEnd);
-        sliceBoundaries.push(fittingEdges.length ? Math.max(...fittingEdges) : maxEnd);
-        cursor = sliceBoundaries[sliceBoundaries.length - 1];
-      }
-
-      const pageCanvas = document.createElement('canvas');
-      pageCanvas.width = canvas.width;
-      let sliceStart = 0;
-      for (let i = 0; i < sliceBoundaries.length; i++) {
-        const sliceEnd = sliceBoundaries[i];
-        const sliceHeightPx = sliceEnd - sliceStart;
-        pageCanvas.height = sliceHeightPx;
-        const ctx = pageCanvas.getContext('2d')!;
-        ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
-        ctx.drawImage(canvas, 0, sliceStart, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
-        if (i > 0) pdf.addPage();
-        pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 0, 0, pageWidthMm, sliceHeightPx / pxPerMm);
-        sliceStart = sliceEnd;
-      }
-
-      pdf.save(buildPdfFileName('التقرير المالي الشامل', `${dateFrom} إلى ${dateTo}`, localToday()));
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName('التقرير المالي الشامل', `${dateFrom} إلى ${dateTo}`, localToday()),
+        'portrait',
+      );
     } catch (err) {
       toast.error(t('accounting.pdfExportError'));
       // eslint-disable-next-line no-console

@@ -15,6 +15,7 @@ import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/Dat
 import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 
 interface Company {
   id: string;
@@ -206,88 +207,11 @@ export function TreasuryTransactionsPage() {
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-
-      const scale = 2;
-      const canvas = await html2canvas(printRef.current, { scale, useCORS: true });
-
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageWidthMm = pdf.internal.pageSize.getWidth();
-      const pageHeightMm = pdf.internal.pageSize.getHeight();
-      const footerReserveMm = 8; // room for the "الصفحة X من Y" label at the bottom of each page
-      const pxPerMm = canvas.width / pageWidthMm;
-      const pageHeightPx = (pageHeightMm - footerReserveMm) * pxPerMm;
-
-      // Row-boundary-aware page breaks — a plain fixed-height slice could cut a <tr> in half at a
-      // page edge, so each break is snapped back to the nearest row boundary that still fits.
-      const rowEdgesPx = Array.from(printRef.current.querySelectorAll('tr')).map(
-        (tr) => ((tr as HTMLElement).offsetTop + (tr as HTMLElement).offsetHeight) * scale,
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName('تقرير حركة الخزينة', company?.nameAr || company?.nameEn, localToday()),
+        'landscape',
       );
-      const sliceBoundaries: number[] = [];
-      let cursor = 0;
-      while (cursor < canvas.height) {
-        const maxEnd = cursor + pageHeightPx;
-        if (maxEnd >= canvas.height) {
-          sliceBoundaries.push(canvas.height);
-          break;
-        }
-        const fittingEdges = rowEdgesPx.filter((e) => e > cursor && e <= maxEnd);
-        sliceBoundaries.push(fittingEdges.length ? Math.max(...fittingEdges) : maxEnd);
-        cursor = sliceBoundaries[sliceBoundaries.length - 1];
-      }
-
-      const totalPages = sliceBoundaries.length;
-      const pageCanvas = document.createElement('canvas');
-      pageCanvas.width = canvas.width;
-      let sliceStart = 0;
-      for (let i = 0; i < totalPages; i++) {
-        const sliceEnd = sliceBoundaries[i];
-        const sliceHeightPx = sliceEnd - sliceStart;
-        pageCanvas.height = sliceHeightPx;
-        const ctx = pageCanvas.getContext('2d')!;
-        ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
-        ctx.drawImage(canvas, 0, sliceStart, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
-        if (i > 0) pdf.addPage();
-        pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 0, 0, pageWidthMm, sliceHeightPx / pxPerMm);
-        sliceStart = sliceEnd;
-      }
-
-      // jsPDF's own text() can't render Arabic without a bundled font — captured via html2canvas
-      // instead, exactly like the rest of the report, so it renders identically to the browser.
-      const footerEl = document.createElement('div');
-      footerEl.style.position = 'fixed';
-      footerEl.style.top = '-9999px';
-      footerEl.style.left = '-9999px';
-      footerEl.style.width = '300px';
-      footerEl.style.textAlign = 'center';
-      footerEl.style.fontFamily = "'Cairo', 'Tajawal', 'Segoe UI', Tahoma, sans-serif";
-      footerEl.style.fontSize = '12px';
-      footerEl.style.color = '#4b5563';
-      document.body.appendChild(footerEl);
-      try {
-        for (let p = 1; p <= totalPages; p++) {
-          footerEl.textContent = t('treasury.pageOf', { page: p, total: totalPages });
-          const footerCanvas = await html2canvas(footerEl, { scale: 2 });
-          const footerWidthMm = 40;
-          const footerHeightMm = (footerCanvas.height * footerWidthMm) / footerCanvas.width;
-          pdf.setPage(p);
-          pdf.addImage(
-            footerCanvas.toDataURL('image/png'),
-            'PNG',
-            (pageWidthMm - footerWidthMm) / 2,
-            pageHeightMm - footerHeightMm - 2,
-            footerWidthMm,
-            footerHeightMm,
-          );
-        }
-      } finally {
-        document.body.removeChild(footerEl);
-      }
-
-      pdf.save(buildPdfFileName('تقرير حركة الخزينة', company?.nameAr || company?.nameEn, localToday()));
     } catch (err) {
       toast.error(t('treasury.pdfExportError'));
       // eslint-disable-next-line no-console

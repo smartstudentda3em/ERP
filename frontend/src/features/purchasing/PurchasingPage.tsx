@@ -14,6 +14,7 @@ import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/Dat
 import { localToday } from '../../lib/date-utils';
 import { formatAmount } from '../../lib/number-format';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 import { useActiveCompany } from '../../lib/use-active-company';
 
 interface Company {
@@ -391,17 +392,11 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgHeight = (canvas.height * pageWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
-      pdf.save(buildPdfFileName('فاتورة مشتريات', company?.nameAr || company?.nameEn, localToday()));
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName('فاتورة مشتريات', company?.nameAr || company?.nameEn, localToday()),
+        'landscape',
+      );
     } catch (err) {
       toast.error(t('purchasing.pdfExportError'));
       // eslint-disable-next-line no-console

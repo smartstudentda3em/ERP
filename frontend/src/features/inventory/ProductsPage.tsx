@@ -21,6 +21,7 @@ import { useActiveCompany } from '../../lib/use-active-company';
 import { LetterheadCompany } from '../sales/DocumentLetterhead';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 
 interface Product {
   id: string;
@@ -643,17 +644,11 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgHeight = (canvas.height * pageWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
-      pdf.save(buildPdfFileName(t('printDocument.rawMaterialsTitle'), company?.nameAr || company?.nameEn, localToday()));
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName(t('printDocument.rawMaterialsTitle'), company?.nameAr || company?.nameEn, localToday()),
+        'portrait',
+      );
     } catch (err) {
       toast.error(t('products.pdfExportError'));
       // eslint-disable-next-line no-console

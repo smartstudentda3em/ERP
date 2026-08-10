@@ -11,6 +11,7 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 
 type CargoStatus = 'ORDERED' | 'READY_FOR_SHIPPING' | 'SHIPPED';
 
@@ -405,18 +406,12 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
       // Landscape — this report has 8 data columns, wider than the portrait documents elsewhere.
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgHeight = (canvas.height * pageWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
-      pdf.save(buildPdfFileName('طلب استيراد', currentShipmentName, localToday()));
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName('طلب استيراد', currentShipmentName, localToday()),
+        'landscape',
+      );
     } finally {
       printRef.current?.classList.remove('pdf-export-mode');
       setIsExportingPdf(false);

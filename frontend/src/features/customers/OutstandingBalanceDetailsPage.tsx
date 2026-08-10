@@ -15,6 +15,7 @@ import { DocumentLetterhead, LetterheadCompany } from '../sales/DocumentLetterhe
 import { DocumentFooter } from '../sales/DocumentFooter';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 
 interface Customer {
   id: string;
@@ -194,17 +195,7 @@ export function OutstandingBalanceDetailsPage() {
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgHeight = (canvas.height * pageWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
-      pdf.save(buildPdfFileName('الرصيد المستحق', customer.name, localToday()));
+      await exportElementToPdf(printRef.current, buildPdfFileName('الرصيد المستحق', customer.name, localToday()), 'portrait');
     } finally {
       printRef.current?.classList.remove('pdf-export-mode');
       setIsExportingPdf(false);

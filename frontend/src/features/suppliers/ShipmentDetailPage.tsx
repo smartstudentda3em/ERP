@@ -15,6 +15,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 
 interface Company {
   id: string;
@@ -188,19 +189,7 @@ export function ShipmentDetailPage() {
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgHeight = (canvas.height * pageWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
-      // .save() itself creates the object URL, a temporary <a download> element, and revokes the
-      // URL afterward — this is the direct-download path (no new tab, no print dialog).
-      pdf.save(printFileName);
+      await exportElementToPdf(printRef.current, printFileName, 'portrait');
     } catch (err) {
       toast.error(t('imports.pdfExportError'));
       // eslint-disable-next-line no-console

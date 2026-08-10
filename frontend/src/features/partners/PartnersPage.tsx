@@ -14,6 +14,7 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 import { useActiveCompany } from '../../lib/use-active-company';
 
 interface Company {
@@ -569,31 +570,11 @@ export function PartnersPage() {
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
-
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidthMm = pdf.internal.pageSize.getWidth();
-      const pageHeightMm = pdf.internal.pageSize.getHeight();
-
-      // Fit-to-page, not fit-to-width: this report must land on a single A4 page, so whichever
-      // dimension (width or height) is the tighter constraint decides the scale, and the image is
-      // centered in whatever axis ends up with room to spare.
-      const widthConstrainedHeightMm = (canvas.height * pageWidthMm) / canvas.width;
-      let imgWidthMm = pageWidthMm;
-      let imgHeightMm = widthConstrainedHeightMm;
-      if (widthConstrainedHeightMm > pageHeightMm) {
-        imgHeightMm = pageHeightMm;
-        imgWidthMm = (canvas.width * pageHeightMm) / canvas.height;
-      }
-      const offsetXMm = (pageWidthMm - imgWidthMm) / 2;
-      const offsetYMm = (pageHeightMm - imgHeightMm) / 2;
-
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', offsetXMm, offsetYMm, imgWidthMm, imgHeightMm);
-      pdf.save(buildPdfFileName('تقرير الشركاء والمساهمات', company?.nameAr || company?.nameEn, localToday()));
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName('تقرير الشركاء والمساهمات', company?.nameAr || company?.nameEn, localToday()),
+        'portrait',
+      );
     } catch (err) {
       toast.error(t('partners.pdfExportError'));
       // eslint-disable-next-line no-console

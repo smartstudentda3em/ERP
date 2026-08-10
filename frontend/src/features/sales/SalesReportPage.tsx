@@ -14,6 +14,7 @@ import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter'
 import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 import { useActiveCompany } from '../../lib/use-active-company';
 import { useSalesRepLock } from './useSalesRepLock';
 
@@ -219,18 +220,12 @@ export function SalesReportPage() {
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
       // Landscape — 9 data columns is wider than the portrait documents elsewhere.
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgHeight = (canvas.height * pageWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
-      pdf.save(buildPdfFileName('تقرير المبيعات', company?.nameAr || company?.nameEn, localToday()));
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName('تقرير المبيعات', company?.nameAr || company?.nameEn, localToday()),
+        'landscape',
+      );
     } catch (err) {
       toast.error(t('salesReport.pdfExportError'));
       // eslint-disable-next-line no-console

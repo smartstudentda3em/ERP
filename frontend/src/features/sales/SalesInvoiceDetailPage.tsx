@@ -14,6 +14,7 @@ import { FormField, Input, Select } from '../../components/ui/Input';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 import { DocumentFooter } from './DocumentFooter';
 
@@ -143,17 +144,11 @@ export function SalesInvoiceDetailPage() {
     setPdfLoading(true);
     printRef.current.classList.add('pdf-export-mode');
     try {
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgHeight = (canvas.height * pageWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
-      pdf.save(buildPdfFileName('فاتورة بيع', inv.customer?.name, inv.documentNumber));
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName('فاتورة بيع', inv.customer?.name, inv.documentNumber),
+        'portrait',
+      );
     } finally {
       printRef.current?.classList.remove('pdf-export-mode');
       setPdfLoading(false);

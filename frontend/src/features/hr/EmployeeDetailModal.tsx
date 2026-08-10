@@ -5,6 +5,7 @@ import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { monthNameOnly } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
+import { exportElementToPdf } from '../../lib/pdf-export';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Input, FormField, Select } from '../../components/ui/Input';
@@ -108,17 +109,11 @@ export function EmployeeDetailModal({ employeeId, onClose }: { employeeId: strin
     setPdfLoading(true);
     printRef.current.classList.add('pdf-export-mode');
     try {
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-      const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgHeight = (canvas.height * pageWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, imgHeight);
-      pdf.save(buildPdfFileName(t('hr.salarySlipTitle'), data.employee.name, `${data.year}${data.month ? '-' + data.month : ''}`));
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName(t('hr.salarySlipTitle'), data.employee.name, `${data.year}${data.month ? '-' + data.month : ''}`),
+        'portrait',
+      );
     } catch {
       toast.error(t('hr.pdfExportError'));
     } finally {

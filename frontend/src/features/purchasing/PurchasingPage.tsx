@@ -668,12 +668,17 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               {t('imports.printDate')}: {localToday()}
             </div>
           </div>
+          {/* Same DataTable the on-screen view uses, but forced to a single page — print/PDF must
+              capture every row, not just the currently browsed 10-row page (DataTable only ever
+              mounts pageSize rows into the DOM, and both window.print() and the html2canvas PDF
+              path only see what's actually rendered). */}
           <DataTable
             columns={columns}
             data={filteredReceipts}
             keyField={(r) => r.id}
             isLoading={receiptsQuery.isLoading}
             searchable={false}
+            pageSize={Math.max(filteredReceipts.length, 1)}
           />
         </div>
       </Card>
@@ -695,7 +700,7 @@ export function PurchasingPage() {
             <Button variant="secondary" onClick={() => tabRef.current?.print()}>
               {t('common.print')}
             </Button>
-            <Button variant="secondary" onClick={() => tabRef.current?.downloadPdf()} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={() => tabRef.current?.downloadPdf()} loading={pdfLoading}>
               {t('actions.downloadPdf')}
             </Button>
           </div>

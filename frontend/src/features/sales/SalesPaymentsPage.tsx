@@ -336,7 +336,7 @@ export function SalesPaymentsPage() {
             <Button variant="secondary" onClick={handlePrint}>
               {t('common.print')}
             </Button>
-            <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
               {t('actions.downloadPdf')}
             </Button>
           </div>
@@ -373,7 +373,17 @@ export function SalesPaymentsPage() {
           </div>
         </div>
 
-        <DataTable columns={columns} data={filteredPayments} keyField={(r) => r.id} isLoading={paymentsQuery.isLoading} />
+        {/* pageSize forced to the full array length so print/PDF captures every row, not just
+            the current on-screen page; searchable disabled so the search box (irrelevant once
+            printed) doesn't show up in the output. */}
+        <DataTable
+          columns={columns}
+          data={filteredPayments}
+          keyField={(r) => r.id}
+          isLoading={paymentsQuery.isLoading}
+          searchable={false}
+          pageSize={Math.max(filteredPayments.length, 1)}
+        />
       </div>
 
       <Modal open={modalOpen} onClose={resetForm} title={editingId ? t('common.edit') : t('common.create')}>

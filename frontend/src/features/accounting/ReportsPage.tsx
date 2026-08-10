@@ -247,7 +247,7 @@ export function ReportsPage() {
             <Button variant="secondary" onClick={handlePrint}>
               {t('accounting.printComprehensiveReport')}
             </Button>
-            <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
               {t('accounting.exportPdf')}
             </Button>
           </div>

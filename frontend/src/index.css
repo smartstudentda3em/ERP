@@ -187,6 +187,20 @@ body {
   display: none !important;
 }
 
+/* الإجراءات (edit/delete) — meaningless once printed, so it's dropped for both the native print
+   path (@media print) and the html2canvas PDF path (.pdf-export-mode, which doesn't honor
+   @media print at all). */
+@media print {
+  .raw-materials-print th:last-child,
+  .raw-materials-print td:last-child {
+    display: none !important;
+  }
+}
+.raw-materials-print.pdf-export-mode th:last-child,
+.raw-materials-print.pdf-export-mode td:last-child {
+  display: none !important;
+}
+
 /* Printing should never inherit the dark theme's colors — force light/print-safe values for every
    CSS-variable-driven surface (background, text, borders, table header) regardless of which theme
    was active on screen when the user printed. */
@@ -608,6 +622,11 @@ body {
     font-size: 10px;
     padding: 4px 6px;
   }
+  /* الإجراءات (edit/delete) — meaningless once printed. */
+  .purchasing-print th:last-child,
+  .purchasing-print td:last-child {
+    display: none !important;
+  }
 }
 
 .purchasing-print.pdf-export-mode .purchasing-print-header {
@@ -627,8 +646,12 @@ body {
   font-size: 10px;
   padding: 4px 6px;
 }
+.purchasing-print.pdf-export-mode th:last-child,
+.purchasing-print.pdf-export-mode td:last-child {
+  display: none !important;
+}
 
-/* Balanced column widths under table-layout: fixed — 6 columns, no hidden actions column here. */
+/* Balanced column widths under table-layout: fixed — 6 data columns (الإجراءات is hidden above). */
 .purchasing-print table th:nth-child(1),
 .purchasing-print table td:nth-child(1) {
   width: 14%;

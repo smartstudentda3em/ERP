@@ -209,7 +209,7 @@ export function ShipmentDetailPage() {
             <Button variant="secondary" onClick={handlePrint}>
               {t('common.print')}
             </Button>
-            <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
               {t('actions.downloadPdf')}
             </Button>
           </div>
@@ -252,12 +252,15 @@ export function ShipmentDetailPage() {
           </Card>
         </div>
 
+        {/* pageSize forced to the full array length so print/PDF captures every row, not just
+            the current on-screen page. */}
         <DataTable
           columns={columns}
           data={expenses}
           keyField={(r) => r.id}
           isLoading={shipmentQuery.isLoading}
           searchable={false}
+          pageSize={Math.max(expenses.length, 1)}
         />
       </div>
 

@@ -111,7 +111,7 @@ export function QuotationDetailPage() {
               <Button variant="secondary" onClick={() => window.print()}>
                 {t('common.print')}
               </Button>
-              <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+              <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
                 {t('actions.downloadPdf')}
               </Button>
             </div>

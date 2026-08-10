@@ -179,7 +179,7 @@ export function SupplierStatementPage() {
             <Button variant="secondary" onClick={() => window.print()}>
               {t('suppliers.printStatement')}
             </Button>
-            <Button variant="secondary" onClick={handleDownloadStatementPdf} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={handleDownloadStatementPdf} loading={pdfLoading}>
               {t('suppliers.exportStatementPdf')}
             </Button>
           </div>
@@ -244,12 +244,15 @@ export function SupplierStatementPage() {
             <span className="font-semibold">{money(totalPurchases)}</span>
           </div>
         </div>
+        {/* pageSize forced to the full array length so print/PDF captures every row, not just
+            the current on-screen page. */}
         <DataTable
           columns={invoiceColumns}
           data={scopedReceipts}
           keyField={(r) => r.id}
           isLoading={receiptsQuery.isLoading}
           searchable={false}
+          pageSize={Math.max(scopedReceipts.length, 1)}
         />
 
         <div className="mb-3 mt-6 flex flex-wrap items-center justify-between gap-3">
@@ -264,6 +267,7 @@ export function SupplierStatementPage() {
           keyField={(r) => r.id}
           isLoading={receiptsQuery.isLoading}
           searchable={false}
+          pageSize={Math.max(paymentRows.length, 1)}
         />
 
         <DocumentFooter />

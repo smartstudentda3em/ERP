@@ -238,7 +238,7 @@ export function OutstandingBalanceDetailsPage() {
             <Button variant="secondary" onClick={() => window.print()}>
               {t('customers.printStatement')}
             </Button>
-            <Button variant="secondary" onClick={handleDownloadStatementPdf} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={handleDownloadStatementPdf} loading={pdfLoading}>
               {t('customers.exportStatementPdf')}
             </Button>
           </div>
@@ -420,12 +420,15 @@ export function OutstandingBalanceDetailsPage() {
             {t('customers.totalReceiptsLabel')}: <span className="font-semibold">{money(receiptsTotal)}</span>
           </div>
         </div>
+        {/* pageSize forced to the full array length so print/PDF captures every row, not just
+            the current on-screen page. */}
         <DataTable
           columns={receiptColumns}
           data={dateFilteredReceipts}
           keyField={(r) => r.id}
           isLoading={receiptsQuery.isLoading}
           searchable={false}
+          pageSize={Math.max(dateFilteredReceipts.length, 1)}
         />
 
         <DocumentFooter />

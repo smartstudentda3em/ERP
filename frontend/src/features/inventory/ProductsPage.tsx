@@ -721,7 +721,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
         )}
       </div>
 
-      <div ref={printRef} className={isPrintingPress ? 'printable-document' : undefined}>
+      <div ref={printRef} className={isPrintingPress ? 'printable-document raw-materials-print' : 'raw-materials-print'}>
         {/* Print/PDF-only heading — deliberately just the title, not the full company letterhead
             used by invoices/statements elsewhere: this report shows the table and nothing else
             once printed, per the raw-materials print spec. */}
@@ -754,12 +754,15 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
           </div>
         )}
 
+        {/* pageSize forced to the full array length so print/PDF (which only ever captures rows
+            actually mounted in the DOM) gets every row, not just the current on-screen page. */}
         <DataTable
           columns={columns}
           data={displayedProducts}
           keyField={(r) => r.id}
           isLoading={productsQuery.isLoading}
           searchable={false}
+          pageSize={Math.max(displayedProducts.length, 1)}
         />
       </div>
 

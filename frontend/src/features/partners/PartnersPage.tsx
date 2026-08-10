@@ -594,7 +594,7 @@ export function PartnersPage() {
             <Button variant="secondary" onClick={handlePrint}>
               {t('partners.printReport')}
             </Button>
-            <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
               {t('partners.exportPdf')}
             </Button>
           </div>

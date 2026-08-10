@@ -313,7 +313,7 @@ export function StockAuditDetailPage() {
             <Button variant="secondary" onClick={handlePrint}>
               {t('common.print')}
             </Button>
-            <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
               {t('actions.downloadPdf')}
             </Button>
             {canEdit && !editMode && <Button onClick={startEdit}>{t('common.edit')}</Button>}
@@ -401,7 +401,15 @@ export function StockAuditDetailPage() {
           </Card>
         </div>
 
-        <DataTable columns={columns} data={audit.lines} keyField={(r) => r.id} searchable={false} />
+        {/* pageSize forced to the full array length so print/PDF captures every row, not just
+            the current on-screen page. */}
+        <DataTable
+          columns={columns}
+          data={audit.lines}
+          keyField={(r) => r.id}
+          searchable={false}
+          pageSize={Math.max(audit.lines.length, 1)}
+        />
       </div>
 
       {editMode ? (

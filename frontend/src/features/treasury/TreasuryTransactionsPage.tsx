@@ -239,7 +239,7 @@ export function TreasuryTransactionsPage() {
               <Button variant="secondary" onClick={handlePrint}>
                 {t('common.print')}
               </Button>
-              <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+              <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
                 {t('actions.downloadPdf')}
               </Button>
             </div>
@@ -254,7 +254,7 @@ export function TreasuryTransactionsPage() {
               <Button variant="secondary" onClick={handlePrint}>
                 {t('common.print')}
               </Button>
-              <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+              <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
                 {t('actions.downloadPdf')}
               </Button>
               <Button onClick={() => setModalOpen(true)}>{t('treasury.recordTransaction')}</Button>

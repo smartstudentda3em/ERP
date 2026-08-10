@@ -245,7 +245,7 @@ export function SalesReportPage() {
             <Button variant="secondary" onClick={handlePrint}>
               {t('common.print')}
             </Button>
-            <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
               {t('actions.downloadPdf')}
             </Button>
           </div>
@@ -332,12 +332,15 @@ export function SalesReportPage() {
           )}
         </div>
 
+        {/* pageSize forced to the full array length so print/PDF gets every row, not just the
+            current on-screen page — DataTable otherwise only ever mounts one page at a time. */}
         <DataTable
           columns={columns}
           data={filteredLines}
           keyField={(r) => r.id}
           isLoading={linesQuery.isLoading}
           searchable={false}
+          pageSize={Math.max(filteredLines.length, 1)}
         />
       </div>
     </div>

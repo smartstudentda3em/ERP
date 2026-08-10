@@ -135,7 +135,7 @@ export function EmployeeDetailModal({ employeeId, onClose }: { employeeId: strin
             <Button variant="secondary" onClick={() => window.print()}>
               {t('common.print')}
             </Button>
-            <Button variant="secondary" onClick={handleDownloadPdf} disabled={pdfLoading}>
+            <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
               {t('hr.exportPdf')}
             </Button>
           </div>

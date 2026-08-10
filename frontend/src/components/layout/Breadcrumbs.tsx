@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useActiveCompany } from '../../lib/use-active-company';
+import { useAuthStore } from '../../store/auth-store';
 
 const SEGMENT_LABEL_KEYS: Record<string, string> = {
   dashboard: 'nav.dashboard',
@@ -38,6 +39,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export function Breadcrumbs() {
   const { t } = useTranslation();
   const { isPrintingPress } = useActiveCompany();
+  // Same signal Sidebar.tsx uses: a مدير فرع (Branch Manager) is the only role without
+  // sales-representatives.view, so this doubles as "is the logged-in user a مدير فرع".
+  const isBranchManagerSelf = useAuthStore((s) => !s.hasPermission('sales-representatives.view'));
   const location = useLocation();
   // Slicing must always be done against the RAW (unfiltered) segments — a UUID segment shifts
   // every later segment's real index, so slicing against the UUID-filtered list instead (as this
@@ -70,11 +74,13 @@ export function Breadcrumbs() {
         }
         const path = '/' + rawSegments.slice(0, i + 1).join('/');
         const labelKey =
-          isPrintingPress && seg === 'sales-representatives'
-            ? 'nav.salesRepresentativesPress'
-            : isPrintingPress && seg === 'suppliers'
-              ? 'nav.importsPress'
-              : SEGMENT_LABEL_KEYS[seg];
+          seg === 'sales-representatives' && isBranchManagerSelf
+            ? 'nav.branchManager'
+            : isPrintingPress && seg === 'sales-representatives'
+              ? 'nav.salesRepresentativesPress'
+              : isPrintingPress && seg === 'suppliers'
+                ? 'nav.importsPress'
+                : SEGMENT_LABEL_KEYS[seg];
         const label = labelKey ? t(labelKey) : seg.replace(/-/g, ' ');
         return (
           <span key={path} className="flex items-center gap-1">

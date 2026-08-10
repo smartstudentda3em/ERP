@@ -135,6 +135,11 @@ const items: NavItem[] = [
 export function Sidebar({ open }: { open: boolean }) {
   const { t } = useTranslation();
   const hasPermission = useAuthStore((s) => s.hasPermission);
+  // A مدير فرع (Branch Manager) is the only role without sales-representatives.view — Administrator
+  // (isSystemRole grants '*') and Manager both have it — so this doubles as "is the logged-in user a
+  // مدير فرع", the same signal SalesRepresentativesPage.tsx already uses to swap in their self-service
+  // dashboard instead of the full المناديب/مدراء الفروع list.
+  const isBranchManagerSelf = !hasPermission('sales-representatives.view');
   const { isPrintingPress, isAirConditioning } = useActiveCompany();
   const visibleItems = items.filter(
     (item) =>
@@ -172,11 +177,13 @@ export function Sidebar({ open }: { open: boolean }) {
             <span>{item.icon}</span>
             <span className="truncate">
               {t(
-                isPrintingPress && item.to === '/sales-representatives'
-                  ? 'nav.salesRepresentativesPress'
-                  : isPrintingPress && item.to === '/suppliers'
-                    ? 'nav.importsPress'
-                    : item.label,
+                item.to === '/sales-representatives' && isBranchManagerSelf
+                  ? 'nav.branchManager'
+                  : isPrintingPress && item.to === '/sales-representatives'
+                    ? 'nav.salesRepresentativesPress'
+                    : isPrintingPress && item.to === '/suppliers'
+                      ? 'nav.importsPress'
+                      : item.label,
               )}
             </span>
           </NavLink>

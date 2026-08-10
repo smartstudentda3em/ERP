@@ -61,9 +61,12 @@ export function SalesRepresentativesPage() {
   }, []);
 
   if (!canViewAll) {
+    // Reaching this branch means the logged-in user lacks sales-representatives.view — among the
+    // three roles that exist, that's only ever a مدير فرع (Branch Manager) — so the title is always
+    // "مدير الفرع", never the admin/manager-facing المناديب/مدراء الفروع list title.
     return (
       <div>
-        <PageHeader title={t(isPrintingPress ? 'nav.salesRepresentativesPress' : 'nav.salesRepresentatives')} />
+        <PageHeader title={t('nav.branchManager')} />
         <MyManagerDashboardTab />
       </div>
     );

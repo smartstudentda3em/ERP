@@ -1,7 +1,7 @@
 import { MouseEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, unwrap } from '../../lib/api-client';
+import { apiClient, getErrorMessage, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
@@ -9,6 +9,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input, FormField } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
 import { useAuthStore } from '../../store/auth-store';
 
 interface CatalogProduct {
@@ -33,6 +34,7 @@ export function PrintingProductsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const canCreate = useAuthStore((s) => s.hasPermission('inventory.product.create'));
   const canEdit = useAuthStore((s) => s.hasPermission('inventory.product.edit'));
@@ -66,7 +68,9 @@ export function PrintingProductsPage() {
       queryClient.invalidateQueries({ queryKey: ['printing-products'] });
       setModalOpen(false);
       setForm(emptyForm);
+      toast.success(t('common.addedSuccessfully'));
     },
+    onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
   });
 
   const updateMutation = useMutation({
@@ -82,7 +86,9 @@ export function PrintingProductsPage() {
       setModalOpen(false);
       setEditingId(null);
       setForm(emptyForm);
+      toast.success(t('common.savedSuccessfully'));
     },
+    onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
   });
 
   const deleteMutation = useMutation({
@@ -90,6 +96,7 @@ export function PrintingProductsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['printing-products'] });
     },
+    onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
   });
 
   function openCreateModal() {
@@ -241,7 +248,7 @@ export function PrintingProductsPage() {
             >
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+            <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
               {t('common.save')}
             </Button>
           </div>

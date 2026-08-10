@@ -61,3 +61,15 @@ apiClient.interceptors.response.use(
 export function unwrap<T>(promise: Promise<{ data: { data: T } }>): Promise<T> {
   return promise.then((res) => res.data.data);
 }
+
+/**
+ * Extracts a displayable message from a failed API call for use in toast.error(...). class-validator
+ * (via Nest's ValidationPipe) returns `message` as an array of per-field strings on 400s, while
+ * ConflictException/NotFoundException etc. return a single string — this normalizes both to one
+ * line so every mutation's onError can use it without re-deriving the same array check.
+ */
+export function getErrorMessage(err: unknown, fallback: string): string {
+  const message = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+  if (Array.isArray(message)) return message.join(' — ');
+  return message ?? fallback;
+}

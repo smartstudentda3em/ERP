@@ -1,7 +1,7 @@
 import { forwardRef, MouseEvent, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, unwrap } from '../../lib/api-client';
+import { apiClient, getErrorMessage, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
@@ -372,7 +372,9 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setModalOpen(false);
       setForm(emptyForm);
+      toast.success(t('common.addedSuccessfully'));
     },
+    onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
   });
 
   const updateMutation = useMutation({
@@ -397,7 +399,9 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       setModalOpen(false);
       setEditingId(null);
       setForm(emptyForm);
+      toast.success(t('common.savedSuccessfully'));
     },
+    onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
   });
 
   const deleteMutation = useMutation({
@@ -405,6 +409,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },
+    onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
   });
 
   async function handleDelete(e: MouseEvent, product: Product) {
@@ -915,7 +920,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
             >
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+            <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
               {t('common.save')}
             </Button>
           </div>

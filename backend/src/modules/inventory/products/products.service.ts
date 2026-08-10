@@ -1,6 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { BaseCrudService } from '../../../common/services/base-crud.service';
 import { Product } from './entities/product.entity';
 import { CreateProductDto, UpdateProductDto, CreateCatalogProductDto, UpdateCatalogProductDto } from './dto/product.dto';
@@ -41,6 +41,24 @@ export class ProductsService extends BaseCrudService<Product> {
     return undefined;
   }
 
+  /**
+   * `repo.save()` has no application-level guard for a duplicate barcode (only `sku` is
+   * pre-checked) or for a category/unit/package/brand id that's been deleted out from under an
+   * open form — both surface as a raw Postgres `QueryFailedError`, which the global exception
+   * filter would otherwise forward as an opaque 500 with driver text instead of a message the
+   * frontend can show the user. This turns the two constraint-violation codes Product's schema can
+   * actually trigger (23505 unique, 23503 foreign key) into the same kind of HttpException the
+   * pre-checks above already throw; anything else is rethrown untouched.
+   */
+  private toFriendlySaveError(err: unknown): Error {
+    const code = (err instanceof QueryFailedError ? (err as any).driverError?.code ?? (err as any).code : undefined) as
+      | string
+      | undefined;
+    if (code === '23505') return new ConflictException('SKU or barcode already exists');
+    if (code === '23503') return new BadRequestException('Selected category, unit, package type, or brand is invalid');
+    return err instanceof Error ? err : new Error(String(err));
+  }
+
   /** Scoped to the caller's company — an id that belongs to another company 404s exactly like an id that doesn't exist at all, so ids can't be probed cross-company. */
   async findOneScoped(id: string, companyId: string): Promise<Product> {
     const product = await super.findOne(id);
@@ -79,12 +97,20 @@ export class ProductsService extends BaseCrudService<Product> {
       const existing = await this.repo.findOne({ where: { companyId, sku: dto.sku } });
       if (existing) throw new ConflictException('SKU already exists');
     }
+    if (dto.barcode) {
+      const existing = await this.repo.findOne({ where: { companyId, barcode: dto.barcode } });
+      if (existing) throw new ConflictException('Barcode already exists');
+    }
     const derivedPurchasePrice = this.computePackageDerivedPurchasePrice(dto);
     const finalDto = derivedPurchasePrice !== undefined ? { ...dto, purchasePrice: derivedPurchasePrice } : dto;
     // No stock movement can exist yet for a brand-new product, so the average cost starts out
     // equal to the entered purchase price (0 only if no purchase price was ever given) rather
     // than the misleading 0 you'd get by leaving it untouched until the first real receipt.
-    return super.create({ ...finalDto, companyId, averageCost: derivedPurchasePrice ?? 0 } as any);
+    try {
+      return await super.create({ ...finalDto, companyId, averageCost: derivedPurchasePrice ?? 0 } as any);
+    } catch (err) {
+      throw this.toFriendlySaveError(err);
+    }
   }
 
   async updateScoped(id: string, companyId: string, dto: UpdateProductDto): Promise<Product> {
@@ -109,7 +135,11 @@ export class ProductsService extends BaseCrudService<Product> {
       }
     }
 
-    return super.update(id, finalDto as any);
+    try {
+      return await super.update(id, finalDto as any);
+    } catch (err) {
+      throw this.toFriendlySaveError(err);
+    }
   }
 
   async removeScoped(id: string, companyId: string): Promise<void> {
@@ -187,21 +217,25 @@ export class ProductsService extends BaseCrudService<Product> {
 
   async createCatalogItem(dto: CreateCatalogProductDto, companyId: string): Promise<Product> {
     const defaults = await this.resolveCatalogDefaults(companyId);
-    return super.create({
-      companyId,
-      nameEn: dto.nameEn,
-      nameAr: dto.nameEn,
-      size: dto.size,
-      notes: dto.notes,
-      sellingPrice: dto.sellingPrice ?? null,
-      categoryId: defaults.categoryId,
-      unitId: defaults.unitId,
-      packageTypeId: defaults.packageTypeId,
-      unitsPerPackage: 1,
-      productType: ProductType.CATALOG_ITEM,
-      averageCost: 0,
-      purchasePrice: 0,
-    } as any);
+    try {
+      return await super.create({
+        companyId,
+        nameEn: dto.nameEn,
+        nameAr: dto.nameEn,
+        size: dto.size,
+        notes: dto.notes,
+        sellingPrice: dto.sellingPrice ?? null,
+        categoryId: defaults.categoryId,
+        unitId: defaults.unitId,
+        packageTypeId: defaults.packageTypeId,
+        unitsPerPackage: 1,
+        productType: ProductType.CATALOG_ITEM,
+        averageCost: 0,
+        purchasePrice: 0,
+      } as any);
+    } catch (err) {
+      throw this.toFriendlySaveError(err);
+    }
   }
 
   async updateCatalogItem(id: string, companyId: string, dto: UpdateCatalogProductDto): Promise<Product> {
@@ -215,6 +249,10 @@ export class ProductsService extends BaseCrudService<Product> {
     if (dto.size !== undefined) patch.size = dto.size;
     if (dto.notes !== undefined) patch.notes = dto.notes;
     if (dto.sellingPrice !== undefined) patch.sellingPrice = dto.sellingPrice;
-    return super.update(id, patch as any);
+    try {
+      return await super.update(id, patch as any);
+    } catch (err) {
+      throw this.toFriendlySaveError(err);
+    }
   }
 }

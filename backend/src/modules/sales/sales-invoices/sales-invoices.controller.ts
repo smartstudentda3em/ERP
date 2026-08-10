@@ -13,7 +13,12 @@ export class SalesInvoicesController {
   @Get()
   @Permissions('sales.invoice.view')
   findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.service.findAll(user.companyId!, user.userId);
+    // "مدير فرع" (Branch Manager) is the only role without sales-representatives.view — same
+    // signal Sidebar.tsx's isBranchManagerSelf uses — so this hides zero-commission invoices for
+    // exactly that role without needing a DB round-trip to check the role name. See
+    // SalesInvoicesService.findAll()'s own doc comment for what "zero-commission" means here.
+    const isBranchManagerSelf = !(user.permissions?.includes('sales-representatives.view') ?? false);
+    return this.service.findAll(user.companyId!, user.userId, isBranchManagerSelf);
   }
 
   /** Lightweight active-user list for the "attributed to" field — gated by sales.invoice.create rather than users.view, so a salesperson without user-management access can still attribute their own invoices. */

@@ -15,6 +15,8 @@ import {
 import { SalesPayment } from './sales-payments/entities/sales-payment.entity';
 import { User } from '../users/entities/user.entity';
 import { UserCompany } from '../users/entities/user-company.entity';
+import { SalesRepresentative } from '../parties/entities/sales-representative.entity';
+import { CommissionException } from '../parties/entities/commission-exception.entity';
 
 import { QuotationsController } from './quotations/quotations.controller';
 import { QuotationsService } from './quotations/quotations.service';
@@ -45,6 +47,8 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
       SalesPayment,
       User,
       UserCompany,
+      SalesRepresentative,
+      CommissionException,
     ]),
     SettingsModule,
     TreasuryModule,

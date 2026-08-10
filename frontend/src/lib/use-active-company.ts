@@ -23,12 +23,21 @@ export const AIR_CONDITIONING_COMPANY_CODE = 'AC';
 /** Resolves the currently active company's full row (not just its id) — shared by the Sidebar,
  * the Printing-Press route guard, and the sales screens that need to know whether the active
  * tenant is the Printing Press. `isLoading` lets callers avoid a flash of the wrong UI before the
- * companies list resolves. */
+ * companies list resolves.
+ *
+ * Deliberately queries /auth/my-companies (no permission required beyond being authenticated) —
+ * NOT /settings/companies (settings.company.view-gated, meant for the Company management CRUD
+ * tab). A role like "مدير فرع" (Branch Manager) has neither settings.company.view nor any reason
+ * to, so the settings-gated endpoint 403'd for it silently, which left `isPrintingPress` always
+ * false for that role and broke every guard/UI branch keyed off it (wrong "المنتجات" page shown,
+ * RequirePrintingPress routes unreachable, Press-only invoice fields missing, etc.) — same
+ * reasoning as useAccessibleCompanies() in lib/companies.ts, which already solved this for the
+ * company switcher; this hook shares its query key so the two never fetch twice. */
 export function useActiveCompany() {
   const companyId = useAuthStore((s) => s.user?.companyId);
   const companiesQuery = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => unwrap<ActiveCompany[]>(apiClient.get('/settings/companies')),
+    queryKey: ['accessible-companies'],
+    queryFn: () => unwrap<ActiveCompany[]>(apiClient.get('/auth/my-companies')),
     enabled: !!companyId,
   });
   const company = companiesQuery.data?.find((c) => c.id === companyId) ?? null;

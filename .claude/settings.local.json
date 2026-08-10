@@ -152,7 +152,10 @@
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('/e/ERP/frontend/src/i18n/ar.json','utf8'\\)\\); JSON.parse\\(require\\('fs'\\).readFileSync\\('/e/ERP/frontend/src/i18n/en.json','utf8'\\)\\); console.log\\('both valid JSON'\\)\")",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('ar.json','utf8'\\)\\); JSON.parse\\(require\\('fs'\\).readFileSync\\('en.json','utf8'\\)\\); console.log\\('both valid JSON'\\)\")",
       "Bash(cat)",
-      "Bash(docker cp *)"
+      "Bash(docker cp *)",
+      "Bash(grep -n \"onRowClick\\\\|navigate\\(\\\\`/sales/invoices\" /e/ERP/frontend/src/features/sales/SalesInvoicesPage.tsx)",
+      "Bash(curl -s -X DELETE http://localhost:3000/api/users/8af0d4fd-ba36-449e-9f16-01755898b4cd -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(timeout 15 docker logs erp_backend --tail 5 -f)"
     ]
   }
 }

@@ -103,6 +103,7 @@
     "notes": "Notes",
     "type": "Type",
     "saveFailed": "Failed to save. Please try again.",
+    "deleteFailed": "Failed to delete. Please try again.",
     "year": "Year",
     "select": "Select"
   },

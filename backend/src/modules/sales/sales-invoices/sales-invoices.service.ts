@@ -24,6 +24,9 @@ import { Company } from '../../settings/entities/company.entity';
 import { SalesRepAccessService } from '../../../common/services/sales-rep-access.service';
 import { User } from '../../users/entities/user.entity';
 import { UserCompany } from '../../users/entities/user-company.entity';
+import { SalesRepresentative } from '../../parties/entities/sales-representative.entity';
+import { CommissionException } from '../../parties/entities/commission-exception.entity';
+import { buildExceptionsByRepId, resolveLineCommissionRate } from '../../parties/commission-rate.util';
 
 @Injectable()
 export class SalesInvoicesService {
@@ -33,6 +36,8 @@ export class SalesInvoicesService {
     @InjectRepository(Company) private readonly companyRepo: Repository<Company>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(UserCompany) private readonly userCompanyRepo: Repository<UserCompany>,
+    @InjectRepository(SalesRepresentative) private readonly salesRepRepo: Repository<SalesRepresentative>,
+    @InjectRepository(CommissionException) private readonly commissionExceptionsRepo: Repository<CommissionException>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly stockService: StockService,
@@ -43,14 +48,55 @@ export class SalesInvoicesService {
   /** Resolves each invoice's `createdById` to the user's display name — a plain audit column, not
    * a relation, so this is a raw lookup rather than an ORM join. Branch-scoped exactly like
    * getSalesLines()/resolveBranchId(): a non-admin pinned to a branch (via their own linked
-   * SalesRepresentative) only ever sees that branch's invoices. */
-  async findAll(companyId: string, userId: string) {
+   * SalesRepresentative) only ever sees that branch's invoices.
+   *
+   * `isBranchManagerSelf` additionally hides any invoice that earns this caller zero commission —
+   * exclusively for the "مدير فرع" role (resolved by the controller from the caller's own JWT
+   * permissions, same pattern as StockAuditsController's autoApprove), never for Administrator or
+   * the broader "Manager" role. Uses the exact same resolveLineCommissionRate() a line's rate is
+   * computed with in the Branch Managers Commission report / "أدائي" dashboard
+   * (sales-representatives.controller.ts), so "0% commission" can never mean something different
+   * on this screen than it does there. An invoice with no lines at all (shouldn't happen, but
+   * never crashes on it) counts as zero-commission and is hidden too. */
+  async findAll(companyId: string, userId: string, isBranchManagerSelf = false) {
     const branchId = await this.salesRepAccess.resolveBranchId(userId, undefined, companyId);
-    const invoices = await this.repo.find({
+    let invoices = await this.repo.find({
       where: { companyId, ...(branchId ? { branchId } : {}) },
       relations: ['customer', 'warehouse', 'salesRepresentative', 'branch'],
       order: { createdAt: 'DESC' },
     });
+
+    if (isBranchManagerSelf && invoices.length) {
+      const ownRep = await this.salesRepRepo.findOne({ where: { userId, companyId } });
+      if (ownRep) {
+        const generalRate = Number(ownRep.commissionRate ?? 0);
+        const exceptionRows = await this.commissionExceptionsRepo.find({
+          where: { companyId, salesRepresentativeId: ownRep.id },
+        });
+        const exceptions = buildExceptionsByRepId(exceptionRows).get(ownRep.id);
+
+        const lineRows = await this.dataSource
+          .createQueryBuilder()
+          .select('l."invoiceId"', 'invoiceId')
+          .addSelect('l."productId"', 'productId')
+          .addSelect('p."categoryId"', 'categoryId')
+          .from('sales_invoice_lines', 'l')
+          .innerJoin('products', 'p', 'p.id = l."productId"')
+          .where('l."invoiceId" IN (:...invoiceIds)', { invoiceIds: invoices.map((i) => i.id) })
+          .getRawMany();
+        const linesByInvoiceId = new Map<string, typeof lineRows>();
+        for (const line of lineRows) {
+          if (!linesByInvoiceId.has(line.invoiceId)) linesByInvoiceId.set(line.invoiceId, []);
+          linesByInvoiceId.get(line.invoiceId)!.push(line);
+        }
+
+        invoices = invoices.filter((inv) => {
+          const lines = linesByInvoiceId.get(inv.id) ?? [];
+          return lines.some((line) => resolveLineCommissionRate(line, exceptions, generalRate) > 0);
+        });
+      }
+    }
+
     const userRows = await this.dataSource
       .createQueryBuilder()
       .select('u.id', 'id')

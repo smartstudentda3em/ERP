@@ -156,10 +156,17 @@ export function SettingsPage() {
           endpoint="/settings/currencies"
           fields={[
             { name: 'nameEn', label: t('common.name'), required: true },
+            // The real ISO 4217 code (USD/EGP/SAR...) — was never exposed as an input, so every
+            // save fell back to SimpleMasterList's generic auto-generated code (endpoint-name +
+            // timestamp, ~18 chars), which overflowed this column's varchar(10) limit and made
+            // every currency creation fail with a raw DB error the user never saw. Required + a
+            // short maxLength so a real code is always sent instead of that fallback.
+            { name: 'code', label: t('common.code'), required: true, maxLength: 10 },
             { name: 'symbol', label: t('fields.symbol') },
           ]}
           columns={[
             { header: t('common.name'), accessor: (r) => r.nameEn },
+            { header: t('common.code'), accessor: (r) => r.code },
             { header: t('fields.symbol'), accessor: (r) => r.symbol ?? '—' },
           ]}
         />

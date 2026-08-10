@@ -74,6 +74,11 @@ export function SalesInvoicesPage() {
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
   const companyId = currentUser?.companyId;
+  // "مدير فرع" holds sales.invoice.view/create but never .edit/.delete (see run-seed.ts's
+  // BRANCH_MANAGER_PRESS_PERMISSION_CODES) — the server already 403s those calls, this just keeps
+  // the buttons from ever appearing for a role that can't use them, instead of failing on click.
+  const canEditInvoice = useAuthStore((s) => s.hasPermission('sales.invoice.edit'));
+  const canDeleteInvoice = useAuthStore((s) => s.hasPermission('sales.invoice.delete'));
   const [modalOpen, setModalOpen] = useState(false);
   const [customerId, setCustomerId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
@@ -370,32 +375,40 @@ export function SalesInvoicesPage() {
     isPrintingPress
       ? { header: t('fields.branch'), accessor: (r: SalesInvoice) => r.branch?.nameAr || r.branch?.nameEn || '—' }
       : { header: t('fields.invoiceOwner'), accessor: (r: SalesInvoice) => r.createdByName ?? '—' },
-    {
-      header: t('common.actions'),
-      accessor: (r) => (
-        <div className="flex justify-center gap-3">
-          <button
-            type="button"
-            className="text-primary-600 hover:underline"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditInvoice(r);
-            }}
-          >
-            {t('common.edit')}
-          </button>
-          <button
-            type="button"
-            className="text-red-600 hover:underline"
-            disabled={deleteMutation.isPending}
-            onClick={(e) => handleDeleteInvoice(e, r)}
-          >
-            {t('common.delete')}
-          </button>
-        </div>
-      ),
-      align: 'center',
-    },
+    ...(canEditInvoice || canDeleteInvoice
+      ? [
+          {
+            header: t('common.actions'),
+            accessor: (r: SalesInvoice) => (
+              <div className="flex justify-center gap-3">
+                {canEditInvoice && (
+                  <button
+                    type="button"
+                    className="text-primary-600 hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditInvoice(r);
+                    }}
+                  >
+                    {t('common.edit')}
+                  </button>
+                )}
+                {canDeleteInvoice && (
+                  <button
+                    type="button"
+                    className="text-red-600 hover:underline"
+                    disabled={deleteMutation.isPending}
+                    onClick={(e) => handleDeleteInvoice(e, r)}
+                  >
+                    {t('common.delete')}
+                  </button>
+                )}
+              </div>
+            ),
+            align: 'center' as const,
+          },
+        ]
+      : []),
   ];
 
   return (

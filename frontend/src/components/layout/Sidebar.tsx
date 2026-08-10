@@ -24,6 +24,12 @@ interface NavItem {
   /** Shown ONLY for the Printing Press tenant, hidden for every other company — see
    * RequirePrintingPress for the matching route guard. */
   requirePrintingPress?: boolean;
+  /** Hidden for a "مدير فرع" (Branch Manager) user specifically — a role scoped exclusively to
+   * the Printing Press company (restrictedCompanyId in run-seed.ts), so this is inherently a
+   * Press-only restriction without needing its own requirePrintingPress flag too. Detected via
+   * isBranchManagerSelf, the same "lacks sales-representatives.view" signal already used below to
+   * swap this role's المناديب nav item to their personal مدير الفرع dashboard link. */
+  hideForBranchManager?: boolean;
 }
 
 // Order below follows the required sequence exactly: لوحة التحكم، المشتريات، المنتجات، المخازن،
@@ -99,7 +105,14 @@ const items: NavItem[] = [
   },
   { to: '/sales/quotations', label: 'nav.quotations', icon: '📝', permission: 'sales.quotation.view' },
   { to: '/sales/invoices', label: 'nav.salesInvoices', icon: '💳', permission: 'sales.invoice.view' },
-  { to: '/sales', label: 'nav.sales', icon: '🛍️', permission: 'sales.invoice.view', end: true },
+  {
+    to: '/sales',
+    label: 'nav.sales',
+    icon: '🛍️',
+    permission: 'sales.invoice.view',
+    end: true,
+    hideForBranchManager: true,
+  },
   // Deliberately a different code from sales.payment.view: that code also gates the embedded
   // receipts fetch/collect-payment actions inside the Customer Balance and Sales Invoice detail
   // pages, which roles like Manager need even while the standalone payments list page itself
@@ -147,7 +160,8 @@ export function Sidebar({ open }: { open: boolean }) {
       (!item.permissionAnyOf || item.permissionAnyOf.some((c) => hasPermission(c))) &&
       !(item.hideForPrintingPress && isPrintingPress) &&
       !(item.requireAirConditioning && !isAirConditioning) &&
-      !(item.requirePrintingPress && !isPrintingPress),
+      !(item.requirePrintingPress && !isPrintingPress) &&
+      !(item.hideForBranchManager && isBranchManagerSelf),
   );
 
   return (

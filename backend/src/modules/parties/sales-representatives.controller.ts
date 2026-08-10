@@ -21,6 +21,7 @@ import { CompanyScopedCrudService } from '../../common/services/base-crud.servic
 import { SalesRepresentative } from './entities/sales-representative.entity';
 import { CommissionException } from './entities/commission-exception.entity';
 import { CreateCommissionExceptionDto } from './dto/commission-exception.dto';
+import { buildExceptionsByRepId, resolveLineCommissionRate } from './commission-rate.util';
 import { Company } from '../settings/entities/company.entity';
 import { NumberingSeriesService } from '../settings/numbering-series.controller';
 import { quarterDateRange } from '../treasury/partners-treasury.controller';
@@ -489,21 +490,6 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     });
   }
 
-  /** Shared by getBranchManagersCommission() and getManagerDashboard() so the two commission
-   * calculations can never silently diverge: a line's rate is its product-specific exception,
-   * else its category's exception, else the manager's own general commissionRate. */
-  private resolveLineRate(
-    line: { productId: string; categoryId: string | null },
-    exceptions: { byProductId: Map<string, number>; byCategoryId: Map<string, number> } | undefined,
-    generalRate: number,
-  ): number {
-    return (
-      exceptions?.byProductId.get(line.productId) ??
-      (line.categoryId ? exceptions?.byCategoryId.get(line.categoryId) : undefined) ??
-      generalRate
-    );
-  }
-
   /**
    * Branch Managers Commission report: each branch's total sales for the period × its assigned
    * manager's commissionRate — attributed to the branch itself (SalesInvoice.branchId), not
@@ -563,18 +549,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .getRawMany();
 
     const exceptionRows = await this.commissionExceptionsRepo.find({ where: { companyId } });
-    const exceptionsByRepId = new Map<
-      string,
-      { byProductId: Map<string, number>; byCategoryId: Map<string, number> }
-    >();
-    for (const e of exceptionRows) {
-      if (!exceptionsByRepId.has(e.salesRepresentativeId)) {
-        exceptionsByRepId.set(e.salesRepresentativeId, { byProductId: new Map(), byCategoryId: new Map() });
-      }
-      const bucket = exceptionsByRepId.get(e.salesRepresentativeId)!;
-      if (e.productId) bucket.byProductId.set(e.productId, Number(e.commissionRate));
-      else if (e.categoryId) bucket.byCategoryId.set(e.categoryId, Number(e.commissionRate));
-    }
+    const exceptionsByRepId = buildExceptionsByRepId(exceptionRows);
 
     const linesByBranchId = new Map<string, typeof lineRows>();
     for (const line of lineRows) {
@@ -590,7 +565,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
         let totalSales = 0;
         let commissionAmount = 0;
         for (const line of lines) {
-          const rate = this.resolveLineRate(line, exceptions, generalRate);
+          const rate = resolveLineCommissionRate(line, exceptions, generalRate);
           // Same exclusion as getManagerBranchSalesForPeriod/buildManagerDashboardForRep: a
           // resolved rate of 0% means this sale isn't commissionable, so it's excluded from
           // totalSales too, not just from commissionAmount — this column represents commissionable
@@ -709,11 +684,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     const exceptionRows = await this.commissionExceptionsRepo.find({
       where: { companyId, salesRepresentativeId: rep.id },
     });
-    const exceptions = { byProductId: new Map<string, number>(), byCategoryId: new Map<string, number>() };
-    for (const e of exceptionRows) {
-      if (e.productId) exceptions.byProductId.set(e.productId, Number(e.commissionRate));
-      else if (e.categoryId) exceptions.byCategoryId.set(e.categoryId, Number(e.commissionRate));
-    }
+    const exceptions = buildExceptionsByRepId(exceptionRows).get(rep.id);
 
     // Only lines this manager actually earns a commission on ever reach the dashboard — a resolved
     // rate of 0% (no general rate and no exception, or an exception explicitly zeroing it out) means
@@ -732,7 +703,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       commissionAmount: number;
     }[] = [];
     for (const line of lineRows) {
-      const rate = this.resolveLineRate(line, exceptions, generalRate);
+      const rate = resolveLineCommissionRate(line, exceptions, generalRate);
       if (rate <= 0) continue;
       const lineTotal = Number(line.lineTotal);
       const lineCommission = (lineTotal * rate) / 100;

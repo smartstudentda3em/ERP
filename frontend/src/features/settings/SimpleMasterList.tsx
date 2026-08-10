@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, unwrap } from '../../lib/api-client';
+import { apiClient, getErrorMessage, unwrap } from '../../lib/api-client';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { FormField, Input, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
 
 export interface SimpleField {
   name: string;
@@ -17,6 +18,10 @@ export interface SimpleField {
   options?: { value: string; label: string }[];
   /** For type: 'select' — placeholder shown as the empty/unselected option. */
   placeholder?: string;
+  /** Caps input length client-side — matters most for fields backed by a narrow DB column (e.g. a
+   * currency's ISO code, varchar(10)), where exceeding it fails the save with a raw DB error
+   * instead of a validation message. */
+  maxLength?: number;
 }
 
 function defaultValue(f: SimpleField): string | boolean {
@@ -48,6 +53,7 @@ export function SimpleMasterList({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const toast = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string | boolean>>(emptyForm(fields));
@@ -69,6 +75,7 @@ export function SimpleMasterList({
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm(fields));
+    saveMutation.reset();
     setModalOpen(true);
   }
 
@@ -79,6 +86,7 @@ export function SimpleMasterList({
         fields.map((f) => [f.name, f.type === 'checkbox' ? Boolean(row[f.name]) : (row[f.name] ?? '')]),
       ),
     );
+    saveMutation.reset();
     setModalOpen(true);
   }
 
@@ -88,6 +96,8 @@ export function SimpleMasterList({
       if (editingId) {
         return apiClient.patch(`${endpoint}/${editingId}`, payload);
       }
+      // Only a fallback for master lists with no exposed `code` input at all — a screen that does
+      // expose one (e.g. currencies' real ISO code) always sends its own value here, never this.
       if (!payload.code) {
         payload.code = `${endpoint.split('/').pop()?.toUpperCase().slice(0, 4)}-${Date.now()}`;
       }
@@ -108,12 +118,18 @@ export function SimpleMasterList({
       setEditingId(null);
       setForm(emptyForm(fields));
     },
+    onError: (err) => {
+      toast.error(getErrorMessage(err, t('common.saveFailed')));
+    },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`${endpoint}/${id}`),
     onSuccess: () => {
       invalidateAll();
+    },
+    onError: (err) => {
+      toast.error(getErrorMessage(err, t('common.deleteFailed')));
     },
   });
 
@@ -201,11 +217,17 @@ export function SimpleMasterList({
                 <Input
                   type={f.type ?? 'text'}
                   required={f.required}
+                  maxLength={f.maxLength}
                   value={form[f.name] as string}
                   onChange={(e) => setForm({ ...form, [f.name]: e.target.value })}
                 />
               </FormField>
             ),
+          )}
+          {saveMutation.isError && (
+            <p className="col-span-2 text-sm text-red-600">
+              {getErrorMessage(saveMutation.error, t('common.saveFailed'))}
+            </p>
           )}
           <div className="col-span-2 mt-2 flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>

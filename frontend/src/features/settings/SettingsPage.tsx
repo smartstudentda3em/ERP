@@ -113,8 +113,12 @@ export function SettingsPage() {
         <SimpleMasterList
           endpoint="/settings/branches"
           extraPayload={{ companyId }}
-          fields={[{ name: 'nameEn', label: t('common.name'), required: true }]}
-          columns={[{ header: t('common.name'), accessor: (r) => r.nameEn }]}
+          invalidateKeyPrefixes={['branches']}
+          // Bound to nameAr, not nameEn — every other screen in this Arabic-first app displays
+          // branch.nameAr || branch.nameEn (Sidebar, RepresentativesListTab, dashboard filters,
+          // etc.), so editing nameEn here left the name every user actually sees unchanged.
+          fields={[{ name: 'nameAr', label: t('common.name'), required: true }]}
+          columns={[{ header: t('common.name'), accessor: (r) => r.nameAr || r.nameEn }]}
         />
       )}
 
@@ -122,8 +126,9 @@ export function SettingsPage() {
         <SimpleMasterList
           endpoint="/settings/warehouses"
           extraPayload={{ companyId }}
+          invalidateKeyPrefixes={['warehouses']}
           fields={[
-            { name: 'nameEn', label: t('common.name'), required: true },
+            { name: 'nameAr', label: t('common.name'), required: true },
             ...(isPrintingPress
               ? [
                   {
@@ -138,7 +143,7 @@ export function SettingsPage() {
               : []),
           ]}
           columns={[
-            { header: t('common.name'), accessor: (r) => r.nameEn },
+            { header: t('common.name'), accessor: (r) => r.nameAr || r.nameEn },
             ...(isPrintingPress
               ? [{ header: t('fields.branch'), accessor: (r: any) => branchNameById(r.branchId) }]
               : []),

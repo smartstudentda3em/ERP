@@ -32,11 +32,18 @@ export function SimpleMasterList({
   fields,
   columns,
   extraPayload,
+  invalidateKeyPrefixes,
 }: {
   endpoint: string;
   fields: SimpleField[];
   columns: Column<any>[];
   extraPayload?: Record<string, unknown>;
+  /** Other screens read this master list under a different query key than [endpoint] — e.g. every
+   * consumer of branches/warehouses queries ['branches', companyId] or ['warehouses-search', ...],
+   * not ['/settings/branches']. invalidateQueries only matches by key prefix, so without this those
+   * screens keep showing a renamed/deleted row's stale name until they separately remount. Each
+   * entry here invalidates every cached query whose first key element starts with that string. */
+  invalidateKeyPrefixes?: string[];
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -49,6 +56,15 @@ export function SimpleMasterList({
     queryKey: [endpoint],
     queryFn: () => unwrap<any[]>(apiClient.get(endpoint)),
   });
+
+  function invalidateAll() {
+    queryClient.invalidateQueries({ queryKey: [endpoint] });
+    for (const prefix of invalidateKeyPrefixes ?? []) {
+      queryClient.invalidateQueries({
+        predicate: (query) => typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith(prefix),
+      });
+    }
+  }
 
   function openCreate() {
     setEditingId(null);
@@ -87,7 +103,7 @@ export function SimpleMasterList({
       return apiClient.post(endpoint, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [endpoint] });
+      invalidateAll();
       setModalOpen(false);
       setEditingId(null);
       setForm(emptyForm(fields));
@@ -97,7 +113,7 @@ export function SimpleMasterList({
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`${endpoint}/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [endpoint] });
+      invalidateAll();
     },
   });
 

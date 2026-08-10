@@ -110,6 +110,38 @@ body {
   margin: 15mm;
 }
 
+/* Global print reset — applies to every printed page/table in the app, not just one report.
+   AppLayout itself has no fixed-height/overflow-hidden wrapper (min-h-screen, content grows
+   naturally), so nothing here needs to fight a clipped container; this instead fixes the two
+   things that were only ever applied to a handful of the ~15 individual report print blocks:
+   long tables repeating their header row on every page, and rows never being split mid-row
+   across a page break. Chrome hiding (sidebar/topbar/buttons/pagination) is already handled
+   globally via Tailwind's print:hidden utility (Sidebar.tsx, Topbar.tsx, PageHeader.tsx, and
+   every page's own action bar) — not duplicated here as a separate .no-print class. */
+@media print {
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tr {
+    break-inside: avoid;
+    break-after: auto;
+  }
+
+  h1, h2, h3, h4, .section-title {
+    break-after: avoid;
+  }
+}
+
 /* The official letterhead/footer are formal print artifacts, not screen chrome — hidden while
    browsing/editing on screen, and only switched on for an actual print or PDF export. */
 .document-letterhead,

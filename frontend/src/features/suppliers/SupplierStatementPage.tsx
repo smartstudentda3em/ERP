@@ -1,13 +1,16 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount, formatQuantity } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
+import { useActiveCompany } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
+import { FormField, Input, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/DateRangeFilter';
 import { DocumentLetterhead, LetterheadCompany } from '../sales/DocumentLetterhead';
@@ -15,6 +18,7 @@ import { DocumentFooter } from '../sales/DocumentFooter';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdf } from '../../lib/pdf-export';
+import { useToast } from '../../components/ui/Toast';
 
 interface Currency {
   id: string;
@@ -39,11 +43,36 @@ interface PurchaseReceipt {
   documentNumber: string;
   receiptDate: string;
   supplierId: string;
+  branchId?: string | null;
   quantityPackages: number;
   unitsPerPackage: number;
   totalAmount: number;
   paidAmount: number;
   product?: { nameEn?: string; nameAr?: string };
+}
+
+interface SupplierPayment {
+  id: string;
+  documentNumber: string;
+  paymentDate: string;
+  purchaseReceiptId?: string | null;
+  amount: number;
+}
+
+interface Branch {
+  id: string;
+  nameEn: string;
+  nameAr?: string | null;
+}
+
+/** A single row in the "سندات الدفع" table — either a real SupplierPayment voucher, or a legacy
+ * row synthesized from a receipt's own paidAmount (money settled at receipt creation, before this
+ * feature existed — see the paymentVoucherRows comment below for why the two never double-count). */
+interface VoucherRow {
+  id: string;
+  documentNumber: string;
+  date: string;
+  amount: number;
 }
 
 function money(n: number): string {
@@ -67,11 +96,19 @@ export function SupplierStatementPage() {
   const [searchParams] = useSearchParams();
   const isPendingOnly = searchParams.get('scope') === 'pending';
   const { t } = useTranslation();
+  const { isPrintingPress } = useActiveCompany();
+  const toast = useToast();
+  const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
+  const [payOpen, setPayOpen] = useState(false);
+  const [payAmount, setPayAmount] = useState('0');
+  const [payMethod, setPayMethod] = useState('CASH');
+  const [payBranchId, setPayBranchId] = useState('');
+  const [payNotes, setPayNotes] = useState('');
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers', companyId],
@@ -92,6 +129,22 @@ export function SupplierStatementPage() {
     queryKey: ['purchase-receipts', companyId],
     queryFn: () => unwrap<PurchaseReceipt[]>(apiClient.get('/inventory/purchase-receipts', { params: { companyId } })),
     enabled: !!companyId,
+  });
+
+  const supplierPaymentsQuery = useQuery({
+    queryKey: ['supplier-payments', companyId, id],
+    queryFn: () =>
+      unwrap<SupplierPayment[]>(apiClient.get('/supplier-payments', { params: { companyId, supplierId: id } })),
+    enabled: !!companyId && !!id,
+  });
+
+  // Press-only — the general "دفع المتبقي" modal below needs a branch to attribute the payment
+  // to, same required-select pattern as SalesPaymentsPage's own general (not-tied-to-invoice)
+  // payment form, since there is no "active branch" concept to derive it from automatically.
+  const branchesQuery = useQuery({
+    queryKey: ['branches', companyId],
+    queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
+    enabled: isPrintingPress && payOpen && !!companyId,
   });
 
   const supplierReceipts = useMemo(
@@ -116,17 +169,86 @@ export function SupplierStatementPage() {
     [scopedReceipts],
   );
 
-  // A "payment voucher" is a receipt an actual payment was recorded against — a fully-credit
-  // (آجل) receipt with paidAmount 0 has no voucher to show here.
-  const paymentRows = useMemo(
-    () => scopedReceipts.filter((r) => Number(r.paidAmount ?? 0) > 0),
-    [scopedReceipts],
+  const datedPayments = useMemo(
+    () => (supplierPaymentsQuery.data ?? []).filter((p) => inDateRange(p.paymentDate, dateRange)),
+    [supplierPaymentsQuery.data, dateRange],
   );
-  const totalPayments = useMemo(
-    () => paymentRows.reduce((sum, r) => sum + Number(r.paidAmount ?? 0), 0),
-    [paymentRows],
+  // Only receipts still in scope (respects scope=pending) may show a payment tied to them —
+  // matches scopedReceipts' own filtering so a fully-settled receipt's old payment doesn't
+  // reappear in the "مستحقات معلقة" view.
+  const scopedReceiptIds = useMemo(() => new Set(scopedReceipts.map((r) => r.id)), [scopedReceipts]);
+  const inScopePayments = useMemo(
+    () => datedPayments.filter((p) => !p.purchaseReceiptId || scopedReceiptIds.has(p.purchaseReceiptId)),
+    [datedPayments, scopedReceiptIds],
   );
+  // Real payments recorded against a specific receipt (the per-row "دفع المتبقي" action on
+  // PurchasingPage.tsx) already increment that receipt's own paidAmount — summed here so the
+  // legacy row below can subtract them back out and show only the portion paid at receipt
+  // creation, avoiding counting (and displaying) the same money twice.
+  const tiedAmountByReceipt = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of inScopePayments) {
+      if (!p.purchaseReceiptId) continue;
+      map.set(p.purchaseReceiptId, (map.get(p.purchaseReceiptId) ?? 0) + Number(p.amount));
+    }
+    return map;
+  }, [inScopePayments]);
+  const legacyVoucherRows: VoucherRow[] = useMemo(
+    () =>
+      scopedReceipts
+        .map((r) => ({
+          id: `receipt-${r.id}`,
+          documentNumber: r.documentNumber,
+          date: r.receiptDate,
+          amount: Number(r.paidAmount ?? 0) - (tiedAmountByReceipt.get(r.id) ?? 0),
+        }))
+        .filter((row) => row.amount > 0),
+    [scopedReceipts, tiedAmountByReceipt],
+  );
+  // A "payment voucher" is either a real SupplierPayment record (general, or tied to one receipt)
+  // or a legacy row synthesized from money paid at receipt creation, before this feature existed.
+  const paymentRows: VoucherRow[] = useMemo(
+    () =>
+      [
+        ...legacyVoucherRows,
+        ...inScopePayments.map((p) => ({
+          id: p.id,
+          documentNumber: p.documentNumber,
+          date: p.paymentDate,
+          amount: Number(p.amount),
+        })),
+      ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+    [legacyVoucherRows, inScopePayments],
+  );
+  const totalPayments = useMemo(() => paymentRows.reduce((sum, r) => sum + r.amount, 0), [paymentRows]);
   const totalOutstanding = totalPurchases - totalPayments;
+
+  const payMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post('/supplier-payments', {
+        paymentDate: localToday(),
+        supplierId: id,
+        companyId,
+        method: payMethod,
+        amount: Number(payAmount),
+        notes: payNotes || undefined,
+        branchId: isPrintingPress ? payBranchId || undefined : undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-receipts', companyId] });
+      queryClient.invalidateQueries({ queryKey: ['supplier-payments', companyId, id] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-recent-tx'] });
+      queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
+      setPayOpen(false);
+      setPayAmount('0');
+      setPayMethod('CASH');
+      setPayBranchId('');
+      setPayNotes('');
+      toast.success(t('suppliers.paymentSavedSuccess'));
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
+  });
 
   const periodLabel =
     dateRange.from || dateRange.to
@@ -164,10 +286,10 @@ export function SupplierStatementPage() {
     { header: t('fields.totalAmount'), accessor: (r) => money(r.totalAmount), align: 'right' },
   ];
 
-  const paymentColumns: Column<PurchaseReceipt>[] = [
+  const paymentColumns: Column<VoucherRow>[] = [
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
-    { header: t('common.date'), accessor: (r) => r.receiptDate },
-    { header: t('fields.paidAmount'), accessor: (r) => money(r.paidAmount), align: 'right' },
+    { header: t('common.date'), accessor: (r) => r.date },
+    { header: t('fields.paidAmount'), accessor: (r) => money(r.amount), align: 'right' },
   ];
 
   return (
@@ -182,6 +304,16 @@ export function SupplierStatementPage() {
             <Button variant="secondary" onClick={handleDownloadStatementPdf} loading={pdfLoading}>
               {t('suppliers.exportStatementPdf')}
             </Button>
+            {totalOutstanding > 0 && (
+              <Button
+                onClick={() => {
+                  setPayAmount(String(totalOutstanding));
+                  setPayOpen(true);
+                }}
+              >
+                {t('suppliers.payOutstanding')}
+              </Button>
+            )}
           </div>
         }
       />
@@ -265,13 +397,64 @@ export function SupplierStatementPage() {
           columns={paymentColumns}
           data={paymentRows}
           keyField={(r) => r.id}
-          isLoading={receiptsQuery.isLoading}
+          isLoading={receiptsQuery.isLoading || supplierPaymentsQuery.isLoading}
           searchable={false}
           pageSize={Math.max(paymentRows.length, 1)}
         />
 
         <DocumentFooter />
       </div>
+
+      <Modal open={payOpen} onClose={() => setPayOpen(false)} title={t('suppliers.payOutstanding')}>
+        <form
+          className="grid grid-cols-2 gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            payMutation.mutate();
+          }}
+        >
+          <FormField label={t('common.name')}>
+            <Input disabled value={supplier?.companyName ?? '—'} />
+          </FormField>
+          <FormField label={t('fields.amount')}>
+            <Input type="number" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+          </FormField>
+          <FormField label={t('fields.method')}>
+            <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+              <option value="CASH">{t('paymentMethod.CASH')}</option>
+              <option value="BANK_TRANSFER">{t('paymentMethod.BANK_TRANSFER')}</option>
+              <option value="CHEQUE">{t('paymentMethod.CHEQUE')}</option>
+              <option value="CARD">{t('paymentMethod.CARD')}</option>
+              <option value="ONLINE">{t('paymentMethod.ONLINE')}</option>
+            </Select>
+          </FormField>
+          {isPrintingPress && (
+            <FormField label={t('fields.branch')} required>
+              <Select required value={payBranchId} onChange={(e) => setPayBranchId(e.target.value)}>
+                <option value="">—</option>
+                {(branchesQuery.data ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nameAr || b.nameEn}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
+          <div className="col-span-2">
+            <FormField label={t('table.description')}>
+              <Input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} />
+            </FormField>
+          </div>
+          <div className="col-span-2 mt-2 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setPayOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={payMutation.isPending || (isPrintingPress && !payBranchId)}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsPressManagerRestricted } from '../../lib/use-active-company';
 import { SuppliersTab } from './SuppliersTab';
 import { ImportCargoTab, ImportCargoTabHandle } from './ImportCargoTab';
 import { ShippingTab } from './ShippingTab';
@@ -34,6 +34,9 @@ type Tab = 'suppliers' | 'cargo' | 'shipping' | 'shipmentPayments' | 'products' 
 export function SuppliersPage() {
   const { t } = useTranslation();
   const { isPrintingPress, isLoading: isCompanyLoading } = useActiveCompany();
+  // Manager-role users in the Press branch never see "فاتورة الشراء" at all — see
+  // useIsPressManagerRestricted's own doc comment for the full restriction list this feeds.
+  const purchasingTabRestricted = useIsPressManagerRestricted();
   const [searchParams, setSearchParams] = useSearchParams();
   // Lets a redirect (e.g. RequireNotPrintingPress on /inventory/stock, for Printing Press) land
   // directly on a specific sub-tab via ?tab=products instead of always defaulting to "الموردون".
@@ -67,7 +70,7 @@ export function SuppliersPage() {
     ? [
         { key: 'suppliers', label: t('nav.suppliers') },
         { key: 'products', label: t('imports.rawMaterialsTab') },
-        { key: 'purchasing', label: t('imports.purchaseInvoiceTab') },
+        ...(purchasingTabRestricted ? [] : [{ key: 'purchasing' as Tab, label: t('imports.purchaseInvoiceTab') }]),
       ]
     : [
         { key: 'suppliers', label: t('nav.suppliers') },
@@ -86,8 +89,11 @@ export function SuppliersPage() {
     if (isCompanyLoading) return;
     if (isPrintingPress && (tab === 'shipping' || tab === 'cargo' || tab === 'shipmentPayments')) selectTab('suppliers');
     if (!isPrintingPress && (tab === 'products' || tab === 'purchasing')) selectTab('suppliers');
+    // Bounces a restricted Manager off a stale ?tab=purchasing deep link (e.g. bookmarked before
+    // their role/company changed) — the tab button itself is already absent from `tabs` above.
+    if (purchasingTabRestricted && tab === 'purchasing') selectTab('suppliers');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPrintingPress, isCompanyLoading, tab]);
+  }, [isPrintingPress, isCompanyLoading, tab, purchasingTabRestricted]);
 
   const printHandle =
     tab === 'cargo' ? cargoRef : tab === 'purchasing' ? purchasingRef : tab === 'products' ? productsRef : null;
@@ -129,7 +135,9 @@ export function SuppliersPage() {
       {tab === 'shipping' && <ShippingTab />}
       {tab === 'shipmentPayments' && <ShipmentPaymentsTab />}
       {tab === 'products' && <ProductsTab ref={productsRef} onPdfLoadingChange={setProductsPdfLoading} />}
-      {tab === 'purchasing' && <PurchasingTab ref={purchasingRef} onPdfLoadingChange={setPurchasingPdfLoading} />}
+      {tab === 'purchasing' && !purchasingTabRestricted && (
+        <PurchasingTab ref={purchasingRef} onPdfLoadingChange={setPurchasingPdfLoading} />
+      )}
     </div>
   );
 }

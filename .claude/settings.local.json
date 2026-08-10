@@ -137,7 +137,8 @@
       "Bash(find \"/c/Users/surface/Downloads\" -iname \"*.pdf\" -newermt \"-10 minutes\" 2>/dev/null)",
       "Bash(curl -s -X POST http://localhost:3000/auth/login -H \"Content-Type: application/json\" -d '{\"phone\":\"99970766\",\"password\":\"Ayman987654#\"}')",
       "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"phone\":\"99970766\",\"password\":\"Ayman987654#\"}')",
-      "Read(//c/Users/surface/.ssh/**)"
+      "Read(//c/Users/surface/.ssh/**)",
+      "Bash(git log *)"
     ]
   }
 }

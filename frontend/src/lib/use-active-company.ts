@@ -39,3 +39,18 @@ export function useActiveCompany() {
     isLoading: companiesQuery.isLoading,
   };
 }
+
+/**
+ * True only for a user holding the role literally named "Manager" (a broader, non-Press-exclusive
+ * role — not "مدير فرع", a separate, already-narrower Press-only role with its own restrictions)
+ * while their active company is the Printing Press. Gates a handful of UI restrictions specific to
+ * exactly that combination: hiding the "فاتورة الشراء" tab (SuppliersPage.tsx), simplifying the
+ * Monthly Stock Audit entry table to Item + Actual Quantity only (StockAuditPage.tsx), and hiding
+ * the "صرف الأرباح" tab (SalesRepresentativesPage.tsx). Never true for Administrator, "مدير فرع",
+ * or a "Manager"-role user in any other company.
+ */
+export function useIsPressManagerRestricted(): boolean {
+  const { isPrintingPress } = useActiveCompany();
+  const hasManagerRole = useAuthStore((s) => s.hasRole('Manager'));
+  return isPrintingPress && hasManagerRole;
+}

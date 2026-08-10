@@ -6,7 +6,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Input, Select } from '../../components/ui/Input';
 import { DateRange } from '../../components/ui/DateRangeFilter';
 import { monthNameOnly } from '../../lib/date-utils';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsPressManagerRestricted } from '../../lib/use-active-company';
 import { useAuthStore } from '../../store/auth-store';
 import { RepresentativesListTab } from './RepresentativesListTab';
 import { RepresentativesReportsTab, ReportsQuarter } from './RepresentativesReportsTab';
@@ -23,6 +23,9 @@ interface SalesRepresentative {
 export function SalesRepresentativesPage() {
   const { t, i18n } = useTranslation();
   const { isPrintingPress } = useActiveCompany();
+  // Manager-role users in the Press branch never see "صرف الأرباح" — see
+  // useIsPressManagerRestricted's own doc comment for the full restriction list this feeds.
+  const payoutsTabRestricted = useIsPressManagerRestricted();
   const canViewAll = useAuthStore((s) => s.hasPermission('sales-representatives.view'));
   const [tab, setTab] = useState<Tab>('list');
 
@@ -77,8 +80,11 @@ export function SalesRepresentativesPage() {
     { key: 'reports', label: t(isPrintingPress ? 'salesRepresentativesReports.reportsTabPress' : 'salesRepresentativesReports.reportsTab') },
     { key: 'mine', label: t('managerDashboard.tabLabel') },
     // Branch-manager commission payouts only make sense for the Printing Press, same gating as
-    // every other branch/commission feature on this page.
-    ...(isPrintingPress ? [{ key: 'payouts' as Tab, label: t('salesRepresentativesReports.payoutsTab') }] : []),
+    // every other branch/commission feature on this page — further restricted away from a
+    // Manager-role user in that same branch (see useIsPressManagerRestricted).
+    ...(isPrintingPress && !payoutsTabRestricted
+      ? [{ key: 'payouts' as Tab, label: t('salesRepresentativesReports.payoutsTab') }]
+      : []),
   ];
 
   return (
@@ -215,7 +221,7 @@ export function SalesRepresentativesPage() {
           controlled={{ selectedRepId: selectedManagerId, year: dashboardYear, quarter: dashboardQuarter, repOptions }}
         />
       )}
-      {tab === 'payouts' && <CommissionPayoutsTab year={payoutsYear} month={payoutsMonth} />}
+      {tab === 'payouts' && !payoutsTabRestricted && <CommissionPayoutsTab year={payoutsYear} month={payoutsMonth} />}
     </div>
   );
 }

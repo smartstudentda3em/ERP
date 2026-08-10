@@ -14,6 +14,7 @@ import { Badge } from '../../components/ui/Badge';
 import { FormField, Input, Select } from '../../components/ui/Input';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
+import { useIsPressManagerRestricted } from '../../lib/use-active-company';
 import {
   monthKeyOf as auditMonthKey,
   monthNameOf as auditMonthName,
@@ -86,6 +87,10 @@ export function StockAuditPage() {
   const canCreate = useAuthStore((s) => s.hasPermission('inventory.stockAudit.create'));
   const canEdit = useAuthStore((s) => s.hasPermission('inventory.stockAudit.edit'));
   const canDelete = useAuthStore((s) => s.hasPermission('inventory.stockAudit.delete'));
+  // Manager-role users in the Press branch get a blind-count entry table — item + actual quantity
+  // only, never pre-filled from system/previous data (even for sellable items, which otherwise
+  // pre-fill) — see useIsPressManagerRestricted's own doc comment for the full restriction list.
+  const isRestrictedEntry = useIsPressManagerRestricted();
   const [entryOpen, setEntryOpen] = useState(false);
   const [warehouseId, setWarehouseId] = useState('');
   const [auditDate, setAuditDate] = useState('');
@@ -209,12 +214,14 @@ export function StockAuditPage() {
           unitCost: Number(p.purchasePrice),
           // Sellable materials are auto-tracked precisely via sales, so they pre-fill with the
           // system quantity (still editable, via actualOverrides once touched); manual materials
-          // start blank for a real count.
-          actualQuantity: override !== undefined ? override : p.isSellable ? String(systemQuantity) : '',
+          // start blank for a real count. A restricted Manager gets a genuinely blind count
+          // instead — blank for every line, sellable or not, so nothing nudges their manual entry.
+          actualQuantity:
+            override !== undefined ? override : !isRestrictedEntry && p.isSellable ? String(systemQuantity) : '',
           isSellable: p.isSellable ?? false,
         };
       });
-  }, [warehouseId, productsQuery.data, setupLinesQuery.data, actualOverrides]);
+  }, [warehouseId, productsQuery.data, setupLinesQuery.data, actualOverrides, isRestrictedEntry]);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -367,83 +374,94 @@ export function StockAuditPage() {
     [lines],
   );
 
+  const productColumn: Column<LineDraft> = {
+    header: t('fields.product'),
+    accessor: (r) => (
+      <div className="flex items-center gap-2">
+        {/* Catalog products never appear in this table at all (Printing Press never tracks
+            warehouse stock for them — see ProductsService.findAllForCompany, which scopes this
+            screen's item list to RAW_MATERIAL only), so the only distinction ever meaningful
+            here is sellable vs. plain raw material — flagged with a small icon rather than a
+            full-text badge so a row full of items doesn't read as visually noisy; the actual
+            "مادة خام - للبيع" label only shows up as a native hover tooltip on the icon. */}
+        {r.isSellable && (
+          <span
+            title={t('stockAudit.sellableRawMaterialTooltip')}
+            className="inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M20.59 13.41 11 3.83 3.83 11l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z"
+              />
+              <circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
+            </svg>
+          </span>
+        )}
+        <span>{r.nameEn}</span>
+      </div>
+    ),
+  };
+
+  const actualQuantityColumn: Column<LineDraft> = {
+    header: t('stockAudit.actualQuantity'),
+    accessor: (r) => (
+      <Input
+        type="number"
+        step="0.0001"
+        value={r.actualQuantity}
+        onChange={(e) => updateActual(r, e.target.value)}
+        className="w-28"
+      />
+    ),
+    align: 'center',
+  };
+
   const lineColumns: Column<LineDraft>[] = useMemo(
-    () => [
-      {
-        header: t('fields.product'),
-        accessor: (r) => (
-          <div className="flex items-center gap-2">
-            {/* Catalog products never appear in this table at all (Printing Press never tracks
-                warehouse stock for them — see ProductsService.findAllForCompany, which scopes this
-                screen's item list to RAW_MATERIAL only), so the only distinction ever meaningful
-                here is sellable vs. plain raw material — flagged with a small icon rather than a
-                full-text badge so a row full of items doesn't read as visually noisy; the actual
-                "مادة خام - للبيع" label only shows up as a native hover tooltip on the icon. */}
-            {r.isSellable && (
-              <span
-                title={t('stockAudit.sellableRawMaterialTooltip')}
-                className="inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M20.59 13.41 11 3.83 3.83 11l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z"
-                  />
-                  <circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
-                </svg>
-              </span>
-            )}
-            <span>{r.nameEn}</span>
-          </div>
-        ),
-      },
-      { header: t('stockAudit.systemQuantity'), accessor: (r) => formatAmount(r.systemQuantity), align: 'right' },
-      {
-        header: t('stockAudit.actualQuantity'),
-        accessor: (r) => (
-          <Input
-            type="number"
-            step="0.0001"
-            value={r.actualQuantity}
-            onChange={(e) => updateActual(r, e.target.value)}
-            className="w-28"
-          />
-        ),
-        align: 'center',
-      },
-      {
-        header: t('stockAudit.consumedQuantity'),
-        accessor: (r) => {
-          const c = consumedQuantityOf(r);
-          return c === null ? '—' : formatAmount(c);
-        },
-        align: 'right',
-      },
-      { header: t('stockAudit.unitPrice'), accessor: (r) => formatAmount(r.unitCost), align: 'right' },
-      {
-        header: t('stockAudit.totalPrice'),
-        accessor: (r) => {
-          const total = totalPriceOf(r);
-          return total === null ? '—' : formatAmount(total);
-        },
-        align: 'right',
-      },
-      {
-        header: t('stockAudit.lineStatus'),
-        accessor: (r) => {
-          if (r.actualQuantity.trim() === '') return <Badge color="gray">{t('stockAudit.pendingCount')}</Badge>;
-          const v = varianceOf(r) ?? 0;
-          return (
-            <Badge color={v === 0 ? 'green' : v > 0 ? 'blue' : 'red'}>
-              {v === 0 ? t('stockAudit.matched') : v > 0 ? t('stockAudit.surplus') : t('stockAudit.shortage')}
-            </Badge>
-          );
-        },
-        align: 'center',
-      },
-    ],
-    [t],
+    // A restricted Manager gets a blind-count table — item name + their own manual entry only,
+    // nothing that hints at what the system already expects (no system quantity, consumed/variance,
+    // cost, or status badge).
+    () =>
+      isRestrictedEntry
+        ? [productColumn, actualQuantityColumn]
+        : [
+            productColumn,
+            { header: t('stockAudit.systemQuantity'), accessor: (r) => formatAmount(r.systemQuantity), align: 'right' },
+            actualQuantityColumn,
+            {
+              header: t('stockAudit.consumedQuantity'),
+              accessor: (r) => {
+                const c = consumedQuantityOf(r);
+                return c === null ? '—' : formatAmount(c);
+              },
+              align: 'right',
+            },
+            { header: t('stockAudit.unitPrice'), accessor: (r) => formatAmount(r.unitCost), align: 'right' },
+            {
+              header: t('stockAudit.totalPrice'),
+              accessor: (r) => {
+                const total = totalPriceOf(r);
+                return total === null ? '—' : formatAmount(total);
+              },
+              align: 'right',
+            },
+            {
+              header: t('stockAudit.lineStatus'),
+              accessor: (r) => {
+                if (r.actualQuantity.trim() === '') return <Badge color="gray">{t('stockAudit.pendingCount')}</Badge>;
+                const v = varianceOf(r) ?? 0;
+                return (
+                  <Badge color={v === 0 ? 'green' : v > 0 ? 'blue' : 'red'}>
+                    {v === 0 ? t('stockAudit.matched') : v > 0 ? t('stockAudit.surplus') : t('stockAudit.shortage')}
+                  </Badge>
+                );
+              },
+              align: 'center',
+            },
+          ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, isRestrictedEntry],
   );
 
   if (entryOpen) {

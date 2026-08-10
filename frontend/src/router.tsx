@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary';
+import { ContentErrorBoundary } from './components/ContentErrorBoundary';
 import { AppLayout } from './components/layout/AppLayout';
 import { RequireAuth } from './components/auth/RequireAuth';
 import { RequirePermission } from './components/auth/RequirePermission';
@@ -60,7 +61,15 @@ export const router = createBrowserRouter([
           {
             element: <AppLayout />,
             children: [
-              { path: '/', element: <Navigate to="/dashboard" replace /> },
+              {
+                // Nested one level below AppLayout (not on AppLayout's own route) so a crash
+                // inside any single page's render — e.g. the "insertBefore" DOM-conflict crash a
+                // translation extension can cause right after a Purchasing receipt save — only
+                // swaps out this route's <Outlet/> content. The sidebar/topbar/breadcrumbs, which
+                // belong to AppLayout above, keep rendering unaffected. See ContentErrorBoundary.
+                errorElement: <ContentErrorBoundary />,
+                children: [
+                  { path: '/', element: <Navigate to="/dashboard" replace /> },
               { path: '/dashboard', element: <DashboardPage /> },
               {
                 path: '/customers',
@@ -303,6 +312,8 @@ export const router = createBrowserRouter([
                 // Settings-only permission, so it correctly blocks Manager from the Settings page.
                 path: '/settings',
                 element: <RequirePermission code="settings.company.view"><SettingsPage /></RequirePermission>,
+              },
+                ],
               },
             ],
           },

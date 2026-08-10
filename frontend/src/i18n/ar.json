@@ -4,7 +4,8 @@
     "title": "حدث خطأ غير متوقع",
     "description": "واجه التطبيق مشكلة أثناء عرض هذه الصفحة. يمكنك إعادة تحميل الصفحة أو العودة إلى الرئيسية.",
     "reload": "إعادة تحميل",
-    "goHome": "الذهاب إلى الرئيسية"
+    "goHome": "الذهاب إلى الرئيسية",
+    "goBack": "الرجوع للصفحة السابقة"
   },
   "nav": {
     "home": "الرئيسية",
@@ -686,6 +687,7 @@
     "packageSellingPriceOptional": "سعر بيع العبوة (اختياري)",
     "paidAmountNow": "المبلغ المدفوع الآن",
     "paymentSource": "مصدر الدفع / طريقة السحب",
+    "insufficientBalanceWarning": "تنبيه: المبلغ المدفوع أكبر من الرصيد المتاح في هذا الحساب",
     "outstandingToSupplier": "المتبقي كمستحق للمورد",
     "noReceiptsYet": "لا توجد إذون استلام مسجلة بعد",
     "receiptSavedSuccess": "تم حفظ إذن الاستلام بنجاح!",
@@ -837,7 +839,9 @@
     "exportStatementPdf": "تصدير كشف الحساب PDF",
     "pendingStatementTitle": "مستحقات المورد",
     "pendingInvoicesSection": "الفواتير المستحقة",
-    "totalPendingInvoicesLabel": "إجمالي الفواتير المستحقة"
+    "totalPendingInvoicesLabel": "إجمالي الفواتير المستحقة",
+    "payOutstanding": "سداد المتبقي",
+    "paymentSavedSuccess": "تم حفظ سند الدفع بنجاح"
   },
   "printingProducts": {
     "addNew": "إضافة منتج جديد",

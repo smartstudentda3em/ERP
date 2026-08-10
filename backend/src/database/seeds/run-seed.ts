@@ -30,6 +30,10 @@ const PERMISSION_MATRIX: Record<string, PermissionAction[]> = {
   roles: [PermissionAction.VIEW, PermissionAction.CREATE, PermissionAction.EDIT, PermissionAction.DELETE],
   customers: [PermissionAction.VIEW, PermissionAction.CREATE, PermissionAction.EDIT, PermissionAction.DELETE],
   suppliers: [PermissionAction.VIEW, PermissionAction.CREATE, PermissionAction.EDIT, PermissionAction.DELETE],
+  // "سداد المتبقي" — quick supplier payment vouchers, from both the Supplier Statement screen
+  // (general, not tied to one receipt) and the per-row action on the Purchase Invoices table
+  // (tied to that receipt). Global across every company/branch — see SupplierPaymentsService.
+  'suppliers.payment': [PermissionAction.VIEW, PermissionAction.CREATE, PermissionAction.EDIT, PermissionAction.DELETE],
   'sales-representatives': [
     PermissionAction.VIEW,
     PermissionAction.CREATE,
@@ -337,6 +341,10 @@ async function main() {
     'inventory.product.create',
     'inventory.purchaseReceipt.view',
     'inventory.purchaseReceipt.create',
+    'suppliers.payment.view',
+    'suppliers.payment.create',
+    'suppliers.payment.edit',
+    'suppliers.payment.delete',
     // Sales — full management
     'sales.quotation.view',
     'sales.quotation.create',
@@ -568,6 +576,7 @@ async function main() {
       { documentType: 'SALES_ORDER', prefix: 'SO-' },
       { documentType: 'SALES_INVOICE', prefix: 'INV-' },
       { documentType: 'SALES_PAYMENT', prefix: 'RCT-' },
+      { documentType: 'SUPPLIER_PAYMENT', prefix: 'SPY-' },
       { documentType: 'CASH_MOVEMENT', prefix: 'CM-' },
       { documentType: 'INSTALLMENT_PLAN', prefix: 'INSTL-' },
       { documentType: 'INSTALLMENT_PAYMENT', prefix: 'INSTLP-' },

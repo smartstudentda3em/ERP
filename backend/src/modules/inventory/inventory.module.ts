@@ -29,6 +29,9 @@ import { WarehouseViewController } from './stock-movements/warehouse-view.contro
 import { WarehouseViewService } from './stock-movements/warehouse-view.service';
 import { PurchaseReceiptsController } from './stock-movements/purchase-receipts.controller';
 import { PurchaseReceiptsService } from './stock-movements/purchase-receipts.service';
+import { SupplierPayment } from '../parties/suppliers/entities/supplier-payment.entity';
+import { SupplierPaymentsController } from './supplier-payments/supplier-payments.controller';
+import { SupplierPaymentsService } from './supplier-payments/supplier-payments.service';
 import { SettingsModule } from '../settings/settings.module';
 import { TreasuryModule } from '../treasury/treasury.module';
 
@@ -48,6 +51,7 @@ import { TreasuryModule } from '../treasury/treasury.module';
       PurchaseReceipt,
       PurchaseInvoiceLine,
       SalesInvoiceLine,
+      SupplierPayment,
       Unit,
       PackageType,
       ProductCategory,
@@ -61,6 +65,7 @@ import { TreasuryModule } from '../treasury/treasury.module';
     StockAuditsController,
     WarehouseViewController,
     PurchaseReceiptsController,
+    SupplierPaymentsController,
   ],
   providers: [
     ProductsService,
@@ -70,6 +75,7 @@ import { TreasuryModule } from '../treasury/treasury.module';
     StockTransfersService,
     WarehouseViewService,
     PurchaseReceiptsService,
+    SupplierPaymentsService,
   ],
   exports: [StockService, TypeOrmModule, PurchaseReceiptsService, StockAuditsService],
 })

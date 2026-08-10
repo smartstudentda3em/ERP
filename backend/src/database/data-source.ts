@@ -33,6 +33,7 @@ import { AuditLog } from '../modules/audit-log/entities/audit-log.entity';
 // Parties
 import { Customer } from '../modules/parties/customers/entities/customer.entity';
 import { Supplier } from '../modules/parties/suppliers/entities/supplier.entity';
+import { SupplierPayment } from '../modules/parties/suppliers/entities/supplier-payment.entity';
 import { SalesRepresentative } from '../modules/parties/entities/sales-representative.entity';
 import { CommissionException } from '../modules/parties/entities/commission-exception.entity';
 
@@ -133,6 +134,7 @@ export const allEntities = [
   AuditLog,
   Customer,
   Supplier,
+  SupplierPayment,
   SalesRepresentative,
   CommissionException,
   Product,

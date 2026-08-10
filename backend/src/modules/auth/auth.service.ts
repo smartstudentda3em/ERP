@@ -33,6 +33,11 @@ export interface LoginResult {
     isSystemRole: boolean;
     allCompanies: boolean;
     companyIds: string[];
+    /** Every role name this user holds (e.g. ['Manager'], ['مدير فرع']) — permission codes alone
+     * can't distinguish "Manager" from "مدير فرع" since both hold overlapping (additive)
+     * permissions; a handful of UI restrictions need the literal role name instead (see
+     * frontend/src/lib/use-active-company.ts's useIsPressManagerRestricted). */
+    roleNames: string[];
   };
 }
 
@@ -167,6 +172,7 @@ export class AuthService {
         isSystemRole: tokens.isSystemRole,
         allCompanies: tokens.allCompanies,
         companyIds: tokens.companyIds,
+        roleNames: user.roles?.map((role) => role.name) ?? [],
       },
     };
   }

@@ -16,6 +16,11 @@ export interface AuthUser {
   allCompanies: boolean;
   /** The companies this user may access/switch into (ignored when allCompanies is true). */
   companyIds: string[];
+  /** Every role name this user holds (e.g. ['Manager'], ['مدير فرع']) — permission codes alone
+   * can't distinguish "Manager" from "مدير فرع" since both hold overlapping (additive)
+   * permissions. Only use this for the rare UI restriction that must key off the literal role
+   * name rather than a specific permission — see hasRole below. */
+  roleNames: string[];
 }
 
 interface AuthState {
@@ -26,6 +31,7 @@ interface AuthState {
   clearSession: () => void;
   hasPermission: (code: string) => boolean;
   hasAnyPermission: (prefix: string) => boolean;
+  hasRole: (name: string) => boolean;
   setHydrated: () => void;
   /** Patches the stored user in place (e.g. after the "Account Settings" self-service profile
    * edit changes the email) — keeps the token as-is, unlike setSession which replaces both. */
@@ -46,6 +52,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const permissions = get().user?.permissions ?? [];
     return permissions.includes('*') || permissions.some((p) => p.startsWith(prefix));
   },
+  hasRole: (name: string) => (get().user?.roleNames ?? []).includes(name),
   setHydrated: () => set({ isHydrated: true }),
   updateUser: (patch) => {
     const current = get();

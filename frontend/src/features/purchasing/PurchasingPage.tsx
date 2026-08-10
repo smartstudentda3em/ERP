@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Input, FormField, Select } from '../../components/ui/Input';
+import { Modal } from '../../components/ui/Modal';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useToast } from '../../components/ui/Toast';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
@@ -48,6 +49,14 @@ interface Branch {
 interface PackageType {
   id: string;
   nameEn: string;
+}
+
+/** Only the two fields this page reads off /dashboard/summary — same endpoint DashboardPage and
+ * TreasuryTransactionsPage already use for their own "رصيد الكاش"/"رصيد البنك" cards, so these
+ * numbers always agree with what the rest of the app shows for the same company/branch. */
+interface BranchBalanceSummary {
+  cashBalance: number;
+  bankBalance: number;
 }
 
 interface Supplier {
@@ -127,6 +136,14 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
   // only drives the "pick a product to add" lookup inside the new-receipt form.
   const [tableSearch, setTableSearch] = useState('');
 
+  // "دفع المتبقي" — per-row quick payment against one receipt's own remaining balance, distinct
+  // from the new/edit receipt form above. Branch is pinned to the receipt's own branchId (shown
+  // read-only), same pattern as SalesInvoiceDetailPage's "Record Payment" modal.
+  const [payReceipt, setPayReceipt] = useState<PurchaseReceipt | null>(null);
+  const [payAmount, setPayAmount] = useState('0');
+  const [payMethod, setPayMethod] = useState('CASH');
+  const [payNotes, setPayNotes] = useState('');
+
   useEffect(() => {
     onPdfLoadingChange?.(pdfLoading);
   }, [pdfLoading, onPdfLoadingChange]);
@@ -157,6 +174,20 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
+    enabled: isPrintingPress && !!companyId,
+  });
+
+  // Printing Press only — powers the live cash/bank balance badges next to the payment-source
+  // field below. Same query key convention as DashboardPage/TreasuryTransactionsPage (branchId
+  // omitted from the key entirely when no branch is picked yet, so this shares their cache
+  // instead of firing a redundant duplicate request the moment the form's own branch field
+  // resolves the same value).
+  const branchBalanceQuery = useQuery({
+    queryKey: form.branchId ? ['dashboard-summary', companyId, form.branchId] : ['dashboard-summary', companyId],
+    queryFn: () =>
+      unwrap<BranchBalanceSummary>(
+        apiClient.get('/dashboard/summary', { params: { companyId, branchId: form.branchId || undefined } }),
+      ),
     enabled: isPrintingPress && !!companyId,
   });
 
@@ -318,6 +349,39 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     if (ok) deleteMutation.mutate(receipt.id);
   }
 
+  function openPayModal(receipt: PurchaseReceipt) {
+    setPayReceipt(receipt);
+    setPayAmount(String(Number(receipt.totalAmount) - Number(receipt.paidAmount ?? 0)));
+    setPayMethod('CASH');
+    setPayNotes('');
+  }
+
+  const payReceiptBranchName = (() => {
+    const b = (branchesQuery.data ?? []).find((br) => br.id === payReceipt?.branchId);
+    return b ? b.nameAr || b.nameEn : '—';
+  })();
+
+  const payMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post('/supplier-payments', {
+        paymentDate: localToday(),
+        supplierId: payReceipt!.supplierId,
+        companyId,
+        purchaseReceiptId: payReceipt!.id,
+        branchId: payReceipt!.branchId ?? undefined,
+        method: payMethod,
+        amount: Number(payAmount),
+        notes: payNotes || undefined,
+      }),
+    onSuccess: () => {
+      invalidateAfterSave();
+      queryClient.invalidateQueries({ queryKey: ['supplier-payments'] });
+      toast.success(t('suppliers.paymentSavedSuccess'));
+      setPayReceipt(null);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
+  });
+
   const columns: Column<PurchaseReceipt>[] = [
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('common.date'), accessor: (r) => r.receiptDate },
@@ -349,6 +413,19 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       header: t('common.actions'),
       accessor: (r) => (
         <div className="flex justify-center gap-3">
+          {Number(r.totalAmount) - Number(r.paidAmount ?? 0) > 0 && (
+            <button
+              type="button"
+              className="text-green-600 hover:underline"
+              title={t('suppliers.payOutstanding')}
+              onClick={(e) => {
+                e.stopPropagation();
+                openPayModal(r);
+              }}
+            >
+              💰
+            </button>
+          )}
           <button
             type="button"
             className="text-primary-600 hover:underline"
@@ -603,6 +680,39 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
           {isPrintingPress && paidAmount > 0 && (
             <div className="col-span-2">
               <FormField label={t('purchasing.paymentSource')}>
+                {/* Live balances for the branch selected above, fetched off the same
+                    /dashboard/summary endpoint the Dashboard/Treasury screens already use — lets
+                    the user see available liquidity without leaving this form. The account
+                    matching the current selection is highlighted; entering more than that
+                    account actually holds shows a warning below (the real, authoritative check
+                    still happens server-side in PurchaseReceiptsService via
+                    assertSufficientBalance — this is a pre-submit hint, not a substitute for it). */}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <div
+                    className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                      form.paymentAccount === 'BANK'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                        : 'border-[var(--border)] text-[var(--text-muted)]'
+                    }`}
+                  >
+                    <span>🏦</span>
+                    <span>
+                      {t('treasury.paymentAccounts.BANK')}: {formatAmount(branchBalanceQuery.data?.bankBalance ?? 0)}
+                    </span>
+                  </div>
+                  <div
+                    className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                      form.paymentAccount === 'CASH'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                        : 'border-[var(--border)] text-[var(--text-muted)]'
+                    }`}
+                  >
+                    <span>💵</span>
+                    <span>
+                      {t('treasury.paymentAccounts.CASH')}: {formatAmount(branchBalanceQuery.data?.cashBalance ?? 0)}
+                    </span>
+                  </div>
+                </div>
                 <Select
                   required
                   value={form.paymentAccount}
@@ -611,6 +721,14 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
                   <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
                   <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
                 </Select>
+                {(() => {
+                  const available =
+                    form.paymentAccount === 'BANK'
+                      ? branchBalanceQuery.data?.bankBalance
+                      : branchBalanceQuery.data?.cashBalance;
+                  if (available === undefined || paidAmount <= available) return null;
+                  return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
+                })()}
               </FormField>
             </div>
           )}
@@ -682,6 +800,53 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
           />
         </div>
       </Card>
+
+      <Modal open={!!payReceipt} onClose={() => setPayReceipt(null)} title={t('suppliers.payOutstanding')}>
+        <form
+          className="grid grid-cols-2 gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            payMutation.mutate();
+          }}
+        >
+          <FormField label={t('fields.supplier')}>
+            <Input disabled value={payReceipt?.supplier?.companyName ?? '—'} />
+          </FormField>
+          <FormField label={t('table.documentNumber')}>
+            <Input disabled value={payReceipt?.documentNumber ?? '—'} />
+          </FormField>
+          <FormField label={t('fields.amount')}>
+            <Input type="number" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+          </FormField>
+          <FormField label={t('fields.method')}>
+            <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+              <option value="CASH">{t('paymentMethod.CASH')}</option>
+              <option value="BANK_TRANSFER">{t('paymentMethod.BANK_TRANSFER')}</option>
+              <option value="CHEQUE">{t('paymentMethod.CHEQUE')}</option>
+              <option value="CARD">{t('paymentMethod.CARD')}</option>
+              <option value="ONLINE">{t('paymentMethod.ONLINE')}</option>
+            </Select>
+          </FormField>
+          {isPrintingPress && (
+            <FormField label={t('fields.branch')}>
+              <Input disabled value={payReceiptBranchName} />
+            </FormField>
+          )}
+          <div className="col-span-2">
+            <FormField label={t('table.description')}>
+              <Input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} />
+            </FormField>
+          </div>
+          <div className="col-span-2 mt-2 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setPayReceipt(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={payMutation.isPending}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </>
   );
 });

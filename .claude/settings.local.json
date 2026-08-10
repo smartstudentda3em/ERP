@@ -128,7 +128,16 @@
       "Bash(docker info *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173 --max-time 5)",
       "Bash(curl -s \"https://erp.smartstudent.live/assets/index-IH63R-zq.js\" -o \"C:/Users/surface/AppData/Local/Temp/claude/E--ERP/64c070fe-5c10-46a9-81f3-c9be8d1e25e5/scratchpad/live-bundle2.js\")",
-      "Bash(docker exec *)"
+      "Bash(docker exec *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Read(//c/Users/surface/Downloads/**)",
+      "Read(//c/Users/**)",
+      "Bash(find \"/c/Users/surface/Downloads\" -iname \"*.pdf\" -newermt \"-10 minutes\" 2>/dev/null)",
+      "Bash(curl -s -X POST http://localhost:3000/auth/login -H \"Content-Type: application/json\" -d '{\"phone\":\"99970766\",\"password\":\"Ayman987654#\"}')",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"phone\":\"99970766\",\"password\":\"Ayman987654#\"}')",
+      "Read(//c/Users/surface/.ssh/**)"
     ]
   }
 }

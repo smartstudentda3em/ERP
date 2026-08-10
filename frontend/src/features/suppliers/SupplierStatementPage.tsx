@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
-import { formatAmount } from '../../lib/number-format';
+import { formatAmount, formatQuantity } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
@@ -158,7 +158,7 @@ export function SupplierStatementPage() {
     { header: t('fields.product'), accessor: (r) => r.product?.nameEn ?? '—' },
     {
       header: t('fields.quantityPackages'),
-      accessor: (r) => `${formatAmount(r.quantityPackages)} × ${formatAmount(r.unitsPerPackage)}`,
+      accessor: (r) => `${formatAmount(r.quantityPackages)} × ${formatQuantity(r.unitsPerPackage)}`,
       align: 'right',
     },
     { header: t('fields.totalAmount'), accessor: (r) => money(r.totalAmount), align: 'right' },

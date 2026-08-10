@@ -12,7 +12,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useAuthStore } from '../../store/auth-store';
 import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/DateRangeFilter';
 import { localToday } from '../../lib/date-utils';
-import { formatAmount } from '../../lib/number-format';
+import { formatAmount, formatQuantity } from '../../lib/number-format';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdf } from '../../lib/pdf-export';
 import { useActiveCompany } from '../../lib/use-active-company';
@@ -325,7 +325,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     { header: t('fields.product'), accessor: (r) => r.product?.nameEn ?? '—' },
     {
       header: t('fields.quantityPackages'),
-      accessor: (r) => `${formatAmount(r.quantityPackages)} × ${formatAmount(r.unitsPerPackage)}`,
+      accessor: (r) => `${formatAmount(r.quantityPackages)} × ${formatQuantity(r.unitsPerPackage)}`,
       align: 'right',
     },
     {
@@ -431,7 +431,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
                     <div className="font-medium text-[var(--text)]">{selectedProduct.nameEn}</div>
                     <div className="text-xs text-[var(--text-muted)]">
                       {selectedProduct.sku ?? '—'} · {packageTypeName(selectedProduct.packageTypeId)} (
-                      {selectedProduct.unitsPerPackage})
+                      {formatQuantity(selectedProduct.unitsPerPackage)})
                     </div>
                   </div>
                   <button

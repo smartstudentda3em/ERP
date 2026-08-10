@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
-import { formatAmount } from '../../lib/number-format';
+import { formatAmount, formatQuantity } from '../../lib/number-format';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -175,7 +175,7 @@ export function ProductOverviewPage() {
                     <div>
                       <div className="text-xs text-[var(--text-muted)]">{t('fields.package')}</div>
                       <div className="font-medium">
-                        {data.product.packageType.name} ({data.product.unitsPerPackage} × {data.product.unit?.name})
+                        {data.product.packageType.name} ({formatQuantity(data.product.unitsPerPackage)} × {data.product.unit?.name})
                       </div>
                     </div>
                     <div>

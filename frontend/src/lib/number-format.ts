@@ -15,6 +15,20 @@ export function formatAmount(value: unknown): string {
   return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+/**
+ * Same trailing-zero-stripping behavior as formatAmount (1.0000 → "1", 1.5000 → "1.5", 0 → "0.00"),
+ * but keeps up to 4 fractional digits instead of 2 — for physical quantities (units per package,
+ * stock quantities) that are validated to 4 decimal places in the database (`@Min(0.0001)` on
+ * unitsPerPackage), where formatAmount's 2-decimal cap would silently round away real precision
+ * (0.1234 → "0.12").
+ */
+export function formatQuantity(value: unknown): string {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num === 0) return '0.00';
+  if (Number.isInteger(num)) return num.toLocaleString('en-US');
+  return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+}
+
 /** Rounds to `decimals` places (2 by default, matching formatAmount's own precision — this
  * codebase has no per-currency decimal-places setting to vary it by). Used for reverse-calculated
  * values (e.g. unit price derived from an edited line total) so they don't carry long floating-point

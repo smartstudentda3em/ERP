@@ -2,7 +2,7 @@ import { forwardRef, MouseEvent, useEffect, useImperativeHandle, useMemo, useRef
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, getErrorMessage, unwrap } from '../../lib/api-client';
-import { formatAmount } from '../../lib/number-format';
+import { formatAmount, formatQuantity } from '../../lib/number-format';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -446,7 +446,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   function packageLabel(r: Product): string {
     if (!r.packageTypeId || !r.unitsPerPackage) return '—';
     const p = packageTypesQuery.data?.find((x) => x.id === r.packageTypeId);
-    return `${p?.nameEn ?? '?'} (${r.unitsPerPackage})`;
+    return `${p?.nameEn ?? '?'} (${formatQuantity(r.unitsPerPackage)})`;
   }
 
   function brandLabel(r: Product): string {

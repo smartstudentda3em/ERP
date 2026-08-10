@@ -36,7 +36,12 @@ export class StockAuditsController {
   @Post()
   @Permissions('inventory.stockAudit.create')
   create(@Body() dto: CreateStockAuditDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.create(dto, user.userId, user.companyId!);
+    // "حفظ واعتماد الجرد" only actually saves-AND-approves in one step for whoever also holds
+    // approve rights (Administrator) — resolved from the caller's own JWT permissions, never from
+    // the request body, so a client can't ask for approval it isn't entitled to. Anyone without
+    // it (e.g. a branch Manager) still just submits CONFIRMED, pending a separate admin approval.
+    const autoApprove = user.permissions?.includes('inventory.stockAudit.approve') ?? false;
+    return this.service.create(dto, user.userId, user.companyId!, autoApprove);
   }
 
   @Patch(':id')

@@ -339,6 +339,9 @@ async function main() {
     'suppliers.create',
     'inventory.product.view',
     'inventory.product.create',
+    // Warehouse Management screen's stat cards/product table (warehouse-view.controller.ts)
+    // gate on this — without it the manager reaches the page but every query 403s.
+    'inventory.stock.view',
     'inventory.purchaseReceipt.view',
     'inventory.purchaseReceipt.create',
     'suppliers.payment.view',

@@ -138,7 +138,10 @@
       "Bash(curl -s -X POST http://localhost:3000/auth/login -H \"Content-Type: application/json\" -d '{\"phone\":\"99970766\",\"password\":\"Ayman987654#\"}')",
       "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"phone\":\"99970766\",\"password\":\"Ayman987654#\"}')",
       "Read(//c/Users/surface/.ssh/**)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "Bash(tee /tmp/login.json)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('status:',j.data?.status\\);console.log\\('id:',j.data?.id\\);console.log\\('stockAdjustmentId:',j.data?.stockAdjustmentId\\);}\\)\")",
+      "Bash(docker exec erp_postgres psql -U erp_user -d erp_db -c ' *)"
     ]
   }
 }

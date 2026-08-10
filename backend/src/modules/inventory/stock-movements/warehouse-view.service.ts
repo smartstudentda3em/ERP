@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { StockLevel } from './entities/stock-level.entity';
 import { StockMovement } from './entities/stock-movement.entity';
 import { Product } from '../products/entities/product.entity';
@@ -9,6 +9,7 @@ import { PurchaseInvoiceLine } from '../../purchasing/entities/purchasing.entity
 import { SalesInvoiceLine } from '../../sales/sales-invoices/entities/sales-invoice.entity';
 import { PaginatedResult } from '../../../common/dto/pagination-query.dto';
 import { WarehouseProductsQueryDto } from './dto/warehouse-view.dto';
+import { currentMonthRange, getConsumedQuantitiesByProductId } from './consumed-quantity.util';
 
 const SORT_COLUMNS: Record<string, string> = {
   code: 'p.sku',
@@ -47,6 +48,7 @@ export class WarehouseViewService {
     @InjectRepository(PurchaseInvoiceLine)
     private readonly purchaseInvoiceLineRepo: Repository<PurchaseInvoiceLine>,
     @InjectRepository(SalesInvoiceLine) private readonly salesInvoiceLineRepo: Repository<SalesInvoiceLine>,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   /** Confirms the warehouse belongs to the caller's company before anything else runs — otherwise a client could read another company's warehouse stock just by guessing its UUID. */
@@ -152,6 +154,23 @@ export class WarehouseViewService {
     qb.addSelect(COMPANY_QTY_SUBQUERY, 'companyQty');
     const { entities, raw } = await qb.getRawAndEntities();
 
+    // "الكمية المستهلكة" — one grouped SUM query scoped to just this page's product ids (never
+    // all products in the warehouse), so it stays cheap regardless of catalog size. Falls back to
+    // the current calendar month when the page's own date filter is left empty, matching
+    // "الفترة الحالية" per the column's own spec.
+    const defaultRange = currentMonthRange();
+    const dateFrom = query.dateFrom ?? defaultRange.dateFrom;
+    const dateTo = query.dateTo ?? defaultRange.dateTo;
+    const productIds = entities.map((sl) => sl.product.id);
+    const consumedByProductId = await getConsumedQuantitiesByProductId(
+      this.dataSource,
+      companyId,
+      warehouseId,
+      productIds,
+      dateFrom,
+      dateTo,
+    );
+
     const items = entities.map((sl, i) => {
       const p = sl.product;
       const qty = Number(sl.quantityOnHand);
@@ -177,6 +196,7 @@ export class WarehouseViewService {
           ? { packages: Math.floor(qty / unitsPerPackage), remainderUnits: qty % unitsPerPackage }
           : null,
         reservedQuantity: Number(sl.reservedQuantity),
+        consumedQuantity: consumedByProductId.get(p.id) ?? 0,
         minimumStock: reorderLevel,
         purchasePrice: Number(p.purchasePrice),
         sellingPrice: Number(p.sellingPrice),

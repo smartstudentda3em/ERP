@@ -60,13 +60,23 @@ interface Product {
 
 interface SetupLine {
   productId: string;
-  previousStock: number;
+  currentStock: number;
+  consumedQuantity: number;
 }
 
 interface LineDraft {
   productId: string;
   nameEn: string;
-  systemQuantity: number;
+  /** "المخزون الحالي" — the live stockLevels.quantityOnHand for this product/warehouse right now.
+   * This is what actualQuantity defaults from, what حالة الصنف is compared against, and what
+   * gets submitted as the audit line's systemQuantity — see createMutation below. */
+  currentStock: number;
+  /** "الكمية المستهلكة" — the exact same figure WarehousesPage.tsx's own "الكمية المستهلكة"
+   * column shows (real SALES_ISSUE/ADJUSTMENT_OUT/TRANSFER_OUT outflow, summed server-side), for
+   * this audit's own calendar month. Backend-sourced, not locally derived — see
+   * StockAuditsService.getSetupLines()'s own doc comment for why it must never drift from the
+   * Warehouses screen's value. */
+  consumedQuantity: number;
   unitCost: number;
   actualQuantity: string;
   isSellable: boolean;
@@ -139,9 +149,8 @@ export function StockAuditPage() {
     enabled: entryOpen && !!companyId,
   });
 
-  // "المخزون السابق (بالوحدة)" per product — computed server-side from the last APPROVED audit
-  // plus everything received since (or, with no prior audit, everything ever received), never
-  // from live stockLevels.quantityOnHand (see StockAuditsService.getSetupLines() for why).
+  // "المخزون الحالي" (live) and "الكمية المستهلكة" (same shared computation as the Warehouses
+  // screen, scoped to this audit's own month) per product — see StockAuditsService.getSetupLines().
   const setupLinesQuery = useQuery({
     queryKey: ['stock-audit-setup-lines', warehouseId, auditDate],
     queryFn: () =>
@@ -191,11 +200,11 @@ export function StockAuditPage() {
   // every render with the current row, so `r` passed in from there is always up to date.
   function updateActual(line: LineDraft, value: string) {
     setActualOverrides((prev) => ({ ...prev, [line.productId]: value }));
-    // A surplus (actual count higher than what the system expected) is the opposite of the normal
+    // A surplus (actual count higher than the live current stock) is the opposite of the normal
     // consumption case this screen is built around, so it's worth flagging the moment it's typed
     // rather than only showing up as a passive "زيادة" badge the user might not notice.
-    if (value.trim() !== '' && Number(value) > line.systemQuantity) {
-      toast.warning(t('stockAudit.surplusWarning', { product: line.nameEn, actual: value, previous: line.systemQuantity }));
+    if (value.trim() !== '' && Number(value) > line.currentStock) {
+      toast.warning(t('stockAudit.surplusWarning', { product: line.nameEn, actual: value, previous: line.currentStock }));
     }
   }
 
@@ -205,19 +214,20 @@ export function StockAuditPage() {
       .filter((p) => p.isActive)
       .map((p) => {
         const setupLine = setupLinesQuery.data?.find((l) => l.productId === p.id);
-        const systemQuantity = setupLine ? Number(setupLine.previousStock) : 0;
+        const currentStock = setupLine ? Number(setupLine.currentStock) : 0;
+        const consumedQuantity = setupLine ? Number(setupLine.consumedQuantity) : 0;
         const override = actualOverrides[p.id];
         return {
           productId: p.id,
           nameEn: p.nameEn,
-          systemQuantity,
+          currentStock,
+          consumedQuantity,
           unitCost: Number(p.purchasePrice),
-          // Sellable materials are auto-tracked precisely via sales, so they pre-fill with the
-          // system quantity (still editable, via actualOverrides once touched); manual materials
-          // start blank for a real count. A restricted Manager gets a genuinely blind count
-          // instead — blank for every line, sellable or not, so nothing nudges their manual entry.
-          actualQuantity:
-            override !== undefined ? override : !isRestrictedEntry && p.isSellable ? String(systemQuantity) : '',
+          // Suggested default is always the live current stock — the user overwrites it during
+          // the physical count if they find a surplus/shortage. A restricted Manager gets a
+          // genuinely blind count instead — blank for every line, so nothing nudges their manual
+          // entry (see useIsPressManagerRestricted's own doc comment for the full restriction list).
+          actualQuantity: override !== undefined ? override : !isRestrictedEntry ? String(currentStock) : '',
           isSellable: p.isSellable ?? false,
         };
       });
@@ -230,7 +240,11 @@ export function StockAuditPage() {
         warehouseId,
         lines: (lines ?? []).map((l) => ({
           productId: l.productId,
-          systemQuantity: l.systemQuantity,
+          // The audit line's systemQuantity is the live current stock at submission time (per
+          // StockAuditLine's own doc comment) — this is what approve() later reconciles the
+          // physical count against, so it must never be previousStock (the separate, deliberately
+          // non-live consumption baseline shown in its own column for reference).
+          systemQuantity: l.currentStock,
           actualQuantity: l.actualQuantity.trim() === '' ? null : Number(l.actualQuantity),
           unitCost: l.unitCost,
         })),
@@ -353,26 +367,17 @@ export function StockAuditPage() {
       : []),
   ];
 
+  // حالة الصنف (مطابق/زيادة/عجز) تُحسب دائماً بمقارنة الكمية الفعلية المدخلة بـ"المخزون الحالي"
+  // (الرصيد الحي وقت فتح الشاشة) — نفس القيمة المرسلة كـ systemQuantity عند الحفظ أعلاه، فتبقى
+  // الحالة المعروضة هنا متطابقة تماماً مع ما سيُخزَّن.
   const varianceOf = (l: LineDraft): number | null =>
-    l.actualQuantity.trim() === '' ? null : Number(l.actualQuantity) - l.systemQuantity;
+    l.actualQuantity.trim() === '' ? null : Number(l.actualQuantity) - l.currentStock;
 
-  // "الكمية المستهلكة" = الكمية بالنظام - الكمية الفعلية المدخلة — نفس الاتفاقية المستخدمة في
-  // عمود "الكمية المستهلكة" بصفحة تفاصيل الجرد (StockAuditDetailPage.tsx). عكس varianceOf أعلاه
-  // عمداً: تلك تبقى كما هي لتغذية شارة الحالة (متطابق/زيادة/نقص) دون أي تغيير في سلوكها.
-  const consumedQuantityOf = (l: LineDraft): number | null =>
-    l.actualQuantity.trim() === '' ? null : l.systemQuantity - Number(l.actualQuantity);
+  // "السعر الإجمالي" = الكمية المستهلكة (القيمة الموحّدة القادمة من الخادم، انظر consumedQuantity
+  // أعلاه) × سعر الوحدة.
+  const totalPriceOf = (l: LineDraft): number => l.consumedQuantity * l.unitCost;
 
-  // "السعر الإجمالي" = الكمية المستهلكة × سعر الوحدة — نفس معادلة StockAuditDetailPage.tsx's
-  // totalPriceOf، معروضة هنا مسبقاً أثناء الإدخال بدلاً من الانتظار حتى بعد الحفظ.
-  const totalPriceOf = (l: LineDraft): number | null => {
-    const consumed = consumedQuantityOf(l);
-    return consumed === null ? null : consumed * l.unitCost;
-  };
-
-  const totalConsumedValue = useMemo(
-    () => (lines ?? []).reduce((sum, l) => sum + (totalPriceOf(l) ?? 0), 0),
-    [lines],
-  );
+  const totalConsumedValue = useMemo(() => (lines ?? []).reduce((sum, l) => sum + totalPriceOf(l), 0), [lines]);
 
   const productColumn: Column<LineDraft> = {
     header: t('fields.product'),
@@ -427,23 +432,17 @@ export function StockAuditPage() {
         ? [productColumn, actualQuantityColumn]
         : [
             productColumn,
-            { header: t('stockAudit.systemQuantity'), accessor: (r) => formatAmount(r.systemQuantity), align: 'right' },
+            { header: t('stockAudit.currentStock'), accessor: (r) => formatAmount(r.currentStock), align: 'right' },
             actualQuantityColumn,
             {
               header: t('stockAudit.consumedQuantity'),
-              accessor: (r) => {
-                const c = consumedQuantityOf(r);
-                return c === null ? '—' : formatAmount(c);
-              },
+              accessor: (r) => formatAmount(r.consumedQuantity),
               align: 'right',
             },
             { header: t('stockAudit.unitPrice'), accessor: (r) => formatAmount(r.unitCost), align: 'right' },
             {
               header: t('stockAudit.totalPrice'),
-              accessor: (r) => {
-                const total = totalPriceOf(r);
-                return total === null ? '—' : formatAmount(total);
-              },
+              accessor: (r) => formatAmount(totalPriceOf(r)),
               align: 'right',
             },
             {

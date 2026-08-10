@@ -17,7 +17,7 @@ import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/Dat
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsPressManagerRestricted } from '../../lib/use-active-company';
 import { LetterheadCompany } from '../sales/DocumentLetterhead';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
@@ -152,6 +152,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
 ) {
   const { t } = useTranslation();
   const { isPrintingPress } = useActiveCompany();
+  const isManagerRestricted = useIsPressManagerRestricted();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const toast = useToast();
@@ -472,30 +473,37 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     ...(isPrintingPress ? [{ header: t('fields.category'), accessor: (r: Product) => categoryLabel(r) }] : []),
     { header: t('fields.brand'), accessor: (r) => brandLabel(r) },
     { header: t('fields.package'), accessor: (r) => packageLabel(r) },
-    {
-      header: t('fields.availableQuantity'),
-      accessor: (r) => {
-        const total = totalQuantity(r.id);
-        return (
-          <button
-            type="button"
-            className="text-primary-600 underline-offset-2 hover:underline"
-            onClick={(e) => {
-              e.stopPropagation();
-              setBreakdownProduct(r);
-            }}
-          >
-            <PackageQuantity
-              baseQuantity={total}
-              unitsPerPackage={r.unitsPerPackage}
-              packageUnitName={packageTypesQuery.data?.find((p) => p.id === r.packageTypeId)?.nameEn}
-            />
-          </button>
-        );
-      },
-      align: 'right',
-      width: '12%',
-    },
+    // Manager role, Press branch only: this single column is dropped (everything else — stat
+    // cards, filters, remaining columns — stays visible), so the manager relies on physical
+    // counting rather than the system-recorded on-hand quantity.
+    ...(isManagerRestricted
+      ? []
+      : [
+          {
+            header: t('fields.availableQuantity'),
+            accessor: (r: Product) => {
+              const total = totalQuantity(r.id);
+              return (
+                <button
+                  type="button"
+                  className="text-primary-600 underline-offset-2 hover:underline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setBreakdownProduct(r);
+                  }}
+                >
+                  <PackageQuantity
+                    baseQuantity={total}
+                    unitsPerPackage={r.unitsPerPackage}
+                    packageUnitName={packageTypesQuery.data?.find((p) => p.id === r.packageTypeId)?.nameEn}
+                  />
+                </button>
+              );
+            },
+            align: 'right' as const,
+            width: '12%',
+          },
+        ]),
     {
       header: t('fields.stockStatus'),
       accessor: (r) => {

@@ -103,6 +103,11 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     }
   }
 
+  private async isPressCompany(companyId: string): Promise<boolean> {
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    return company?.code === PRINTING_PRESS_COMPANY_CODE;
+  }
+
   async createForCompany(companyId: string, dto: Partial<SalesRepresentative>): Promise<SalesRepresentative> {
     await this.assertBranchRequiredForPress(companyId, dto.branchId);
     const code =
@@ -137,6 +142,16 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
    * matches silently drops real sales from that manager's totals. r2 resolves the invoice to
    * whichever rep's own userId equals its createdById, but only when salesRepresentativeId itself
    * is NULL — an invoice with an explicit (different) rep is never reattributed.
+   *
+   * Printing Press is the one exception to all of the above: its invoices are created via a
+   * branch selector, not a rep selector (see getQuarterlyTrend's own note), so almost none of
+   * them ever get salesRepresentativeId set, and createdById only matches when the manager's own
+   * login happened to create the invoice. Resolving Press sales the same rep-id way as every
+   * other company silently dropped the vast majority of a branch's real invoices, making this
+   * card/chart disagree with the general Sales screen (which shows every invoice for the branch,
+   * unfiltered) for the exact same manager and period. Press sales are resolved by branchId
+   * instead — the manager's own branch, summed with no exclusions — so this screen can never
+   * again disagree with what the Sales screen shows for that branch.
    */
   async getReportsSummary(
     companyId: string,
@@ -149,6 +164,28 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       order: { name: 'ASC' } as any,
     });
     if (reps.length === 0) return [];
+
+    if (await this.isPressCompany(companyId)) {
+      const branchSalesRows = await this.dataSource
+        .createQueryBuilder()
+        .select('i."branchId"', 'branchId')
+        .addSelect('COALESCE(SUM(i."grandTotal"), 0)', 'total')
+        .from('sales_invoices', 'i')
+        .where('i."companyId" = :companyId', { companyId })
+        .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
+        .andWhere('i."branchId" IS NOT NULL')
+        .groupBy('i."branchId"')
+        .getRawMany();
+      const salesByBranchId = new Map<string, number>(branchSalesRows.map((r) => [r.branchId, Number(r.total)]));
+      return reps.map((r) => ({
+        representativeId: r.id,
+        representativeName: r.name,
+        salesVolume: r.branchId ? salesByBranchId.get(r.branchId) ?? 0 : 0,
+        // Press drops the "إجمالي المبالغ المحصلة" card/chart entirely for this tab (see
+        // RepresentativesReportsTab.tsx) — nothing ever reads this field for Press.
+        collectedAmount: 0,
+      }));
+    }
 
     const [salesRows, collectedRows] = await Promise.all([
       this.dataSource
@@ -191,6 +228,30 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   }
 
   private async getPeriodTotals(companyId: string, dateFrom: string, dateTo: string, representativeId?: string) {
+    // Same Press exception as getReportsSummary — resolve by branchId (matching the general Sales
+    // screen) instead of salesRepresentativeId/createdById, which drops most Press branch
+    // invoices. Backs getQuarterlyTrend's company-wide bars (no representativeId) and its
+    // rep-without-a-resolved-branch fallback; the specific-manager path calls
+    // getManagerBranchSalesForPeriod for salesVolume instead and only reaches here for
+    // collectedAmount, which Press never displays (see getReportsSummary).
+    if (await this.isPressCompany(companyId)) {
+      let repBranchId: string | null = null;
+      if (representativeId) {
+        const rep = await this.repo.findOne({ where: { id: representativeId, companyId } as any });
+        repBranchId = rep?.branchId ?? null;
+        if (!repBranchId) return { salesVolume: 0, collectedAmount: 0 };
+      }
+      const salesQb = this.dataSource
+        .createQueryBuilder()
+        .select('COALESCE(SUM(i."grandTotal"), 0)', 'total')
+        .from('sales_invoices', 'i')
+        .where('i."companyId" = :companyId', { companyId })
+        .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo });
+      if (repBranchId) salesQb.andWhere('i."branchId" = :repBranchId', { repBranchId });
+      const salesRow = await salesQb.getRawOne();
+      return { salesVolume: Number(salesRow?.total ?? 0), collectedAmount: 0 };
+    }
+
     // Same createdById fallback as getReportsSummary — an invoice with no salesRepresentativeId
     // still resolves to whichever rep's own userId equals its createdById.
     const salesQb = this.dataSource
@@ -280,30 +341,19 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     addPeriod(year - 2, quarter);
     addPeriod(quarter > 1 ? year : year - 1, quarter > 1 ? quarter - 1 : 4);
 
-    // When a specific manager is selected, sales must be resolved the exact same way "لوحة
-    // المدير" resolves them (buildManagerDashboardForRep): by that manager's own branchId, not by
-    // matching SalesInvoice.salesRepresentativeId / createdById — Printing Press invoices are
-    // created via a branch selector, not a rep selector, so most never get salesRepresentativeId
-    // set at all, and createdById only matches when the manager's own login happened to create
-    // the invoice. That mismatch is exactly what made a manager's dashboard total (branch-scoped)
-    // disagree with this chart's total (rep-id-scoped) for the same period. Resolved once here,
-    // outside the per-period loop below, since it never changes across periods.
+    // When a specific manager is selected, sales must be resolved by that manager's own
+    // branchId, not by matching SalesInvoice.salesRepresentativeId / createdById — Printing Press
+    // invoices are created via a branch selector, not a rep selector, so most never get
+    // salesRepresentativeId set at all, and createdById only matches when the manager's own login
+    // happened to create the invoice. Resolved once here, outside the per-period loop below,
+    // since it never changes across periods. This is now the exact same raw, no-exclusion branch
+    // total getReportsSummary/getPeriodTotals use — matching what the general Sales screen shows
+    // for that branch — not the commission-eligible-only figure "لوحة المدير" shows (that screen
+    // is a commission tool, not a sales report, and is expected to differ).
     let repBranchId: string | null = null;
-    let generalRate = 0;
-    let exceptions = { byProductId: new Map<string, number>(), byCategoryId: new Map<string, number>() };
     if (representativeId) {
       const rep = await this.repo.findOne({ where: { id: representativeId, companyId } as any });
-      if (rep) {
-        repBranchId = rep.branchId ?? null;
-        generalRate = Number(rep.commissionRate ?? 0);
-        const exceptionRows = await this.commissionExceptionsRepo.find({
-          where: { companyId, salesRepresentativeId: representativeId },
-        });
-        for (const e of exceptionRows) {
-          if (e.productId) exceptions.byProductId.set(e.productId, Number(e.commissionRate));
-          else if (e.categoryId) exceptions.byCategoryId.set(e.categoryId, Number(e.commissionRate));
-        }
-      }
+      repBranchId = rep?.branchId ?? null;
     }
 
     const results = await Promise.all(
@@ -311,7 +361,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
         const { dateFrom, dateTo } = quarterDateRange(p.year, p.quarter);
         if (representativeId && repBranchId) {
           const [salesVolume, { collectedAmount }] = await Promise.all([
-            this.getManagerBranchSalesForPeriod(companyId, repBranchId, dateFrom, dateTo, generalRate, exceptions),
+            this.getManagerBranchSalesForPeriod(companyId, repBranchId, dateFrom, dateTo),
             this.getPeriodTotals(companyId, dateFrom, dateTo, representativeId),
           ]);
           return { year: p.year, quarter: p.quarter, salesVolume, collectedAmount };
@@ -323,39 +373,25 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     return { periods: results, earliestYear };
   }
 
-  /** The exact same totalSales computation "لوحة المدير" uses for a manager
-   * (buildManagerDashboardForRep below): branch-scoped invoice lines, excluding any line whose
-   * resolved commission rate is 0 ("not his sale for commission purposes"). Reused here so the
-   * quarterly-trend chart's per-manager sales figure can never drift from what that same manager's
-   * own dashboard shows for the same period. */
+  /** Raw branch sales total for one period — the same aggregation getReportsSummary/
+   * getPeriodTotals use for Press, just scoped to a single already-resolved branchId instead of
+   * grouping by branch. Kept as its own query (rather than reusing getPeriodTotals) since the
+   * quarterly-trend loop above already has repBranchId resolved once, outside the per-period loop. */
   private async getManagerBranchSalesForPeriod(
     companyId: string,
     branchId: string,
     dateFrom: string,
     dateTo: string,
-    generalRate: number,
-    exceptions: { byProductId: Map<string, number>; byCategoryId: Map<string, number> },
   ): Promise<number> {
-    const lineRows = await this.dataSource
+    const row = await this.dataSource
       .createQueryBuilder()
-      .select('l."lineTotal"', 'lineTotal')
-      .addSelect('l."productId"', 'productId')
-      .addSelect('p."categoryId"', 'categoryId')
-      .from('sales_invoice_lines', 'l')
-      .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
-      .innerJoin('products', 'p', 'p.id = l."productId"')
+      .select('COALESCE(SUM(i."grandTotal"), 0)', 'total')
+      .from('sales_invoices', 'i')
       .where('i."companyId" = :companyId', { companyId })
       .andWhere('i."branchId" = :branchId', { branchId })
       .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
-      .getRawMany();
-
-    let totalSales = 0;
-    for (const line of lineRows) {
-      const rate = this.resolveLineRate(line, exceptions, generalRate);
-      if (rate <= 0) continue;
-      totalSales += Number(line.lineTotal);
-    }
-    return totalSales;
+      .getRawOne();
+    return Number(row?.total ?? 0);
   }
 
   /**

@@ -5,13 +5,14 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsPressManagerRestricted } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Input, Select, FormField } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { PackageQuantity } from '../../components/ui/PackageQuantity';
+import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter';
 
 interface WarehouseOption {
   id: string;
@@ -41,6 +42,9 @@ interface ProductRow {
   quantityOnHand: number;
   packageBreakdown: { packages: number; remainderUnits: number } | null;
   reservedQuantity: number;
+  /** Printing Press only — total genuine outflow (sold/written off/transferred out) for this
+   * product within the date range selected below, or the current calendar month by default. */
+  consumedQuantity: number;
   minimumStock: number;
   purchasePrice: number;
   sellingPrice: number;
@@ -86,6 +90,7 @@ export function WarehousesPage() {
   const navigate = useNavigate();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const { isPrintingPress } = useActiveCompany();
+  const isManagerRestricted = useIsPressManagerRestricted();
 
   const [warehouseSearch, setWarehouseSearch] = useState('');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
@@ -93,6 +98,9 @@ export function WarehousesPage() {
   const [categoryId, setCategoryId] = useState('');
   const [brandId, setBrandId] = useState('');
   const [status, setStatus] = useState<'' | StockStatus>('');
+  // Printing Press only — drives "الكمية المستهلكة" below; empty means the backend falls back to
+  // the current calendar month (see WarehouseViewService.getProducts()'s own default).
+  const [consumedDateRange, setConsumedDateRange] = useState<DateRange>({ from: '', to: '' });
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState('name');
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('ASC');
@@ -142,6 +150,7 @@ export function WarehousesPage() {
       categoryId,
       brandId,
       status,
+      consumedDateRange,
       page,
       sortBy,
       sortOrder,
@@ -154,6 +163,8 @@ export function WarehousesPage() {
             categoryId: categoryId || undefined,
             brandId: brandId || undefined,
             status: status || undefined,
+            dateFrom: consumedDateRange.from || undefined,
+            dateTo: consumedDateRange.to || undefined,
             page,
             limit: 20,
             sortBy,
@@ -167,7 +178,7 @@ export function WarehousesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedWarehouseId, debouncedProductSearch, categoryId, brandId, status]);
+  }, [selectedWarehouseId, debouncedProductSearch, categoryId, brandId, status, consumedDateRange]);
 
   function handleSort(key: string) {
     if (sortBy === key) setSortOrder((o) => (o === 'ASC' ? 'DESC' : 'ASC'));
@@ -190,6 +201,23 @@ export function WarehousesPage() {
     ),
   };
 
+  // Manager role, Press branch only: every stat card/filter stays visible, but this single
+  // column is dropped from both branches below so the manager must rely on physical counting
+  // rather than the system-recorded on-hand quantity.
+  const availableQuantityColumn: Column<ProductRow> = {
+    header: t('warehouse.availableQuantity'),
+    accessor: (r) => (
+      <PackageQuantity
+        baseQuantity={r.quantityOnHand}
+        unitsPerPackage={r.unitsPerPackage}
+        packageUnitName={r.packageType?.name}
+        unitName={r.unit?.name}
+      />
+    ),
+    align: 'right',
+    sortKey: 'quantity',
+  };
+
   // Printing Press's raw-material stock has no meaningful SKU/barcode/category (those fields exist
   // on the Product record but are never surfaced for this tenant elsewhere — see ProductsPage.tsx's
   // isPrintingPress SKU-field hiding) and never carries a package selling price since raw materials
@@ -200,24 +228,13 @@ export function WarehousesPage() {
     ? [
         { header: t('warehouse.productName'), accessor: (r) => r.nameEn, sortKey: 'name' },
         { header: t('fields.packagingType'), accessor: (r) => r.packageType?.name ?? '—', sortKey: 'packageType' },
+        ...(isManagerRestricted ? [] : [availableQuantityColumn]),
         {
-          header: t('warehouse.availableQuantity'),
-          accessor: (r) => (
-            <PackageQuantity
-              baseQuantity={r.quantityOnHand}
-              unitsPerPackage={r.unitsPerPackage}
-              packageUnitName={r.packageType?.name}
-              unitName={r.unit?.name}
-            />
-          ),
+          // No sortKey: consumedQuantity is a per-page aggregate computed after pagination (see
+          // WarehouseViewService.getProducts()), not a raw sortable column like the others here.
+          header: t('warehouse.consumedQuantity'),
+          accessor: (r) => formatAmount(r.consumedQuantity),
           align: 'right',
-          sortKey: 'quantity',
-        },
-        {
-          header: t('warehouse.reservedQuantity'),
-          accessor: (r) => formatAmount(r.reservedQuantity),
-          align: 'right',
-          sortKey: 'reserved',
         },
         { header: t('warehouse.minStock'), accessor: (r) => formatAmount(r.minimumStock), align: 'right', sortKey: 'minStock' },
         {
@@ -250,19 +267,7 @@ export function WarehousesPage() {
         { header: t('warehouse.productName'), accessor: (r) => r.nameEn, sortKey: 'name' },
         { header: t('fields.category'), accessor: (r) => r.category?.name ?? '—', sortKey: 'category' },
         { header: t('fields.packagingType'), accessor: (r) => r.packageType?.name ?? '—', sortKey: 'packageType' },
-        {
-          header: t('warehouse.availableQuantity'),
-          accessor: (r) => (
-            <PackageQuantity
-              baseQuantity={r.quantityOnHand}
-              unitsPerPackage={r.unitsPerPackage}
-              packageUnitName={r.packageType?.name}
-              unitName={r.unit?.name}
-            />
-          ),
-          align: 'right',
-          sortKey: 'quantity',
-        },
+        ...(isManagerRestricted ? [] : [availableQuantityColumn]),
         {
           header: t('warehouse.reservedQuantity'),
           accessor: (r) => formatAmount(r.reservedQuantity),
@@ -337,6 +342,15 @@ export function WarehousesPage() {
         <Card className="p-12 text-center text-[var(--text-muted)]">{t('warehouse.selectPrompt')}</Card>
       ) : (
         <>
+          {/* Printing Press only — drives "الكمية المستهلكة" in the table below; left empty it
+              falls back to the current calendar month (see WarehouseViewService's own default). */}
+          {isPrintingPress && (
+            <Card className="mb-4">
+              <div className="mb-1 text-xs text-[var(--text-muted)]">{t('warehouse.consumedDateRangeLabel')}</div>
+              <DateRangeFilter value={consumedDateRange} onChange={setConsumedDateRange} />
+            </Card>
+          )}
+
           <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <Card>
               <div className="text-xs text-[var(--text-muted)]">{t('warehouse.totalProducts')}</div>

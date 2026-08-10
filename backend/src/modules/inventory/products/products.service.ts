@@ -202,14 +202,19 @@ export class ProductsService extends BaseCrudService<Product> {
         this.categoryRepo.create({ companyId, code: 'CATALOG', nameEn: 'Printing Products', nameAr: 'منتجات المطبعة' }),
       );
     }
+    // Unit/PackageType both have a mandatory categoryId (drives the dependent dropdowns on the
+    // real product-create form) — this hidden placeholder row must satisfy that constraint too,
+    // or the insert throws a raw not-null violation instead of ever reaching super.create().
     let unit = await this.unitRepo.findOne({ where: { companyId, code: 'PCS' } });
     if (!unit) {
-      unit = await this.unitRepo.save(this.unitRepo.create({ companyId, code: 'PCS', nameEn: 'Piece', nameAr: 'قطعة' }));
+      unit = await this.unitRepo.save(
+        this.unitRepo.create({ companyId, code: 'PCS', nameEn: 'Piece', nameAr: 'قطعة', categoryId: category.id }),
+      );
     }
     let packageType = await this.packageTypeRepo.findOne({ where: { companyId, code: 'ITEM' } });
     if (!packageType) {
       packageType = await this.packageTypeRepo.save(
-        this.packageTypeRepo.create({ companyId, code: 'ITEM', nameEn: 'Item', nameAr: 'صنف' }),
+        this.packageTypeRepo.create({ companyId, code: 'ITEM', nameEn: 'Item', nameAr: 'صنف', categoryId: category.id }),
       );
     }
     return { categoryId: category.id, unitId: unit.id, packageTypeId: packageType.id };

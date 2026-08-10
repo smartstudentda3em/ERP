@@ -215,11 +215,11 @@ export function WarehousesPage() {
         },
         {
           header: t('warehouse.reservedQuantity'),
-          accessor: (r) => r.reservedQuantity,
+          accessor: (r) => formatAmount(r.reservedQuantity),
           align: 'right',
           sortKey: 'reserved',
         },
-        { header: t('warehouse.minStock'), accessor: (r) => r.minimumStock, align: 'right', sortKey: 'minStock' },
+        { header: t('warehouse.minStock'), accessor: (r) => formatAmount(r.minimumStock), align: 'right', sortKey: 'minStock' },
         {
           header: t('warehouse.avgPackagePurchasePrice'),
           accessor: (r) => (r.packagePurchasePrice != null ? formatAmount(r.packagePurchasePrice) : '—'),
@@ -265,11 +265,11 @@ export function WarehousesPage() {
         },
         {
           header: t('warehouse.reservedQuantity'),
-          accessor: (r) => r.reservedQuantity,
+          accessor: (r) => formatAmount(r.reservedQuantity),
           align: 'right',
           sortKey: 'reserved',
         },
-        { header: t('warehouse.minStock'), accessor: (r) => r.minimumStock, align: 'right', sortKey: 'minStock' },
+        { header: t('warehouse.minStock'), accessor: (r) => formatAmount(r.minimumStock), align: 'right', sortKey: 'minStock' },
         {
           header: t('fields.packagePurchasePrice'),
           accessor: (r) => (r.packagePurchasePrice != null ? formatAmount(r.packagePurchasePrice) : '—'),

@@ -1,3 +1,5 @@
+import { formatAmount } from '../../lib/number-format';
+
 /**
  * Renders a stock quantity with packages as the primary figure (per this ERP's wholesale-first
  * convention: inventory is always expressed in packages, never raw units) and any leftover base
@@ -15,7 +17,7 @@ export function PackageQuantity({
   unitName?: string;
 }) {
   if (!unitsPerPackage) {
-    return <span>{baseQuantity}</span>;
+    return <span>{formatAmount(baseQuantity)}</span>;
   }
 
   const packages = Math.floor(baseQuantity / unitsPerPackage);
@@ -24,11 +26,11 @@ export function PackageQuantity({
   return (
     <span>
       <span className="font-medium">
-        {packages} {packageUnitName}
+        {formatAmount(packages)} {packageUnitName}
       </span>
       {remainderUnits > 0 && (
         <span className="ms-1 text-xs text-[var(--text-muted)]">
-          + {remainderUnits} {unitName}
+          + {formatAmount(remainderUnits)} {unitName}
         </span>
       )}
     </span>

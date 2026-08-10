@@ -184,7 +184,7 @@ export function StockAuditDetailPage() {
 
   const columns: Column<AuditLine>[] = [
     { header: t('fields.product'), accessor: (r) => r.product?.nameEn },
-    { header: t('stockAudit.systemQuantity'), accessor: (r) => r.systemQuantity, align: 'right' },
+    { header: t('stockAudit.systemQuantity'), accessor: (r) => formatAmount(r.systemQuantity), align: 'right' },
     {
       header: t('stockAudit.actualQuantity'),
       accessor: (r) =>
@@ -197,7 +197,7 @@ export function StockAuditDetailPage() {
             className="w-28"
           />
         ) : (
-          (r.actualQuantity ?? '—')
+          r.actualQuantity === null ? '—' : formatAmount(r.actualQuantity)
         ),
       align: 'center',
     },
@@ -207,7 +207,7 @@ export function StockAuditDetailPage() {
         const v = varianceOf(r);
         if (v === null) return '—';
         const color = v > 0 ? 'text-green-600' : v < 0 ? 'text-red-600' : 'text-[var(--text-muted)]';
-        return <span className={color}>{v > 0 ? `+${v}` : v}</span>;
+        return <span className={color}>{v > 0 ? `+${formatAmount(v)}` : formatAmount(v)}</span>;
       },
       align: 'right',
     },

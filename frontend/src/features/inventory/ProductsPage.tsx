@@ -512,10 +512,10 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
             content={
               <div className="flex flex-col gap-0.5">
                 <div>
-                  {t('products.stockTooltipMinRequired')}: {minRequired}
+                  {t('products.stockTooltipMinRequired')}: {formatAmount(minRequired)}
                 </div>
                 <div>
-                  {t('products.stockTooltipShortage')}: {shortage > 0 ? shortage : t('products.stockTooltipNone')}
+                  {t('products.stockTooltipShortage')}: {shortage > 0 ? formatAmount(shortage) : t('products.stockTooltipNone')}
                 </div>
               </div>
             }

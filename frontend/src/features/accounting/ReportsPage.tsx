@@ -419,7 +419,7 @@ export function ReportsPage() {
                 </div>
                 <div className="group relative">
                   <div className={`cursor-help rounded-full px-3 py-1 text-sm font-semibold ${HEALTH_BADGE_STYLES[performanceHealth]}`}>
-                    {materialCostRatio.toFixed(2)}% · {t(`accounting.performanceHealth${performanceHealth.charAt(0).toUpperCase()}${performanceHealth.slice(1)}`)}
+                    {formatAmount(materialCostRatio)}% · {t(`accounting.performanceHealth${performanceHealth.charAt(0).toUpperCase()}${performanceHealth.slice(1)}`)}
                   </div>
                   <div className="pointer-events-none absolute end-0 top-full z-10 mt-2 w-64 rounded-lg bg-gray-900 p-3 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-800">
                     <div className="mb-1 text-green-400">{t('accounting.performanceHealthTooltipExcellent')}</div>
@@ -480,7 +480,7 @@ export function ReportsPage() {
                         contentStyle={chartTooltipStyle}
                         formatter={(value: number, name: string, item: { dataKey?: string | number }) =>
                           item?.dataKey === 'ratio'
-                            ? [`${value.toFixed(2)}%`, name]
+                            ? [`${formatAmount(value)}%`, name]
                             : [`${formatAmount(value)} ${t('accounting.currencyUnit')}`, name]
                         }
                       />

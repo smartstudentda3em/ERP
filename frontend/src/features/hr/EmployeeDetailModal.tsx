@@ -292,15 +292,15 @@ export function EmployeeDetailModal({ employeeId, onClose }: { employeeId: strin
                     {data.salary.monthly.map((m) => (
                       <tr key={m.month}>
                         <td>{monthNameOnly(m.month, i18n.language)}</td>
-                        <td>{m.absenceDays}</td>
-                        <td>{m.lateHours}</td>
+                        <td>{formatAmount(m.absenceDays)}</td>
+                        <td>{formatAmount(m.lateHours)}</td>
                       </tr>
                     ))}
                     {!isSingleMonth && (
                       <tr className="font-semibold">
                         <td>{t('common.total')}</td>
-                        <td>{data.salary.totals.absenceDays}</td>
-                        <td>{data.salary.totals.lateHours}</td>
+                        <td>{formatAmount(data.salary.totals.absenceDays)}</td>
+                        <td>{formatAmount(data.salary.totals.lateHours)}</td>
                       </tr>
                     )}
                   </tbody>
@@ -313,7 +313,7 @@ export function EmployeeDetailModal({ employeeId, onClose }: { employeeId: strin
           <div>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-semibold">
-                {t('hr.leavesTitle')} — {t('hr.totalLeaveDays')}: {data.leaves.totalDays}
+                {t('hr.leavesTitle')} — {t('hr.totalLeaveDays')}: {formatAmount(data.leaves.totalDays)}
               </h3>
               <button type="button" className="text-sm text-primary-600 hover:underline" onClick={() => setAddingLeave((v) => !v)}>
                 {t('hr.addLeave')}

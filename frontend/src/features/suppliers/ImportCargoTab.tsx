@@ -443,7 +443,7 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     { header: t('imports.shipmentName'), accessor: (r) => r.shipment?.shipmentName ?? '—' },
     { header: t('fields.product'), accessor: (r) => productLabel(r.product) },
     { header: t('fields.supplier'), accessor: (r) => r.supplier?.companyName ?? '—' },
-    { header: t('imports.quantity'), accessor: (r) => r.quantity, align: 'right' },
+    { header: t('imports.quantity'), accessor: (r) => formatAmount(r.quantity), align: 'right' },
     {
       header: t('imports.supplierUnitPrice'),
       accessor: (r) => money(Number(r.unitPrice ?? 0), r.currency),

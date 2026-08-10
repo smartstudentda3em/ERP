@@ -163,7 +163,7 @@ export function SupplierStatementPage() {
     { header: t('fields.product'), accessor: (r) => r.product?.nameEn ?? '—' },
     {
       header: t('fields.quantityPackages'),
-      accessor: (r) => `${r.quantityPackages} × ${r.unitsPerPackage}`,
+      accessor: (r) => `${formatAmount(r.quantityPackages)} × ${formatAmount(r.unitsPerPackage)}`,
       align: 'right',
     },
     { header: t('fields.totalAmount'), accessor: (r) => money(r.totalAmount), align: 'right' },

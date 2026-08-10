@@ -324,7 +324,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     { header: t('fields.product'), accessor: (r) => r.product?.nameEn ?? '—' },
     {
       header: t('fields.quantityPackages'),
-      accessor: (r) => `${r.quantityPackages} × ${r.unitsPerPackage}`,
+      accessor: (r) => `${formatAmount(r.quantityPackages)} × ${formatAmount(r.unitsPerPackage)}`,
       align: 'right',
     },
     {

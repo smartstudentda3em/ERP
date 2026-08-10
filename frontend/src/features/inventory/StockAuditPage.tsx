@@ -398,7 +398,7 @@ export function StockAuditPage() {
           </div>
         ),
       },
-      { header: t('stockAudit.systemQuantity'), accessor: (r) => r.systemQuantity, align: 'right' },
+      { header: t('stockAudit.systemQuantity'), accessor: (r) => formatAmount(r.systemQuantity), align: 'right' },
       {
         header: t('stockAudit.actualQuantity'),
         accessor: (r) => (
@@ -416,7 +416,7 @@ export function StockAuditPage() {
         header: t('stockAudit.consumedQuantity'),
         accessor: (r) => {
           const c = consumedQuantityOf(r);
-          return c === null ? '—' : c;
+          return c === null ? '—' : formatAmount(c);
         },
         align: 'right',
       },

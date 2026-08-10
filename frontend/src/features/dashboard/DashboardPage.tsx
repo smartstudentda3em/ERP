@@ -249,7 +249,7 @@ export function DashboardPage() {
             {(topProductsQuery.data ?? []).map((p) => (
               <li key={p.productId} className="flex items-center justify-between">
                 <span className="truncate">{p.name}</span>
-                <span className="text-[var(--text-muted)]">{p.totalQuantity}</span>
+                <span className="text-[var(--text-muted)]">{formatAmount(p.totalQuantity)}</span>
               </li>
             ))}
             {(topProductsQuery.data ?? []).length === 0 && (

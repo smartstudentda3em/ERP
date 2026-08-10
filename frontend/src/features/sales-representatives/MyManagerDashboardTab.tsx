@@ -201,7 +201,7 @@ export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps
     { header: t('common.date'), accessor: (r) => r.invoiceDate },
     { header: t('fields.product'), accessor: (r) => r.productName },
     { header: t('common.total'), accessor: (r) => formatAmount(r.lineTotal), align: 'right' },
-    { header: t('fields.commissionRate'), accessor: (r) => `${r.commissionRate}%`, align: 'right' },
+    { header: t('fields.commissionRate'), accessor: (r) => `${formatAmount(r.commissionRate)}%`, align: 'right' },
     { header: t('managerDashboard.commissionAmount'), accessor: (r) => formatAmount(r.commissionAmount), align: 'right' },
   ];
 

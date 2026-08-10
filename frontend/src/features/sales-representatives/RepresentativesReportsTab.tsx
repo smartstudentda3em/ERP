@@ -274,7 +274,7 @@ export function RepresentativesReportsTab({
       <Card>
         <div className="text-xs text-[var(--text-muted)]">{label}</div>
         <div className={`mt-1 text-2xl font-semibold ${color}`}>
-          {pct === null ? '—' : `${arrow} ${Math.abs(pct).toFixed(1)}%`}
+          {pct === null ? '—' : `${arrow} ${formatAmount(Math.abs(pct))}%`}
         </div>
       </Card>
     );
@@ -544,7 +544,7 @@ export function RepresentativesReportsTab({
             </Card>
             <Card>
               <div className="text-xs text-[var(--text-muted)]">{t('salesRepresentativesReports.avgProfitMargin')}</div>
-              <div className="mt-1 text-lg font-semibold">{avgProfitMargin === null ? '—' : `${avgProfitMargin.toFixed(1)}%`}</div>
+              <div className="mt-1 text-lg font-semibold">{avgProfitMargin === null ? '—' : `${formatAmount(avgProfitMargin)}%`}</div>
             </Card>
           </div>
 
@@ -622,7 +622,7 @@ export function RepresentativesReportsTab({
                         />
                         <Tooltip
                           formatter={(value: number, name: string) => [
-                            name === t('salesRepresentativesReports.profitMarginLegend') ? `${value.toFixed(1)}%` : money(value),
+                            name === t('salesRepresentativesReports.profitMarginLegend') ? `${formatAmount(value)}%` : money(value),
                             name,
                           ]}
                           contentStyle={chartTooltipStyle}

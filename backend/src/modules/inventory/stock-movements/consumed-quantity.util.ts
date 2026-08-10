@@ -3,9 +3,16 @@ import { StockMovementType } from '../../../entities/enums';
 
 /**
  * "الكمية المستهلكة": genuine outflow only — stock actually withdrawn/dispensed from a
- * warehouse (sold, written off, or moved out to another warehouse). PURCHASE_RETURN and
- * SALES_RETURN are deliberately excluded: both are reversals of an earlier movement, not
- * consumption of this warehouse's stock.
+ * warehouse (sold, written off, or moved out to another warehouse). PURCHASE_RETURN is excluded
+ * entirely: it reverses a purchase, never counted as consumption in the first place.
+ *
+ * SALES_RETURN is different: it reverses a SALES_ISSUE that *was* counted (e.g. deleting or
+ * cancelling a sales invoice restores the stock via a SALES_RETURN movement — see
+ * SalesInvoicesService.remove()). If we simply excluded it like PURCHASE_RETURN, the original
+ * SALES_ISSUE would stay counted forever and this figure would never reflect the cancellation —
+ * available quantity goes back up but consumed quantity stays stale. So SALES_RETURN is netted
+ * (subtracted) against the outflow types below instead, and the per-product total is floored at
+ * 0 since a product can never have "negative consumption" for a period.
  *
  * Single source of truth shared by WarehouseViewService's "المخازن" table and
  * StockAuditsService's "بدء جرد جديد" entry screen — both must show the exact same number for
@@ -34,14 +41,18 @@ export async function getConsumedQuantitiesByProductId(
   const rows = await dataSource
     .createQueryBuilder()
     .select('m."productId"', 'productId')
-    .addSelect('COALESCE(SUM(m.quantity), 0)', 'total')
+    .addSelect(
+      `GREATEST(0, COALESCE(SUM(CASE WHEN m.type = :salesReturn THEN -m.quantity ELSE m.quantity END), 0))`,
+      'total',
+    )
     .from('stock_movements', 'm')
     .where('m."companyId" = :companyId', { companyId })
     .andWhere('m."warehouseId" = :warehouseId', { warehouseId })
     .andWhere('m."productId" IN (:...productIds)', { productIds })
-    .andWhere('m.type IN (:...types)', { types: CONSUMED_MOVEMENT_TYPES })
+    .andWhere('m.type IN (:...types)', { types: [...CONSUMED_MOVEMENT_TYPES, StockMovementType.SALES_RETURN] })
     .andWhere('m."createdAt"::date >= :dateFrom', { dateFrom })
     .andWhere('m."createdAt"::date <= :dateTo', { dateTo })
+    .setParameter('salesReturn', StockMovementType.SALES_RETURN)
     .groupBy('m."productId"')
     .getRawMany();
 

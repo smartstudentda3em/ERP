@@ -141,7 +141,18 @@
       "Bash(git log *)",
       "Bash(tee /tmp/login.json)",
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('status:',j.data?.status\\);console.log\\('id:',j.data?.id\\);console.log\\('stockAdjustmentId:',j.data?.stockAdjustmentId\\);}\\)\")",
-      "Bash(docker exec erp_postgres psql -U erp_user -d erp_db -c ' *)"
+      "Bash(docker exec erp_postgres psql -U erp_user -d erp_db -c ' *)",
+      "Bash(timeout 20 docker logs erp_backend --tail 5 -f)",
+      "Read(//tmp/**)",
+      "Bash(curl -s 'http://localhost:3000/api/customers?companyId=321f6e32-1650-4308-992a-e78b14cea753&limit=1' -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\(JSON.stringify\\(j\\).slice\\(0,500\\)\\)}\\)\")",
+      "Bash(curl -s 'http://localhost:3000/api/inventory/warehouse-view/8f7dafd0-96b2-4aac-8297-7165a999b262/products?page=1&limit=20' -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);const item=j.data.items.find\\(i=>i.nameEn==='Offset Paper Roll'\\);console.log\\(JSON.stringify\\({quantityOnHand:item.quantityOnHand,consumedQuantity:item.consumedQuantity,status:item.status,minimumStock:item.minimumStock}\\)\\)}\\)\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);const item=j.data.items.find\\(i=>i.nameEn==='Offset Paper Roll'\\);console.log\\(JSON.stringify\\({quantityOnHand:item.quantityOnHand,consumedQuantity:item.consumedQuantity,status:item.status}\\)\\)}\\)\")",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('/e/ERP/frontend/src/i18n/ar.json','utf8'\\)\\); JSON.parse\\(require\\('fs'\\).readFileSync\\('/e/ERP/frontend/src/i18n/en.json','utf8'\\)\\); console.log\\('both valid JSON'\\)\")",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('ar.json','utf8'\\)\\); JSON.parse\\(require\\('fs'\\).readFileSync\\('en.json','utf8'\\)\\); console.log\\('both valid JSON'\\)\")",
+      "Bash(cat)",
+      "Bash(docker cp *)"
     ]
   }
 }

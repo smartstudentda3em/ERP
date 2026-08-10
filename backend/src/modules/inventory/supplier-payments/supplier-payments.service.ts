@@ -8,6 +8,12 @@ import { CashMovementAccount, CashMovementSourceType, CashMovementType, PaymentM
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
 import { CashMovement } from '../../treasury/entities/cash-movement.entity';
+import { Company } from '../../settings/entities/company.entity';
+
+/** Mirrors CashMovementsService's own copy of this constant (and
+ * frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE) — the "سداد المتبقي"
+ * payment-method routing below only differs from every other company's for this one tenant. */
+const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
 
 /**
  * Records money paid out to a supplier — either against one specific purchase receipt (the
@@ -21,6 +27,7 @@ import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 export class SupplierPaymentsService {
   constructor(
     @InjectRepository(SupplierPayment) private readonly repo: Repository<SupplierPayment>,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly cashMovementsService: CashMovementsService,
@@ -42,13 +49,30 @@ export class SupplierPaymentsService {
     return payments.map((p) => ({ ...p, createdByName: nameById.get(p.createdById) ?? '—' }));
   }
 
-  private resolveAccount(method?: PaymentMethod): CashMovementAccount {
+  /**
+   * Printing Press only: exactly two methods are offered here — نقدي settles into the Cash
+   * treasury, تحويل بنكي into Bank — matching the Press "سداد المتبقي" modal's own two-option
+   * <Select> (see SupplierStatementPage.tsx/PurchasingPage.tsx). CHEQUE falls back to Cash below
+   * defensively (never actually selectable via the Press UI, but keeps this safe if an older
+   * CHEQUE-tagged record is ever re-saved) rather than falling into the Bank branch. Every other
+   * company keeps the original, simpler rule: CASH stays CASH, anything else
+   * (BANK_TRANSFER/CHEQUE/CARD/ONLINE) settles into Bank.
+   */
+  private resolveAccount(method: PaymentMethod | undefined, isPressCompany: boolean): CashMovementAccount {
+    if (isPressCompany) {
+      return method === PaymentMethod.BANK_TRANSFER ? CashMovementAccount.BANK : CashMovementAccount.CASH;
+    }
     return method && method !== PaymentMethod.CASH ? CashMovementAccount.BANK : CashMovementAccount.CASH;
+  }
+
+  private async isPressCompany(companyId: string): Promise<boolean> {
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    return company?.code === PRINTING_PRESS_COMPANY_CODE;
   }
 
   async create(dto: CreateSupplierPaymentDto, createdById: string, companyId: string): Promise<SupplierPayment> {
     const documentNumber = await this.numberingSeriesService.getNextNumber(companyId, 'SUPPLIER_PAYMENT');
-    const account = this.resolveAccount(dto.method);
+    const account = this.resolveAccount(dto.method, await this.isPressCompany(companyId));
 
     return this.dataSource.transaction(async (manager) => {
       await this.cashMovementsService.assertSufficientBalance(companyId, account, dto.amount, dto.branchId, manager);
@@ -135,7 +159,7 @@ export class SupplierPaymentsService {
       const existing = await manager.getRepository(SupplierPayment).findOne({ where: { id, companyId } });
       if (!existing) throw new NotFoundException('Supplier payment not found');
 
-      const account = this.resolveAccount(dto.method);
+      const account = this.resolveAccount(dto.method, await this.isPressCompany(companyId));
 
       if (existing.purchaseReceiptId) {
         await this.reverseReceiptPayment(manager, companyId, existing.purchaseReceiptId, Number(existing.amount));

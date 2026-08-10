@@ -16,6 +16,7 @@ import { SalesInvoiceLine } from '../sales/sales-invoices/entities/sales-invoice
 import { Unit } from '../settings/entities/unit.entity';
 import { PackageType } from '../settings/entities/package-type.entity';
 import { ProductCategory } from '../settings/entities/product-category.entity';
+import { Company } from '../settings/entities/company.entity';
 
 import { ProductsController } from './products/products.controller';
 import { ProductsService } from './products/products.service';
@@ -55,6 +56,7 @@ import { TreasuryModule } from '../treasury/treasury.module';
       Unit,
       PackageType,
       ProductCategory,
+      Company,
     ]),
     SettingsModule,
     TreasuryModule,

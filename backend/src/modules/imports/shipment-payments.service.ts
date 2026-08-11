@@ -54,7 +54,7 @@ export class ShipmentPaymentsService {
       shipmentId: dto.shipmentId,
       paymentType: dto.paymentType,
       amount: dto.amount,
-      account: dto.account,
+      account: dto.account ?? null,
       notes: dto.notes ?? null,
       createdById,
     });
@@ -75,7 +75,7 @@ export class ShipmentPaymentsService {
       shipmentId: dto.shipmentId,
       paymentType: dto.paymentType,
       amount: dto.amount,
-      account: dto.account,
+      account: dto.account ?? null,
       notes: dto.notes ?? null,
     });
     return this.repo.save(existing);

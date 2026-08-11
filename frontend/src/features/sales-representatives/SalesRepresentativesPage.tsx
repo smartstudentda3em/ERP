@@ -13,7 +13,7 @@ import { RepresentativesReportsTab, ReportsQuarter } from './RepresentativesRepo
 import { MyManagerDashboardTab, DashboardQuarter } from './MyManagerDashboardTab';
 import { CommissionPayoutsTab } from './CommissionPayoutsTab';
 
-type Tab = 'list' | 'reports' | 'mine' | 'payouts';
+type Tab = 'list' | 'reps' | 'reports' | 'mine' | 'payouts';
 
 interface SalesRepresentative {
   id: string;
@@ -77,6 +77,12 @@ export function SalesRepresentativesPage() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'list', label: t(isPrintingPress ? 'salesRepresentativesReports.listTabPress' : 'salesRepresentativesReports.listTab') },
+    // Printing Press only, alongside the "مدراء الفروع" tab above — a second, separate list
+    // scoped to "مندوب" (field sales agent) accounts, matching that role's own auto-sync into
+    // this same sales_representatives table (see UsersService.syncRepRepresentative). Every other
+    // company already shows this exact list unfiltered under the "list" tab's own "المناديب"
+    // label, so it needs no separate tab there.
+    ...(isPrintingPress ? [{ key: 'reps' as Tab, label: t('salesRepresentativesReports.repsTab') }] : []),
     { key: 'reports', label: t(isPrintingPress ? 'salesRepresentativesReports.reportsTabPress' : 'salesRepresentativesReports.reportsTab') },
     { key: 'mine', label: t('managerDashboard.tabLabel') },
     // Branch-manager commission payouts only make sense for the Printing Press, same gating as
@@ -206,7 +212,8 @@ export function SalesRepresentativesPage() {
         )}
       </div>
 
-      {tab === 'list' && <RepresentativesListTab />}
+      {tab === 'list' && <RepresentativesListTab roleNameFilter={isPrintingPress ? 'مدير فرع' : undefined} />}
+      {tab === 'reps' && <RepresentativesListTab roleNameFilter="مندوب" />}
       {tab === 'reports' && (
         <RepresentativesReportsTab
           representativeId={representativeId}

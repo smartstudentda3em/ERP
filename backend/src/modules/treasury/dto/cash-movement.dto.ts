@@ -30,4 +30,6 @@ export class CreateTransferDto {
   @IsOptional() @IsString() description?: string;
   /** Printing Press only: which branch's till this transfer moves money for. Ignored by every other company (e.g. Air Conditioning, which also uses transfers but has no branches). */
   @IsOptional() @IsUUID() branchId?: string;
+  /** Required exactly when fromAccount is REP_TREASURY — settling one مندوب's own pocket. */
+  @IsOptional() @IsUUID() fromSalesRepresentativeId?: string;
 }

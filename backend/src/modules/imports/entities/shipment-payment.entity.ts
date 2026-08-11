@@ -6,8 +6,11 @@ import {
   ShipmentPaymentType,
 } from "../../../entities/enums";
 
-/** One payment made against a shipment's cost — always mirrored by a CashMovement (see
- * ShipmentPaymentsService), so the treasury balance and this history always agree. */
+/** One payment made against a shipment's cost — a purely statistical record for the Import
+ * module's own cost tracking (amount/shipment/date/type), never mirrored by a CashMovement and
+ * never affecting the treasury balance (see ShipmentPaymentsService). `account` is retained only
+ * to preserve historical rows created before this was memo-only; new payments no longer collect
+ * it at all. */
 @Entity("shipment_payments")
 export class ShipmentPayment extends BaseEntity {
   @Column("uuid")
@@ -35,8 +38,8 @@ export class ShipmentPayment extends BaseEntity {
   @Column({ type: "numeric", precision: 18, scale: 4 })
   amount: number;
 
-  @Column({ type: "enum", enum: CashMovementAccount })
-  account: CashMovementAccount;
+  @Column({ type: "enum", enum: CashMovementAccount, nullable: true })
+  account: CashMovementAccount | null;
 
   @Column({ type: "text", nullable: true })
   notes: string | null;

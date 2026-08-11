@@ -17,7 +17,7 @@ import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/Dat
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany, useIsPressManagerRestricted } from '../../lib/use-active-company';
+import { useActiveCompany, useIsPressManagerRestricted, useIsSalesRep } from '../../lib/use-active-company';
 import { LetterheadCompany } from '../sales/DocumentLetterhead';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
@@ -142,6 +142,82 @@ interface ProductsTabProps {
   onPdfLoadingChange?: (loading: boolean) => void;
 }
 
+interface RepProductRow {
+  id: string;
+  sku: string | null;
+  barcode: string | null;
+  nameAr: string;
+  nameEn: string;
+  packageTypeNameAr: string | null;
+  packageTypeNameEn: string | null;
+  availabilityStatus: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+}
+
+/** "مندوب" role's entire product/inventory screen — a stripped four-column view (code/barcode,
+ * name, package type, availability status) sourced from a dedicated backend endpoint that never
+ * selects quantity/cost/price columns in the first place (see ProductsService.findRepViewForCompany),
+ * so there's nothing sensitive to accidentally leak here even client-side. No stat cards, no
+ * add/edit/delete — this role only ever browses. */
+export function RepProductsView() {
+  const { t } = useTranslation();
+  const companyId = useAuthStore((s) => s.user?.companyId);
+  const [search, setSearch] = useState('');
+  const productsQuery = useQuery({
+    queryKey: ['products-rep-view', companyId],
+    queryFn: () => unwrap<RepProductRow[]>(apiClient.get('/inventory/products/rep-view')),
+    enabled: !!companyId,
+  });
+  const rows = useMemo(() => {
+    const all = productsQuery.data ?? [];
+    const term = search.trim().toLowerCase();
+    if (!term) return all;
+    return all.filter(
+      (r) =>
+        r.nameAr?.toLowerCase().includes(term) ||
+        r.nameEn?.toLowerCase().includes(term) ||
+        r.sku?.toLowerCase().includes(term) ||
+        r.barcode?.toLowerCase().includes(term),
+    );
+  }, [productsQuery.data, search]);
+
+  const columns: Column<RepProductRow>[] = [
+    { header: t('products.codeOrBarcode'), accessor: (r) => r.sku || r.barcode || '—' },
+    { header: t('fields.nameAr'), accessor: (r) => r.nameAr || r.nameEn },
+    { header: t('fields.packageType'), accessor: (r) => r.packageTypeNameAr || r.packageTypeNameEn || '—' },
+    {
+      header: t('fields.stockStatus'),
+      accessor: (r) =>
+        r.availabilityStatus === 'OUT_OF_STOCK' ? (
+          <Badge color="red">{t('warehouse.outOfStock')}</Badge>
+        ) : r.availabilityStatus === 'LOW_STOCK' ? (
+          <Badge color="yellow">{t('warehouse.lowStock')}</Badge>
+        ) : (
+          <Badge color="green">{t('warehouse.inStock')}</Badge>
+        ),
+    },
+  ];
+
+  return (
+    <div>
+      <div className="mb-3 max-w-sm">
+        <Input
+          type="search"
+          placeholder={t('products.searchPlaceholder') ?? ''}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+      <DataTable
+        columns={columns}
+        data={rows}
+        keyField={(r) => r.id}
+        isLoading={productsQuery.isLoading}
+        searchable={false}
+      />
+    </div>
+  );
+}
+
 /** Embeddable body of the products screen, reused as-is by the standalone `ProductsPage` route
  * (all companies) and, for Printing Press, as the "المواد الخام" sub-tab inside SuppliersPage —
  * see that file's tab restructuring for why. Owns its own "+ إضافة" action, matching every other
@@ -153,6 +229,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   const { t } = useTranslation();
   const { isPrintingPress } = useActiveCompany();
   const isManagerRestricted = useIsPressManagerRestricted();
+  const isSalesRep = useIsSalesRep();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const toast = useToast();
@@ -673,6 +750,8 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   }
 
   useImperativeHandle(ref, () => ({ print: handlePrint, downloadPdf: handleDownloadPdf }));
+
+  if (isSalesRep) return <RepProductsView />;
 
   return (
     <div>

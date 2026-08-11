@@ -420,20 +420,12 @@ export function SupplierStatementPage() {
             <Input type="number" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
           </FormField>
           <FormField label={t('fields.method')}>
-            {/* Printing Press only: exactly two options — نقدي debits the Cash treasury,
-                تحويل بنكي debits the Bank balance (see SupplierPaymentsService.resolveAccount).
-                شيك/بطاقة/دفع إلكتروني don't apply to a supplier payout here, so they're dropped
-                entirely. Every other company keeps the full method list. */}
-            <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+            {/* Every company's supplier payout offers exactly two options — نقدي debits the Cash
+                treasury, تحويل بنكي debits the Bank balance (see SupplierPaymentsService.resolveAccount).
+                شيك/بطاقة/دفع إلكتروني don't apply to a supplier payout here, so they're dropped entirely. */}
+            <Select required value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
               <option value="CASH">{t('paymentMethod.CASH')}</option>
               <option value="BANK_TRANSFER">{t('paymentMethod.BANK_TRANSFER')}</option>
-              {!isPrintingPress && (
-                <>
-                  <option value="CHEQUE">{t('paymentMethod.CHEQUE')}</option>
-                  <option value="CARD">{t('paymentMethod.CARD')}</option>
-                  <option value="ONLINE">{t('paymentMethod.ONLINE')}</option>
-                </>
-              )}
             </Select>
           </FormField>
           {isPrintingPress && (

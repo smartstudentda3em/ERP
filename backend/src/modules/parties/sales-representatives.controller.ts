@@ -89,10 +89,31 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     await this.commissionExceptionsRepo.remove(exception);
   }
 
-  /** Overrides the base class's bare findAll so the list screen can show each rep's branch name
-   * (e.g. "حمدي" → "فرع خيطان") without a separate lookup per row. */
-  findAllForCompany(companyId: string): Promise<SalesRepresentative[]> {
-    return this.repo.find({ where: { companyId }, relations: ['branch'], order: { createdAt: 'ASC' } });
+  /**
+   * Overrides the base class's bare findAll so the list screen can show each rep's branch name
+   * (e.g. "حمدي" → "فرع خيطان") without a separate lookup per row.
+   *
+   * `roleName` (optional) narrows this to only rows whose linked login account holds that exact
+   * role — used by Printing Press's two-tab split: "مدراء الفروع" passes 'مدير فرع', the new
+   * "المناديب" tab passes 'مندوب', so a مندوب auto-synced into this table (see
+   * UsersService.syncRepRepresentative) never leaks into the branch-managers list and vice versa.
+   * Every other caller (Stationery/AC's single unfiltered "المناديب" tab, and every other endpoint
+   * on this controller) omits it and keeps today's behavior — including rows with no linked user
+   * at all (manually added reps), which only ever show up in the unfiltered view.
+   */
+  findAllForCompany(companyId: string, roleName?: string): Promise<SalesRepresentative[]> {
+    if (!roleName) {
+      return this.repo.find({ where: { companyId }, relations: ['branch'], order: { createdAt: 'ASC' } });
+    }
+    return this.repo
+      .createQueryBuilder('rep')
+      .leftJoinAndSelect('rep.branch', 'branch')
+      .innerJoin('users', 'u', 'u.id = rep."userId"')
+      .innerJoin('user_roles', 'ur', 'ur."userId" = u.id')
+      .innerJoin('roles', 'r', 'r.id = ur."roleId" AND r.name = :roleName', { roleName })
+      .where('rep."companyId" = :companyId', { companyId })
+      .orderBy('rep."createdAt"', 'ASC')
+      .getMany();
   }
 
   /** The Printing Press branch (مدير الفرع) is meaningless without a branch — every other
@@ -812,8 +833,10 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
 export class SalesRepresentativesController {
   constructor(private readonly service: SalesRepresentativesService) {}
 
-  @Get() @Permissions('sales-representatives.view') findAll(@CurrentUser('companyId') companyId: string) {
-    return this.service.findAllForCompany(companyId);
+  @Get()
+  @Permissions('sales-representatives.view')
+  findAll(@CurrentUser('companyId') companyId: string, @Query('roleName') roleName?: string) {
+    return this.service.findAllForCompany(companyId, roleName);
   }
   @Get('reports/summary')
   @Permissions('sales-representatives.view')

@@ -54,4 +54,6 @@ export class CreateDividendDto {
   @IsOptional() @IsString() description?: string;
   /** Printing Press only: which branch this payout is drawn from. Ignored by every other company. */
   @IsOptional() @IsUUID() branchId?: string;
+  /** Which real treasury account this payout is drawn from — mandatory, balance-checked. */
+  @IsEnum(CashMovementAccount) account: CashMovementAccount;
 }

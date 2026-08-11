@@ -17,6 +17,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { localToday } from '../../lib/date-utils';
 import { SalesLineEditor, SalesLineForm, emptyLine, linesToPayload, computeGrandTotal } from './SalesLineEditor';
 import { useSalesRepLock } from './useSalesRepLock';
+import { useActiveCompany, useIsSalesRep } from '../../lib/use-active-company';
 
 interface SalesInvoice {
   id: string;
@@ -51,11 +52,6 @@ interface Branch {
   id: string;
   nameEn: string;
   nameAr?: string | null;
-}
-interface Company {
-  id: string;
-  code?: string;
-  warnOnSellBelowCost: boolean;
 }
 interface SalesRepresentative {
   id: string;
@@ -148,20 +144,21 @@ export function SalesInvoicesPage() {
   const { isAdmin, ownRep, currentUserId, currentUserName } = useSalesRepLock(salesRepsQuery.data);
   const lockedAssigneeLabel = ownRep?.name ?? currentUserName;
 
-  const companiesQuery = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => unwrap<Company[]>(apiClient.get('/settings/companies')),
-    enabled: !!companyId,
-  });
-  const currentCompany = companiesQuery.data?.find((c) => c.id === companyId) ?? companiesQuery.data?.[0];
   // Printing Press has no Customers screen at all (confirmed scope: every other company is
   // unaffected) — every sale there is silently attributed to the one seeded walk-in customer
   // instead of showing a picker, since there's nowhere to manage real customer records for it.
-  const isPrintingPress = currentCompany?.code === 'PRESS';
+  // Queries /auth/my-companies (via useActiveCompany) rather than the settings.company.view-gated
+  // /settings/companies — a role like "مدير فرع" or "مندوب" has neither that permission nor any
+  // reason to, so the gated endpoint 403'd silently and left isPrintingPress always false for them.
+  const { company: currentCompany, isPrintingPress } = useActiveCompany();
   // Stationery and Air Conditioning must also pick a بنك/كاش deposit account on every invoice
   // (see SalesInvoicesService.create()'s assertPaymentAccountProvided) — unlike Press they keep
   // the normal customer/warehouse form, this just adds the required selector alongside it.
-  const requiresPaymentAccount = isPrintingPress || currentCompany?.code === 'STAT' || currentCompany?.code === 'AC';
+  // A "مندوب" never picks an account at all, in any company — their sale is auto-routed into
+  // their own خزينة المندوب pocket server-side (see SalesInvoicesService.isSalesAgentRep).
+  const isSalesRep = useIsSalesRep();
+  const requiresPaymentAccount =
+    !isSalesRep && (isPrintingPress || currentCompany?.code === 'STAT' || currentCompany?.code === 'AC');
   const walkInCustomer = customersQuery.data?.find((c) => c.code === 'WALKIN');
 
   // Printing Press only — the invoice form shows a Branch field instead of Warehouse; the linked
@@ -493,16 +490,18 @@ export function SalesInvoicesPage() {
                     )}
                   </Select>
                 </FormField>
-                <FormField label={t('fields.depositDestination')}>
-                  <Select
-                    required
-                    value={paymentAccount}
-                    onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
-                  >
-                    <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
-                    <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
-                  </Select>
-                </FormField>
+                {requiresPaymentAccount && (
+                  <FormField label={t('fields.depositDestination')}>
+                    <Select
+                      required
+                      value={paymentAccount}
+                      onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
+                    >
+                      <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+                      <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                    </Select>
+                  </FormField>
+                )}
               </div>
             </Card>
           ) : (

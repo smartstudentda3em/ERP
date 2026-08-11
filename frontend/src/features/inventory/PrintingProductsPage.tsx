@@ -11,6 +11,8 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useAuthStore } from '../../store/auth-store';
+import { useIsSalesRep } from '../../lib/use-active-company';
+import { RepProductsView } from './ProductsPage';
 
 interface CatalogProduct {
   id: string;
@@ -32,6 +34,7 @@ const emptyForm = { name: '', size: '', notes: '', sellingPrice: '' };
  */
 export function PrintingProductsPage() {
   const { t } = useTranslation();
+  const isSalesRep = useIsSalesRep();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const toast = useToast();
@@ -173,6 +176,15 @@ export function PrintingProductsPage() {
         ]
       : []),
   ];
+
+  if (isSalesRep) {
+    return (
+      <div>
+        <PageHeader title={t('nav.printingProducts')} />
+        <RepProductsView />
+      </div>
+    );
+  }
 
   return (
     <div>

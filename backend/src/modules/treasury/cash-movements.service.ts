@@ -103,14 +103,36 @@ export class CashMovementsService {
       amount: number;
       description?: string | null;
       branchId?: string | null;
+      // Required exactly when fromAccount is REP_TREASURY — this is the "تسوية عهدة مندوب"
+      // settlement path: clearing one specific rep's own uncleared-sales pocket into the
+      // company's real CASH/BANK. Never set for a plain CASH<->BANK transfer.
+      fromSalesRepresentativeId?: string | null;
     },
     createdById: string,
   ): Promise<{ from: CashMovement; to: CashMovement }> {
     if (input.fromAccount === input.toAccount) {
       throw new BadRequestException('Source and destination accounts must be different');
     }
+    if (input.fromAccount === CashMovementAccount.REP_TREASURY && !input.fromSalesRepresentativeId) {
+      throw new BadRequestException('يجب تحديد المندوب عند التحويل من خزينة المندوب');
+    }
 
     return this.dataSource.transaction(async (manager) => {
+      // Settling a رep's pocket is the one transfer direction that can actually overdraw — a
+      // plain CASH<->BANK transfer already implicitly can't exceed what's really there once every
+      // other balance check in this file is doing its job, but a rep's own pocket has never been
+      // checked before this point, so this is the first and only gate on it.
+      if (input.fromAccount === CashMovementAccount.REP_TREASURY) {
+        await this.assertSufficientBalance(
+          companyId,
+          input.fromAccount,
+          input.amount,
+          input.branchId,
+          manager,
+          0,
+          input.fromSalesRepresentativeId!,
+        );
+      }
       const from = await this.record(
         {
           companyId,
@@ -118,6 +140,7 @@ export class CashMovementsService {
           movementDate: input.movementDate,
           type: CashMovementType.EXPENSE,
           account: input.fromAccount,
+          salesRepresentativeId: input.fromSalesRepresentativeId ?? null,
           amount: input.amount,
           sourceType: CashMovementSourceType.TRANSFER,
           description: input.description ?? null,
@@ -145,6 +168,44 @@ export class CashMovementsService {
   }
 
   /**
+   * One row per sales representative in the company with their current خزينة المندوب balance —
+   * feeds the Treasury screen's settlement rep-picker (so an admin can see who owes how much
+   * before choosing who to clear) and the "خزينة المندوب" summary card's total (sum every row).
+   * Every SalesRepresentative row is included, not just "مندوب"-role ones, since a manually added
+   * rep or a "مدير فرع" could theoretically also have REP_TREASURY movements — their balance is
+   * just always 0 in practice, which the frontend can filter out for the picker if it wants only
+   * reps actually worth settling.
+   */
+  async getRepTreasuryBalances(
+    companyId: string,
+  ): Promise<{ salesRepresentativeId: string; name: string; balance: number }[]> {
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select('sr.id', 'salesRepresentativeId')
+      .addSelect('sr.name', 'name')
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN m.type = 'INCOME' THEN m.amount ELSE -m.amount END), 0)`,
+        'balance',
+      )
+      .from('sales_representatives', 'sr')
+      .leftJoin(
+        'cash_movements',
+        'm',
+        'm."salesRepresentativeId" = sr.id AND m.account = :account',
+        { account: CashMovementAccount.REP_TREASURY },
+      )
+      .where('sr."companyId" = :companyId', { companyId })
+      .groupBy('sr.id')
+      .orderBy('sr.name', 'ASC')
+      .getRawMany();
+    return rows.map((r) => ({
+      salesRepresentativeId: r.salesRepresentativeId,
+      name: r.name,
+      balance: Number(r.balance),
+    }));
+  }
+
+  /**
    * Current balance of one treasury account (CASH or BANK), optionally as of a given date.
    * A capital injection's BANK-tagged row is normally a partner-equity attribution memo of money
    * already counted via its linked CASH row (see PartnersTreasuryController.createCapitalInjection)
@@ -166,6 +227,10 @@ export class CashMovementsService {
     asOfDate?: string,
     branchId?: string,
     manager?: EntityManager,
+    // REP_TREASURY is a per-رep pocket, not one shared company-wide pool — every caller that
+    // passes account=REP_TREASURY must also pass which rep's balance it means, or this would sum
+    // every rep's uncleared sales together. Ignored (and harmless) for CASH/BANK.
+    salesRepresentativeId?: string,
   ): Promise<number> {
     const qb = (manager ?? this.dataSource)
       .createQueryBuilder()
@@ -176,6 +241,9 @@ export class CashMovementsService {
     if (account === CashMovementAccount.BANK) {
       qb.andWhere(`NOT (m."sourceType" = 'CAPITAL_INJECTION' AND m."sourceId" IS NOT NULL)`);
     }
+    if (account === CashMovementAccount.REP_TREASURY) {
+      qb.andWhere('m."salesRepresentativeId" = :salesRepresentativeId', { salesRepresentativeId });
+    }
     if (asOfDate) qb.andWhere('m."movementDate" <= :asOfDate', { asOfDate });
     if (branchId) qb.andWhere('m."branchId" = :branchId', { branchId });
     const row = await qb.getRawOne();
@@ -183,10 +251,11 @@ export class CashMovementsService {
   }
 
   /**
-   * Printing Press only: blocks any purchase/expense payment that would drive a treasury account
-   * (Cash or Bank) negative. `excludeAmount` lets a caller editing an existing movement in place
-   * (not yet deleted/replaced at call time) add back that movement's own old amount before
-   * comparing, so replacing a payment doesn't falsely count itself as an extra draw on the balance.
+   * Blocks any outgoing payment (purchase, expense, supplier payment, dividend, commission payout,
+   * ...) that would drive a treasury account (Cash or Bank) negative, for every company. `excludeAmount`
+   * lets a caller editing an existing movement in place (not yet deleted/replaced at call time) add
+   * back that movement's own old amount before comparing, so replacing a payment doesn't falsely
+   * count itself as an extra draw on the balance.
    */
   async assertSufficientBalance(
     companyId: string,
@@ -195,17 +264,28 @@ export class CashMovementsService {
     branchId?: string | null,
     manager?: EntityManager,
     excludeAmount = 0,
+    salesRepresentativeId?: string,
   ): Promise<void> {
     if (amount <= 0) return;
-    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
-    if (company?.code !== PRINTING_PRESS_COMPANY_CODE) return;
 
-    const balance = await this.getBalance(companyId, account, undefined, branchId ?? undefined, manager);
+    const balance = await this.getBalance(
+      companyId,
+      account,
+      undefined,
+      branchId ?? undefined,
+      manager,
+      salesRepresentativeId,
+    );
     const available = balance + excludeAmount;
     if (amount > available) {
       if (account === CashMovementAccount.CASH) {
         throw new BadRequestException(
           `عفواً، المبلغ المدفوع أكبر من الرصيد المتاح في الخزينة. الرصيد المالي المتاح حالياً هو ${available.toFixed(2)} د.ك`,
+        );
+      }
+      if (account === CashMovementAccount.REP_TREASURY) {
+        throw new BadRequestException(
+          `عفواً، المبلغ أكبر من الرصيد المتاح في خزينة المندوب. الرصيد المالي المتاح حالياً هو ${available.toFixed(2)} د.ك`,
         );
       }
       throw new BadRequestException('عفواً، المبلغ المدفوع أكبر من الرصيد المتاح في البنك');

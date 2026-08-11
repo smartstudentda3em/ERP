@@ -118,6 +118,7 @@
     "companyName": "Company Name",
     "sku": "SKU",
     "barcode": "Barcode",
+    "packageType": "Package Type",
     "nameEn": "Name (EN)",
     "nameAr": "Name",
     "taxNumber": "Tax Number",
@@ -482,7 +483,9 @@
     "adminAllCompanies": "The Administrator role has automatic access to every company",
     "roleRestrictedToCompany": "This role is restricted exclusively to {{company}} — no access to any other company",
     "branchManagerBranchLabel": "Manager of which branch?",
-    "roleRestrictedToBranch": "This role is restricted exclusively to {{branch}} branch — no access to any other branch"
+    "roleRestrictedToBranch": "This role is restricted exclusively to {{branch}} branch — no access to any other branch",
+    "repBranchLabel": "Branch (optional)",
+    "repBranchHint": "Used to attribute this rep's invoices to a specific branch — optional, not required."
   },
   "profile": {
     "title": "Account Settings",
@@ -635,6 +638,7 @@
     "noStock": "No stock recorded yet",
     "searchPlaceholder": "Search by SKU, barcode, name, brand, or category…",
     "searchPlaceholderPress": "Search by item name, category, or brand…",
+    "codeOrBarcode": "Product Code / Barcode",
     "pdfExportError": "Could not export the report as PDF, please try again.",
     "filterByBranch": "Filter by Branch",
     "filterByStockStatus": "Stock Status",
@@ -769,8 +773,11 @@
     "paymentAccount": "Account",
     "paymentAccounts": {
       "CASH": "Cash Treasury (Cash)",
-      "BANK": "Bank"
+      "BANK": "Bank",
+      "REP_TREASURY": "Rep Treasury"
     },
+    "repTreasuryBalance": "Rep Treasury",
+    "selectRepForSettlement": "Representative to settle",
     "debit": "Cash In",
     "credit": "Cash Out",
     "description": "Description",
@@ -999,6 +1006,7 @@
   "salesRepresentativesReports": {
     "listTab": "Sales Representatives",
     "listTabPress": "Branch Managers",
+    "repsTab": "Sales Representatives",
     "reportsTab": "Sales Representatives Reports",
     "reportsTabPress": "Branch Managers Reports",
     "allRepresentatives": "All Sales Representatives",

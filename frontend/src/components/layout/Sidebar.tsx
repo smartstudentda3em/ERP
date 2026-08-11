@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep } from '../../lib/use-active-company';
 
 interface NavItem {
   to: string;
@@ -30,6 +30,12 @@ interface NavItem {
    * isBranchManagerSelf, the same "lacks sales-representatives.view" signal already used below to
    * swap this role's المناديب nav item to their personal مدير الفرع dashboard link. */
   hideForBranchManager?: boolean;
+  /** Hidden for a "مندوب" (Sales Rep) user specifically — that role is granted customers.view and
+   * settings.warehouse.view purely so the Sales Invoice form's customer/warehouse pickers work on
+   * the STAT/AC company path (see SALES_REP_PERMISSION_CODES in run-seed.ts); those permissions
+   * must never unlock the Customers/Outstanding Balances/Warehouse Management screens themselves,
+   * which the role's spec explicitly excludes. */
+  hideForSalesRep?: boolean;
 }
 
 // Order below follows the required sequence exactly: لوحة التحكم، المشتريات، المنتجات، المخازن،
@@ -39,14 +45,25 @@ interface NavItem {
 // each kept immediately beside the closest listed sibling they belong to, so the relative order of
 // every named item stays exactly as specified regardless of which company is active.
 const items: NavItem[] = [
-  { to: '/dashboard', label: 'nav.dashboard', icon: '📊' },
-  { to: '/customers', label: 'nav.customers', icon: '🧑‍💼', permission: 'customers.view', hideForPrintingPress: true },
+  // No `permission` here for every other role (implicitly always visible) — but "مندوب" has no
+  // dashboard.view at all, so this now hides for it specifically instead of linking to a route it
+  // can't actually enter (see router.tsx's matching RequirePermission guard).
+  { to: '/dashboard', label: 'nav.dashboard', icon: '📊', permission: 'dashboard.view' },
+  {
+    to: '/customers',
+    label: 'nav.customers',
+    icon: '🧑‍💼',
+    permission: 'customers.view',
+    hideForPrintingPress: true,
+    hideForSalesRep: true,
+  },
   {
     to: '/outstanding-balances',
     label: 'nav.outstandingBalances',
     icon: '💸',
     permission: 'customers.view',
     hideForPrintingPress: true,
+    hideForSalesRep: true,
   },
   { to: '/suppliers', label: 'nav.imports', icon: '🏭', permission: 'suppliers.view' },
   {
@@ -79,6 +96,7 @@ const items: NavItem[] = [
     label: 'nav.warehouseManagement',
     icon: '🏬',
     permission: 'settings.warehouse.view',
+    hideForSalesRep: true,
   },
   {
     to: '/inventory/stock-audit',
@@ -153,11 +171,13 @@ export function Sidebar({ open }: { open: boolean }) {
   // مدير فرع", the same signal SalesRepresentativesPage.tsx already uses to swap in their self-service
   // dashboard instead of the full المناديب/مدراء الفروع list.
   const isBranchManagerSelf = !hasPermission('sales-representatives.view');
+  const isSalesRep = useIsSalesRep();
   const { isPrintingPress, isAirConditioning } = useActiveCompany();
   const visibleItems = items.filter(
     (item) =>
       (!item.permission || hasPermission(item.permission)) &&
       (!item.permissionAnyOf || item.permissionAnyOf.some((c) => hasPermission(c))) &&
+      !(item.hideForSalesRep && isSalesRep) &&
       !(item.hideForPrintingPress && isPrintingPress) &&
       !(item.requireAirConditioning && !isAirConditioning) &&
       !(item.requirePrintingPress && !isPrintingPress) &&

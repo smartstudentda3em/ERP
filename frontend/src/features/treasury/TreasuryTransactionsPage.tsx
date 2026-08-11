@@ -46,6 +46,14 @@ interface DashboardSummary {
   bankBalance: number;
 }
 
+interface RepTreasuryBalance {
+  salesRepresentativeId: string;
+  name: string;
+  balance: number;
+}
+
+type TransferAccount = 'CASH' | 'BANK' | 'REP_TREASURY';
+
 function money(n: number): string {
   return formatAmount(n);
 }
@@ -53,11 +61,13 @@ function money(n: number): string {
 function emptyTransferForm() {
   return {
     movementDate: localToday(),
-    fromAccount: 'CASH' as 'CASH' | 'BANK',
+    fromAccount: 'CASH' as TransferAccount,
     toAccount: 'BANK' as 'CASH' | 'BANK',
     amount: '0',
     description: '',
     branchId: '',
+    // Only meaningful when fromAccount === 'REP_TREASURY' — which مندوب's own pocket to clear.
+    fromSalesRepresentativeId: '',
   };
 }
 
@@ -98,6 +108,18 @@ export function TreasuryTransactionsPage() {
     queryFn: () => unwrap<DashboardSummary>(apiClient.get('/dashboard/summary', { params: { companyId } })),
     enabled: !!companyId && showAccountSplit,
   });
+
+  // "خزينة المندوب" card + the transfer modal's رep-picker — one row per sales representative
+  // with their own uncleared-sales balance (see CashMovementsService.getRepTreasuryBalances).
+  // Fetched for every company (a مندوب can exist under any of the 3), not just when
+  // showAccountSplit, though the card itself only renders alongside the other split cards.
+  const repTreasuryQuery = useQuery({
+    queryKey: ['rep-treasury-balances', companyId],
+    queryFn: () => unwrap<RepTreasuryBalance[]>(apiClient.get('/treasury/rep-treasury-balances')),
+    enabled: !!companyId && showAccountSplit,
+  });
+  const repTreasuryTotal = (repTreasuryQuery.data ?? []).reduce((sum, r) => sum + r.balance, 0);
+  const repsWithBalance = (repTreasuryQuery.data ?? []).filter((r) => r.balance > 0.005);
 
   const companiesQuery = useQuery({
     queryKey: ['companies'],
@@ -144,10 +166,13 @@ export function TreasuryTransactionsPage() {
         amount: Number(transferForm.amount),
         description: transferForm.description || undefined,
         branchId: isPrintingPress ? transferForm.branchId || undefined : undefined,
+        fromSalesRepresentativeId:
+          transferForm.fromAccount === 'REP_TREASURY' ? transferForm.fromSalesRepresentativeId : undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['rep-treasury-balances'] });
       queryClient.invalidateQueries({ queryKey: ['expense-report'] });
       queryClient.invalidateQueries({ queryKey: ['profit-report'] });
       setTransferModalOpen(false);
@@ -266,8 +291,9 @@ export function TreasuryTransactionsPage() {
       )}
 
       {showAccountSplit ? (
-        // RTL reading order right-to-left: بنك، كاش، إجمالي — first JSX child renders rightmost.
-        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3 print:hidden">
+        // RTL reading order right-to-left: بنك، كاش، خزينة المندوب، إجمالي — first JSX child
+        // renders rightmost.
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('treasury.bankBalance')}</div>
             <div className="mt-1 text-2xl font-semibold">
@@ -279,6 +305,10 @@ export function TreasuryTransactionsPage() {
             <div className="mt-1 text-2xl font-semibold">
               {summaryQuery.data ? money(summaryQuery.data.cashBalance) : '—'}
             </div>
+          </Card>
+          <Card>
+            <div className="text-xs text-[var(--text-muted)]">{t('treasury.repTreasuryBalance')}</div>
+            <div className="mt-1 text-2xl font-semibold">{money(repTreasuryTotal)}</div>
           </Card>
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('treasury.totalBalance')}</div>
@@ -418,16 +448,19 @@ export function TreasuryTransactionsPage() {
             <FormField label={t('treasury.fromAccount')}>
               <Select
                 value={transferForm.fromAccount}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const next = e.target.value as TransferAccount;
                   setTransferForm((f) => ({
                     ...f,
-                    fromAccount: e.target.value as 'CASH' | 'BANK',
-                    toAccount: f.toAccount === e.target.value ? f.fromAccount : f.toAccount,
-                  }))
-                }
+                    fromAccount: next,
+                    toAccount: (f.toAccount as string) === next ? 'CASH' : f.toAccount,
+                    fromSalesRepresentativeId: next === 'REP_TREASURY' ? f.fromSalesRepresentativeId : '',
+                  }));
+                }}
               >
                 <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
                 <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                <option value="REP_TREASURY">{t('treasury.paymentAccounts.REP_TREASURY')}</option>
               </Select>
             </FormField>
             <FormField label={t('treasury.toAccount')}>
@@ -444,6 +477,26 @@ export function TreasuryTransactionsPage() {
                   ))}
               </Select>
             </FormField>
+            {transferForm.fromAccount === 'REP_TREASURY' && (
+              <div className="col-span-2">
+                <FormField label={t('treasury.selectRepForSettlement')}>
+                  <Select
+                    required
+                    value={transferForm.fromSalesRepresentativeId}
+                    onChange={(e) =>
+                      setTransferForm((f) => ({ ...f, fromSalesRepresentativeId: e.target.value }))
+                    }
+                  >
+                    <option value="">{t('actions.selectSalesRep')}</option>
+                    {repsWithBalance.map((r) => (
+                      <option key={r.salesRepresentativeId} value={r.salesRepresentativeId}>
+                        {r.name} — {money(r.balance)}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              </div>
+            )}
             <FormField label={t('treasury.amount')}>
               <Input
                 type="number"
@@ -493,7 +546,11 @@ export function TreasuryTransactionsPage() {
               </Button>
               <Button
                 type="submit"
-                disabled={transferMutation.isPending || (isPrintingPress && !transferForm.branchId)}
+                disabled={
+                  transferMutation.isPending ||
+                  (isPrintingPress && !transferForm.branchId) ||
+                  (transferForm.fromAccount === 'REP_TREASURY' && !transferForm.fromSalesRepresentativeId)
+                }
               >
                 {t('common.save')}
               </Button>

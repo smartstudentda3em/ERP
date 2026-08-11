@@ -50,6 +50,16 @@ export class ProductsController {
     return this.service.lowStockForCompany(companyId);
   }
 
+  // Declared before ':id' for the same reason as 'catalog'/'low-stock' above. Same
+  // inventory.product.view permission as everything else here — the "مندوب" role's restriction is
+  // entirely about *what fields this returns* (see ProductsService.findRepViewForCompany), not a
+  // separate permission code.
+  @Get('rep-view')
+  @Permissions('inventory.product.view')
+  repView(@CurrentUser('companyId') companyId: string) {
+    return this.service.findRepViewForCompany(companyId);
+  }
+
   // Declared before ':id' for the same reason as 'catalog' above.
   @Get('sellable-raw-materials')
   @Permissions('inventory.product.view')

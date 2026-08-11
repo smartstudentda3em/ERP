@@ -673,6 +673,52 @@ async function main() {
     console.log('Branch Manager (Printing Press) role seeded');
   }
 
+  // --- Sales Representative role ("مندوب") — every company, unrestricted ---
+  // A field sales agent: create sales invoices and browse a stripped-down product/stock view only
+  // (see ProductsPage.tsx's rep-restricted branch — cost/price/quantity fields are withheld
+  // server-side, not just hidden in the UI). No dashboard access at all (see DefaultRedirect.tsx —
+  // this is the only role routed straight to /sales/invoices instead of /dashboard on login), and
+  // every other screen in the system is naturally unreachable since Sidebar/RequirePermission only
+  // ever check for permission codes this role doesn't hold. Not company-restricted like "مدير فرع"
+  // — a مندوب can be created under any of the 3 companies. Sales made under this role are routed
+  // into a per-rep "خزينة المندوب" pocket rather than the company's real Cash/Bank balance (see
+  // sales-invoices.service.ts and CashMovementAccount.REP_TREASURY) until an admin settles it via
+  // the Treasury transfer modal.
+  const SALES_REP_ROLE_NAME = 'مندوب';
+  // customers.view/settings.warehouse.view/settings.branch.view: the invoice form's Press branch
+  // needs its own branch picker (customer/warehouse are bypassed there — walk-in customer,
+  // branch-derived warehouse), while a مندوب under Stationery or Air Conditioning uses the normal
+  // customer-picker + warehouse-picker form instead — either way these three lists must resolve for
+  // the invoice form to be usable at all. settings.branch.view never unlocks a screen on its own:
+  // /settings itself is gated by the separate settings.company.view permission this role lacks (see
+  // router.tsx), so this only feeds the picker, same reasoning as inventory.product.view already
+  // being scoped down to a stripped rep-view rather than the full Products screen.
+  const SALES_REP_PERMISSION_CODES = [
+    'sales.invoice.view',
+    'sales.invoice.create',
+    'inventory.product.view',
+    'customers.view',
+    'settings.warehouse.view',
+    'settings.branch.view',
+  ];
+  const salesRepPermissions = allPermissions.filter((p) =>
+    SALES_REP_PERMISSION_CODES.includes(`${p.module}.${p.action}`),
+  );
+  let salesRepRole = await roleRepo.findOne({ where: { name: SALES_REP_ROLE_NAME } });
+  if (!salesRepRole) {
+    salesRepRole = roleRepo.create({
+      name: SALES_REP_ROLE_NAME,
+      description:
+        'Field sales agent — create sales invoices and browse a restricted product/stock view only. No dashboard or other screens.',
+      isSystemRole: false,
+      permissions: salesRepPermissions,
+    });
+  } else {
+    salesRepRole.permissions = salesRepPermissions;
+  }
+  await roleRepo.save(salesRepRole);
+  console.log('Sales Representative (مندوب) role seeded');
+
   // --- Admin user ---
   // The Administrator has implicit access to every company via isSystemRole (see
   // AuthService.extractCompanyIds()) — no UserCompany ACL rows are needed for this account. Its

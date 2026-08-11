@@ -29,6 +29,9 @@ import { CommissionException } from '../../parties/entities/commission-exception
 import { buildExceptionsByRepId, resolveLineCommissionRate } from '../../parties/commission-rate.util';
 import { assertPaymentAccountProvided } from '../../../common/utils/payment-account.util';
 
+/** Mirrors SALES_REP_ROLE_NAME in backend/src/modules/users/users.service.ts. */
+const SALES_REP_ROLE_NAME = 'مندوب';
+
 @Injectable()
 export class SalesInvoicesService {
   constructor(
@@ -45,6 +48,18 @@ export class SalesInvoicesService {
     private readonly cashMovementsService: CashMovementsService,
     private readonly salesRepAccess: SalesRepAccessService,
   ) {}
+
+  /** True when `salesRepresentativeId` is linked to a "مندوب" (field sales agent) login account —
+   * the invoice's own paid amount then routes into that rep's own CashMovementAccount.REP_TREASURY
+   * pocket instead of the company's real CASH/BANK, and the usual paymentAccount requirement never
+   * applies to them (they never choose an account at all — see SalesInvoicesPage.tsx). */
+  private async isSalesAgentRep(salesRepresentativeId: string | null): Promise<boolean> {
+    if (!salesRepresentativeId) return false;
+    const rep = await this.salesRepRepo.findOne({ where: { id: salesRepresentativeId } });
+    if (!rep?.userId) return false;
+    const user = await this.userRepo.findOne({ where: { id: rep.userId }, relations: ['roles'] });
+    return user?.roles?.some((r) => r.name === SALES_REP_ROLE_NAME) ?? false;
+  }
 
   /** Resolves each invoice's `createdById` to the user's display name — a plain audit column, not
    * a relation, so this is a raw lookup rather than an ORM join. Branch-scoped exactly like
@@ -177,7 +192,10 @@ export class SalesInvoicesService {
     const company = await this.companyRepo.findOne({ where: { id: companyId } });
     const warnOnSellBelowCost = company?.warnOnSellBelowCost ?? true;
     const canSellBelowCost = userPermissions.includes('sales.invoice.sellBelowCost');
-    assertPaymentAccountProvided(company?.code, dto.paymentAccount);
+    const isRepTreasurySale = await this.isSalesAgentRep(salesRepresentativeId);
+    if (!isRepTreasurySale) {
+      assertPaymentAccountProvided(company?.code, dto.paymentAccount);
+    }
 
     return this.dataSource.transaction(async (manager) => {
       let costOfGoodsSold = 0;
@@ -298,7 +316,10 @@ export class SalesInvoicesService {
             branchId: dto.branchId,
             movementDate: dto.invoiceDate,
             type: CashMovementType.INCOME,
-            account: dto.paymentAccount ?? CashMovementAccount.CASH,
+            account: isRepTreasurySale ? CashMovementAccount.REP_TREASURY : dto.paymentAccount ?? CashMovementAccount.CASH,
+            // Only set for a مندوب's own sale — REP_TREASURY is a per-rep pocket, so every
+            // movement tagged with that account must carry whose pocket it belongs to.
+            salesRepresentativeId: isRepTreasurySale ? salesRepresentativeId : undefined,
             amount: paidAmount,
             sourceType: CashMovementSourceType.SALES_INVOICE,
             sourceId: finalInvoice.id,

@@ -11,6 +11,7 @@ import { Badge } from '../../components/ui/Badge';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useAccessibleCompanies } from '../../lib/companies';
+import { useActiveCompany } from '../../lib/use-active-company';
 
 const PROTECTED_ADMIN_EMAIL = 'aymanmakroum83@gmail.com';
 
@@ -43,6 +44,10 @@ function isProtectedAdmin(email: string | null | undefined): boolean {
 // The exact role name the "add user" form treats as a branch manager — matches
 // BRANCH_MANAGER_ROLE_NAME in backend/src/modules/users/users.service.ts.
 const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
+
+// The exact role name the "add user" form treats as a field sales agent — matches
+// SALES_REP_ROLE_NAME in backend/src/modules/users/users.service.ts.
+const SALES_REP_ROLE_NAME = 'مندوب';
 
 export function UsersRolesPage() {
   const { t } = useTranslation();
@@ -110,12 +115,23 @@ export function UsersRolesPage() {
   // own restricted company, not necessarily whichever company the current admin has active.
   const createIsBranchManager = rolesQuery.data?.find((r) => r.id === form.roleId)?.name === BRANCH_MANAGER_ROLE_NAME;
   const editIsBranchManager = rolesQuery.data?.find((r) => r.id === editForm.roleId)?.name === BRANCH_MANAGER_ROLE_NAME;
-  const branchManagerCompanyId = modalOpen ? createRestrictedCompanyId : editRestrictedCompanyId;
+  // "مندوب" isn't company-restricted (no restrictedCompanyId), so — unlike مدير فرع — there's no
+  // role-level company to source branches from; this only ever offers a branch when the admin is
+  // themselves currently working inside Printing Press, and it's optional (not required) since a
+  // مندوب can just as easily belong to Stationery/AC, where a single default branch already exists.
+  const { isPrintingPress, company: activeCompany } = useActiveCompany();
+  const createIsRep = rolesQuery.data?.find((r) => r.id === form.roleId)?.name === SALES_REP_ROLE_NAME;
+  const editIsRep = rolesQuery.data?.find((r) => r.id === editForm.roleId)?.name === SALES_REP_ROLE_NAME;
+  const branchManagerCompanyId =
+    (modalOpen ? createRestrictedCompanyId : editRestrictedCompanyId) ??
+    (isPrintingPress && (modalOpen ? createIsRep : editIsRep) ? (activeCompany?.id ?? null) : null);
   const branchesQuery = useQuery({
     queryKey: ['branches-for-role', branchManagerCompanyId],
     queryFn: () =>
       unwrap<BranchOption[]>(apiClient.get('/settings/branches', { params: { companyId: branchManagerCompanyId } })),
-    enabled: !!branchManagerCompanyId && (createIsBranchManager || editIsBranchManager),
+    enabled:
+      !!branchManagerCompanyId &&
+      (createIsBranchManager || editIsBranchManager || (isPrintingPress && (createIsRep || editIsRep))),
   });
   const createSelectedBranchName =
     (branchesQuery.data ?? []).find((b) => b.id === form.branchId)?.nameAr ??
@@ -138,7 +154,7 @@ export function UsersRolesPage() {
         phone: form.phone,
         password: form.password,
         roleIds: form.roleId ? [form.roleId] : [],
-        branchId: createIsBranchManager && form.branchId ? form.branchId : undefined,
+        branchId: (createIsBranchManager || createIsRep) && form.branchId ? form.branchId : undefined,
         companyIds: isCreateRoleAdmin
           ? []
           : createRestrictedCompanyId
@@ -183,7 +199,7 @@ export function UsersRolesPage() {
         phone: editForm.phone,
         isActive: editForm.isActive,
         roleIds: editForm.roleId ? [editForm.roleId] : [],
-        branchId: editIsBranchManager && editForm.branchId ? editForm.branchId : undefined,
+        branchId: (editIsBranchManager || editIsRep) && editForm.branchId ? editForm.branchId : undefined,
         companyIds: isEditRoleAdmin
           ? []
           : editRestrictedCompanyId
@@ -372,7 +388,10 @@ export function UsersRolesPage() {
                 setForm({
                   ...form,
                   roleId: e.target.value,
-                  branchId: nextRole?.name === BRANCH_MANAGER_ROLE_NAME ? form.branchId : '',
+                  branchId:
+                    nextRole?.name === BRANCH_MANAGER_ROLE_NAME || nextRole?.name === SALES_REP_ROLE_NAME
+                      ? form.branchId
+                      : '',
                 });
               }}
             >
@@ -405,6 +424,21 @@ export function UsersRolesPage() {
                   {t('userMgmt.roleRestrictedToBranch', { branch: createSelectedBranchName })}
                 </p>
               )}
+            </div>
+          )}
+          {createIsRep && isPrintingPress && (
+            <div className="col-span-2">
+              <FormField label={t('userMgmt.repBranchLabel')}>
+                <Select value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}>
+                  <option value="">—</option>
+                  {(branchesQuery.data ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.nameAr || b.nameEn}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">{t('userMgmt.repBranchHint')}</p>
             </div>
           )}
           {isCreateRoleAdmin ? (
@@ -492,7 +526,10 @@ export function UsersRolesPage() {
                 setEditForm({
                   ...editForm,
                   roleId: e.target.value,
-                  branchId: nextRole?.name === BRANCH_MANAGER_ROLE_NAME ? editForm.branchId : '',
+                  branchId:
+                    nextRole?.name === BRANCH_MANAGER_ROLE_NAME || nextRole?.name === SALES_REP_ROLE_NAME
+                      ? editForm.branchId
+                      : '',
                 });
               }}
             >
@@ -525,6 +562,24 @@ export function UsersRolesPage() {
                   {t('userMgmt.roleRestrictedToBranch', { branch: editSelectedBranchName })}
                 </p>
               )}
+            </div>
+          )}
+          {editIsRep && isPrintingPress && (
+            <div className="col-span-2">
+              <FormField label={t('userMgmt.repBranchLabel')}>
+                <Select
+                  value={editForm.branchId}
+                  onChange={(e) => setEditForm({ ...editForm, branchId: e.target.value })}
+                >
+                  <option value="">—</option>
+                  {(branchesQuery.data ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.nameAr || b.nameEn}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">{t('userMgmt.repBranchHint')}</p>
             </div>
           )}
           <FormField label={t('common.status')}>

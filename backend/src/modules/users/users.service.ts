@@ -16,6 +16,7 @@ import { PurchaseReceipt } from '../inventory/stock-movements/entities/purchase-
 import { StockAudit } from '../inventory/stock-movements/entities/stock-audit.entity';
 import { PayrollRun } from '../hr/entities/payroll-run.entity';
 import { CashMovement } from '../treasury/entities/cash-movement.entity';
+import { Branch } from '../settings/entities/branch.entity';
 import { SalesDocumentStatus } from '../../entities/enums';
 import { QuotationsService } from '../sales/quotations/quotations.service';
 import { SalesInvoicesService } from '../sales/sales-invoices/sales-invoices.service';
@@ -35,6 +36,11 @@ const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
 /** Applied once, only when auto-provisioning a brand-new SalesRepresentative row (never on repair
  * of an existing one, so it can never clobber a rate an admin already customized). */
 const BRANCH_MANAGER_DEFAULT_COMMISSION_RATE = 5;
+
+/** The exact role name the "add user" form treats as a field sales agent — see
+ * UsersRolesPage.tsx's optional branch-select field (shown, not required, for Printing Press).
+ * Kept as a plain name match, same convention as BRANCH_MANAGER_ROLE_NAME. */
+const SALES_REP_ROLE_NAME = 'مندوب';
 
 @Injectable()
 export class UsersService {
@@ -150,6 +156,82 @@ export class UsersService {
     );
   }
 
+  /** Employee.branchId is NOT NULL, but "مندوب" (unlike "مدير فرع") isn't required to pick a
+   * branch — every company always has at least its own default "HQ" branch from seeding, so this
+   * falls back to that when the form left branchId empty, instead of silently skipping the sync
+   * the way syncBranchManagerEmployee does. */
+  private async resolveDefaultBranchId(companyId: string, branchId: string | null): Promise<string | null> {
+    if (branchId) return branchId;
+    const fallback = await this.dataSource
+      .getRepository(Branch)
+      .findOne({ where: { companyId }, order: { createdAt: 'ASC' } });
+    return fallback?.id ?? null;
+  }
+
+  /**
+   * When a user is saved with the "مندوب" role, auto-provisions (or repairs) a matching
+   * SalesRepresentative row so they immediately show up under the "المناديب" tab — same idea as
+   * syncBranchManagerRepresentative, except مندوب isn't locked to one company (no
+   * restrictedCompanyId), so companyId comes straight from the user's own record, and every
+   * company (not just Printing Press) gets this sync.
+   */
+  private async syncRepRepresentative(user: User, roles: Role[], branchId: string | null): Promise<void> {
+    const repRole = roles.find((r) => r.name === SALES_REP_ROLE_NAME);
+    if (!repRole || !user.companyId) return;
+    const resolvedBranchId = await this.resolveDefaultBranchId(user.companyId, branchId);
+
+    const existing = await this.salesRepRepo.findOne({ where: { userId: user.id } });
+    if (existing) {
+      existing.branchId = resolvedBranchId;
+      existing.companyId = user.companyId;
+      await this.salesRepRepo.save(existing);
+      return;
+    }
+
+    const code =
+      (await this.numberingSeriesService.tryGetNextNumber(user.companyId, 'SALES_REPRESENTATIVE')) ||
+      `REP-${Date.now()}`;
+    await this.salesRepRepo.save(
+      this.salesRepRepo.create({
+        companyId: user.companyId,
+        code,
+        name: user.fullName,
+        phone: user.phone ?? null,
+        email: user.email ?? undefined,
+        branchId: resolvedBranchId,
+        userId: user.id,
+      }),
+    );
+  }
+
+  /** Same auto-provisioning idea as syncBranchManagerEmployee, for a "مندوب" user — see
+   * resolveDefaultBranchId() for why this never skips even when no branch was explicitly picked. */
+  private async syncRepEmployee(user: User, roles: Role[], branchId: string | null): Promise<void> {
+    const repRole = roles.find((r) => r.name === SALES_REP_ROLE_NAME);
+    if (!repRole || !user.companyId) return;
+    const resolvedBranchId = await this.resolveDefaultBranchId(user.companyId, branchId);
+    if (!resolvedBranchId) return;
+
+    const existing = await this.employeeRepo.findOne({ where: { userId: user.id } });
+    if (existing) {
+      existing.branchId = resolvedBranchId;
+      existing.companyId = user.companyId;
+      await this.employeeRepo.save(existing);
+      return;
+    }
+
+    await this.employeeRepo.save(
+      this.employeeRepo.create({
+        companyId: user.companyId,
+        branchId: resolvedBranchId,
+        name: user.fullName,
+        jobTitle: SALES_REP_ROLE_NAME,
+        baseSalary: 0,
+        userId: user.id,
+      }),
+    );
+  }
+
   /**
    * Administrators (isSystemRole) are visible from every company context; everyone else is only
    * visible where they hold a UserCompany row for the caller's active company — this is what keeps
@@ -242,20 +324,25 @@ export class UsersService {
       ? await this.roleRepo.find({ where: { id: In(dto.roleIds) } })
       : [];
 
+    // Ignored entirely for a true Administrator — that role has implicit access to every company
+    // via isSystemRole, so no ACL rows are needed (or checked) for it. See AuthService.extractCompanyIds().
+    const enforcedCompanyIds = this.enforceRoleCompanyRestriction(roles, dto.companyIds);
+
     const user = this.userRepo.create({
       email: dto.email ? dto.email.toLowerCase() : null,
       fullName: dto.fullName,
       passwordHash: await argon2.hash(password),
       phone,
-      companyId: dto.companyId ?? null,
+      // The Users & Roles form never sends a distinct single companyId — only the companyIds ACL
+      // checklist — so this falls back to the first ACL company. syncRepRepresentative/
+      // syncRepEmployee need a real companyId to auto-provision under; without this fallback
+      // user.companyId would stay null for every non-restricted role (مندوب included) and that
+      // sync would silently never fire.
+      companyId: dto.companyId ?? enforcedCompanyIds?.[0] ?? null,
       branchId: dto.branchId ?? null,
       roles,
     });
     const savedUser = await this.userRepo.save(user);
-
-    // Ignored entirely for a true Administrator — that role has implicit access to every company
-    // via isSystemRole, so no ACL rows are needed (or checked) for it. See AuthService.extractCompanyIds().
-    const enforcedCompanyIds = this.enforceRoleCompanyRestriction(roles, dto.companyIds);
     if (enforcedCompanyIds?.length) {
       await this.userCompanyRepo.save(
         enforcedCompanyIds.map((companyId) => this.userCompanyRepo.create({ userId: savedUser.id, companyId })),
@@ -264,6 +351,8 @@ export class UsersService {
 
     await this.syncBranchManagerRepresentative(savedUser, roles, dto.branchId ?? null);
     await this.syncBranchManagerEmployee(savedUser, roles, dto.branchId ?? null);
+    await this.syncRepRepresentative(savedUser, roles, dto.branchId ?? null);
+    await this.syncRepEmployee(savedUser, roles, dto.branchId ?? null);
 
     return this.stripPasswordHash(savedUser);
   }
@@ -298,21 +387,27 @@ export class UsersService {
       user.passwordHash = await argon2.hash(dto.password.trim());
     }
 
-    Object.assign(user, {
-      fullName: dto.fullName ?? user.fullName,
-      phone: trimmedPhone ?? user.phone,
-      isActive: dto.isActive ?? user.isActive,
-      companyId: dto.companyId ?? user.companyId,
-      branchId: dto.branchId ?? user.branchId,
-    });
-    const savedUser = await this.userRepo.save(user);
-
     // Present (even an empty array) means "replace the full set" — same convention as roleIds,
     // just done as a delete+reinsert since companyIds isn't a relation TypeORM can diff for us.
     // `user.roles` already reflects any role change made above, so a switch onto/off a
     // restricted role takes effect in the same request that changed it.
+    const enforcedCompanyIds = dto.companyIds
+      ? this.enforceRoleCompanyRestriction(user.roles, dto.companyIds)
+      : undefined;
+
+    Object.assign(user, {
+      fullName: dto.fullName ?? user.fullName,
+      phone: trimmedPhone ?? user.phone,
+      isActive: dto.isActive ?? user.isActive,
+      // Same fallback as create(): backfills a previously-null companyId (e.g. a مندوب created
+      // before this fallback existed) from the ACL list being saved right now, so
+      // syncRepRepresentative/syncRepEmployee below finally has a company to provision under.
+      companyId: dto.companyId ?? user.companyId ?? enforcedCompanyIds?.[0] ?? null,
+      branchId: dto.branchId ?? user.branchId,
+    });
+    const savedUser = await this.userRepo.save(user);
+
     if (dto.companyIds) {
-      const enforcedCompanyIds = this.enforceRoleCompanyRestriction(user.roles, dto.companyIds);
       await this.userCompanyRepo.delete({ userId: savedUser.id });
       if (enforcedCompanyIds?.length) {
         await this.userCompanyRepo.save(
@@ -323,6 +418,8 @@ export class UsersService {
 
     await this.syncBranchManagerRepresentative(savedUser, savedUser.roles, savedUser.branchId);
     await this.syncBranchManagerEmployee(savedUser, savedUser.roles, savedUser.branchId);
+    await this.syncRepRepresentative(savedUser, savedUser.roles, savedUser.branchId);
+    await this.syncRepEmployee(savedUser, savedUser.roles, savedUser.branchId);
 
     return this.stripPasswordHash(savedUser);
   }

@@ -68,3 +68,12 @@ export function useIsPressManagerRestricted(): boolean {
   const hasManagerRole = useAuthStore((s) => s.hasRole('Manager'));
   return isPrintingPress && hasManagerRole;
 }
+
+/** True for a "مندوب" (field sales agent) user, in any company — unlike
+ * useIsPressManagerRestricted() this isn't scoped to Printing Press, since مندوب can exist under
+ * any of the 3 companies. Drives ProductsPage.tsx's stripped-down (no price/quantity) product
+ * view and hides the paymentAccount selector on the Sales Invoice form (see
+ * CashMovementAccount.REP_TREASURY). */
+export function useIsSalesRep(): boolean {
+  return useAuthStore((s) => s.hasRole('مندوب'));
+}

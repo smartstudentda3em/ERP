@@ -62,6 +62,11 @@ export enum CashMovementType {
 export enum CashMovementAccount {
   CASH = 'CASH',
   BANK = 'BANK',
+  /** A "مندوب" (field sales agent) role's own cash-in-hand pocket — sales they create are routed
+   * here instead of the company's real CASH/BANK balance (see sales-invoices.service.ts), scoped
+   * per-rep via CashMovement.salesRepresentativeId, until an admin settles/clears it into CASH or
+   * BANK via the Treasury transfer modal (see CashMovementsService.createTransfer). */
+  REP_TREASURY = 'REP_TREASURY',
 }
 
 export enum CashMovementSourceType {

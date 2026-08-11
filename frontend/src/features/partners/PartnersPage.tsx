@@ -363,7 +363,14 @@ export function PartnersPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [quarter, setQuarter] = useState<Quarter>((Math.floor(now.getMonth() / 3) + 1) as Quarter);
   const [dividendModalOpen, setDividendModalOpen] = useState(false);
-  const [dividendForm, setDividendForm] = useState({ partnerId: '', movementDate: localToday(), amount: '0', description: '', branchId: '' });
+  const [dividendForm, setDividendForm] = useState({
+    partnerId: '',
+    movementDate: localToday(),
+    amount: '0',
+    description: '',
+    branchId: '',
+    account: 'CASH' as 'CASH' | 'BANK',
+  });
   const [dividendPartnerFilter, setDividendPartnerFilter] = useState('');
 
   const { dateFrom, dateTo } = useMemo(() => quarterDateRange(year, quarter), [year, quarter]);
@@ -498,6 +505,7 @@ export function PartnersPage() {
         quarter,
         description: dividendForm.description || undefined,
         branchId: isPrintingPress ? dividendForm.branchId || undefined : undefined,
+        account: dividendForm.account,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
@@ -508,7 +516,14 @@ export function PartnersPage() {
       queryClient.invalidateQueries({ queryKey: ['partners-balances'] });
       queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
       setDividendModalOpen(false);
-      setDividendForm({ partnerId: '', movementDate: localToday(), amount: '0', description: '', branchId: '' });
+      setDividendForm({
+        partnerId: '',
+        movementDate: localToday(),
+        amount: '0',
+        description: '',
+        branchId: '',
+        account: 'CASH',
+      });
     },
     onError: (err: any) => toast.error(err?.response?.data?.message ?? String(err?.message ?? err)),
   });
@@ -1146,6 +1161,16 @@ export function PartnersPage() {
               value={dividendForm.amount}
               onChange={(e) => setDividendForm({ ...dividendForm, amount: e.target.value })}
             />
+          </FormField>
+          <FormField label={t('treasury.paymentAccount')}>
+            <Select
+              required
+              value={dividendForm.account}
+              onChange={(e) => setDividendForm({ ...dividendForm, account: e.target.value as 'CASH' | 'BANK' })}
+            >
+              <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+              <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+            </Select>
           </FormField>
 
           {isPrintingPress && (

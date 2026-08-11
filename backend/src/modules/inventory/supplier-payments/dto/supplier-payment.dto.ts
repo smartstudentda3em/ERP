@@ -10,7 +10,8 @@ export class CreateSupplierPaymentDto {
    * SupplierStatementPage.tsx's aggregate "Pay Outstanding" action). When given, the payment is
    * credited onto that receipt's own paidAmount (PurchasingPage.tsx's per-row action). */
   @IsOptional() @IsUUID() purchaseReceiptId?: string;
-  @IsOptional() @IsEnum(PaymentMethod) method?: PaymentMethod;
+  /** بنكي/كاش — every company's "سداد المتبقي" modal requires an explicit choice, never defaulted. */
+  @IsEnum(PaymentMethod) method: PaymentMethod;
   @IsNumber() @Min(0.01) amount: number;
   @IsOptional() @IsString() referenceNumber?: string;
   @IsOptional() @IsString() notes?: string;

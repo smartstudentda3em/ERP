@@ -4,7 +4,9 @@ import { ContentErrorBoundary } from './components/ContentErrorBoundary';
 import { AppLayout } from './components/layout/AppLayout';
 import { RequireAuth } from './components/auth/RequireAuth';
 import { RequirePermission } from './components/auth/RequirePermission';
+import { DefaultRedirect } from './components/auth/DefaultRedirect';
 import { RequireNotPrintingPress } from './components/auth/RequireNotPrintingPress';
+import { RequireNotSalesRep } from './components/auth/RequireNotSalesRep';
 import { RequireAirConditioning } from './components/auth/RequireAirConditioning';
 import { RequirePrintingPress } from './components/auth/RequirePrintingPress';
 import { LoginPage } from './features/auth/LoginPage';
@@ -69,14 +71,27 @@ export const router = createBrowserRouter([
                 // belong to AppLayout above, keep rendering unaffected. See ContentErrorBoundary.
                 errorElement: <ContentErrorBoundary />,
                 children: [
-                  { path: '/', element: <Navigate to="/dashboard" replace /> },
-              { path: '/dashboard', element: <DashboardPage /> },
+                  { path: '/', element: <DefaultRedirect /> },
+              {
+                path: '/dashboard',
+                // Every role until "مندوب" implicitly had dashboard.view, so this route never
+                // needed a guard — مندوب is the first role that must actually be kept off it (see
+                // DefaultRedirect.tsx), so this now enforces the same permission the Sidebar item
+                // below is gated on instead of silently rendering the full financial dashboard.
+                element: (
+                  <RequirePermission code="dashboard.view">
+                    <DashboardPage />
+                  </RequirePermission>
+                ),
+              },
               {
                 path: '/customers',
                 element: (
                   <RequirePermission code="customers.view">
                     <RequireNotPrintingPress>
-                      <CustomersPage />
+                      <RequireNotSalesRep>
+                        <CustomersPage />
+                      </RequireNotSalesRep>
                     </RequireNotPrintingPress>
                   </RequirePermission>
                 ),
@@ -86,7 +101,9 @@ export const router = createBrowserRouter([
                 element: (
                   <RequirePermission code="customers.view">
                     <RequireNotPrintingPress>
-                      <CustomerStatementPage />
+                      <RequireNotSalesRep>
+                        <CustomerStatementPage />
+                      </RequireNotSalesRep>
                     </RequireNotPrintingPress>
                   </RequirePermission>
                 ),
@@ -96,7 +113,9 @@ export const router = createBrowserRouter([
                 element: (
                   <RequirePermission code="customers.view">
                     <RequireNotPrintingPress>
-                      <OutstandingBalancesPage />
+                      <RequireNotSalesRep>
+                        <OutstandingBalancesPage />
+                      </RequireNotSalesRep>
                     </RequireNotPrintingPress>
                   </RequirePermission>
                 ),
@@ -106,7 +125,9 @@ export const router = createBrowserRouter([
                 element: (
                   <RequirePermission code="customers.view">
                     <RequireNotPrintingPress>
-                      <OutstandingBalanceDetailsPage />
+                      <RequireNotSalesRep>
+                        <OutstandingBalanceDetailsPage />
+                      </RequireNotSalesRep>
                     </RequireNotPrintingPress>
                   </RequirePermission>
                 ),
@@ -153,7 +174,13 @@ export const router = createBrowserRouter([
               },
               {
                 path: '/inventory/warehouses',
-                element: <RequirePermission code="settings.warehouse.view"><WarehousesPage /></RequirePermission>,
+                element: (
+                  <RequirePermission code="settings.warehouse.view">
+                    <RequireNotSalesRep>
+                      <WarehousesPage />
+                    </RequireNotSalesRep>
+                  </RequirePermission>
+                ),
               },
               {
                 path: '/inventory/warehouses/products/:productId',
@@ -319,7 +346,7 @@ export const router = createBrowserRouter([
           },
         ],
       },
-      { path: '*', element: <Navigate to="/dashboard" replace /> },
+      { path: '*', element: <DefaultRedirect /> },
     ],
   },
 ]);

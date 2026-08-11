@@ -8,8 +8,9 @@ import { useAuthStore } from '../../store/auth-store';
  * single blanket permission — only per-tab ones like settings.branch.view/settings.tax.view/...),
  * or `anyOf` for an exact-match OR across a fixed list of unrelated codes (e.g. a screen reachable
  * either by the admin-only list permission or by a self-service permission every role already has).
- * Redirects to the dashboard rather than showing a blank/broken page, since every seeded role
- * that can log in at all is guaranteed dashboard access.
+ * Redirects to the dashboard rather than showing a blank/broken page — or, for the one role
+ * without dashboard.view at all ("مندوب"), to the one screen it can actually reach instead of
+ * looping back on itself (see the fallback logic below).
  */
 export function RequirePermission({
   code,
@@ -31,6 +32,12 @@ export function RequirePermission({
       : prefix
         ? hasAnyPermission(prefix)
         : true;
-  if (!allowed) return <Navigate to="/dashboard" replace />;
+  if (!allowed) {
+    // A role without dashboard.view (currently only "مندوب") would otherwise bounce forever
+    // against a plain "/dashboard" fallback, since that route itself requires the same
+    // permission — see DefaultRedirect.tsx for the same "fall back to whatever this role can
+    // actually reach" logic.
+    return <Navigate to={hasPermission('dashboard.view') ? '/dashboard' : '/sales/invoices'} replace />;
+  }
   return <>{children}</>;
 }

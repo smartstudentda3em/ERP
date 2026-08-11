@@ -61,7 +61,14 @@ const emptyForm = {
   isActive: true,
 };
 
-export function RepresentativesListTab() {
+interface RepresentativesListTabProps {
+  /** Narrows the list to only rows whose linked login account holds this exact role — Printing
+   * Press's "مدراء الفروع"/"المناديب" split (see SalesRepresentativesPage.tsx). Omitted everywhere
+   * else, which keeps today's unfiltered behavior. */
+  roleNameFilter?: string;
+}
+
+export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTabProps = {}) {
   const { t } = useTranslation();
   const { isPrintingPress } = useActiveCompany();
   const queryClient = useQueryClient();
@@ -84,8 +91,11 @@ export function RepresentativesListTab() {
   const [repSearch, setRepSearch] = useState('');
 
   const repsQuery = useQuery({
-    queryKey: ['sales-representatives'],
-    queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives')),
+    queryKey: ['sales-representatives', roleNameFilter ?? 'all'],
+    queryFn: () =>
+      unwrap<SalesRepresentative[]>(
+        apiClient.get('/sales-representatives', { params: roleNameFilter ? { roleName: roleNameFilter } : undefined }),
+      ),
   });
 
   const usersQuery = useQuery({

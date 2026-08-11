@@ -118,6 +118,7 @@
     "companyName": "اسم الشركة",
     "sku": "رمز الصنف (SKU)",
     "barcode": "الباركود",
+    "packageType": "نوع العبوة",
     "nameEn": "الاسم (إنجليزي)",
     "nameAr": "الاسم",
     "taxNumber": "الرقم الضريبي",
@@ -482,7 +483,9 @@
     "adminAllCompanies": "يملك مدير النظام صلاحية الوصول لكافة الشركات تلقائياً",
     "roleRestrictedToCompany": "هذا الدور مقيد حصرياً بشركة {{company}} ولا يمكن الوصول لأي شركة أخرى",
     "branchManagerBranchLabel": "مدير أي فرع؟",
-    "roleRestrictedToBranch": "هذا الدور مقيد حصرياً بفرع {{branch}} ولا يمكنه الوصول لأي فرع آخر"
+    "roleRestrictedToBranch": "هذا الدور مقيد حصرياً بفرع {{branch}} ولا يمكنه الوصول لأي فرع آخر",
+    "repBranchLabel": "الفرع (اختياري)",
+    "repBranchHint": "يُستخدم لإسناد فواتير المندوب إلى فرع معين — اختياري وغير إلزامي."
   },
   "profile": {
     "title": "إعدادات الحساب",
@@ -635,6 +638,7 @@
     "noStock": "لا يوجد مخزون مسجل بعد",
     "searchPlaceholder": "ابحث برمز الصنف، الباركود، الاسم، العلامة التجارية، أو الفئة…",
     "searchPlaceholderPress": "ابحث باسم الصنف، الفئة، أو العلامة التجارية…",
+    "codeOrBarcode": "كود المنتج / الباركود",
     "pdfExportError": "تعذر تصدير التقرير كملف PDF، يرجى المحاولة مرة أخرى.",
     "filterByBranch": "تصفية حسب الفرع",
     "filterByStockStatus": "حالة المخزون",
@@ -769,8 +773,11 @@
     "paymentAccount": "الحساب",
     "paymentAccounts": {
       "CASH": "الخزينة النقدي (الكاش)",
-      "BANK": "بنكي"
+      "BANK": "بنكي",
+      "REP_TREASURY": "خزينة المندوب"
     },
+    "repTreasuryBalance": "خزينة المندوب",
+    "selectRepForSettlement": "المندوب المراد تسوية حسابه",
     "debit": "مقبوضات",
     "credit": "مصروفات",
     "description": "البيان",
@@ -999,6 +1006,7 @@
   "salesRepresentativesReports": {
     "listTab": "المناديب",
     "listTabPress": "مدراء الفروع",
+    "repsTab": "المناديب",
     "reportsTab": "تقارير المناديب",
     "reportsTabPress": "تقارير مدراء الفروع",
     "allRepresentatives": "جميع المناديب",

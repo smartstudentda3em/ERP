@@ -361,18 +361,19 @@ export class PartnersTreasuryController {
       );
     }
 
-    // A dividend is real cash actually paid out to ONE partner, so it draws down the Bank Balance
-    // (CASH) — the same account real income/expenses move through — not the Partners' Balance
-    // (BANK) memo account capital injections track into. Never split across the other partners:
-    // each of them draws down their own share independently, whenever they choose to. The
-    // partner's own branchId (when set) is authoritative over whatever branch the client sent —
-    // a branch-bound partner's payout can only ever be attributed to their own branch.
+    // A dividend is real cash actually paid out to ONE partner, drawn from whichever real
+    // treasury account (Cash or Bank) the user explicitly picks — never split across the other
+    // partners: each of them draws down their own share independently, whenever they choose to.
+    // The partner's own branchId (when set, computed above) is authoritative over whatever branch
+    // the client sent — a branch-bound partner's payout can only ever be attributed to their own branch.
+    const payoutBranchId = branchId ?? dto.branchId ?? null;
+    await this.cashMovementsService.assertSufficientBalance(companyId, dto.account, dto.amount, payoutBranchId);
     return this.cashMovementsService.record({
       companyId,
-      branchId: partner.branchId ?? dto.branchId ?? null,
+      branchId: payoutBranchId,
       movementDate: dto.movementDate,
       type: CashMovementType.EXPENSE,
-      account: CashMovementAccount.CASH,
+      account: dto.account,
       amount: dto.amount,
       sourceType: CashMovementSourceType.DIVIDEND,
       category: 'Dividends',

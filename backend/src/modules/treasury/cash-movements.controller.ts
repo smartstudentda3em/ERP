@@ -45,9 +45,16 @@ export class CashMovementsController {
         amount: dto.amount,
         description: dto.description,
         branchId: dto.branchId ?? null,
+        fromSalesRepresentativeId: dto.fromSalesRepresentativeId ?? null,
       },
       user.userId,
     );
+  }
+
+  @Get('rep-treasury-balances')
+  @Permissions('treasury.cash-box.view')
+  getRepTreasuryBalances(@CurrentUser('companyId') companyId: string) {
+    return this.service.getRepTreasuryBalances(companyId);
   }
 
   @Get('expenses')

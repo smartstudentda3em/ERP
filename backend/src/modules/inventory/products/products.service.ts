@@ -188,6 +188,63 @@ export class ProductsService extends BaseCrudService<Product> {
   }
 
   /**
+   * "مندوب" role's restricted product view — only code/barcode, name, package type, and a
+   * computed availability status ever leave the server here; quantities, costs, and prices are
+   * never selected at all (not merely hidden client-side), per the explicit requirement that this
+   * role can't see stock totals or any monetary figure. Covers every product type (raw materials
+   * and, for Printing Press, catalog items) since a مندوب may be invoicing either.
+   */
+  async findRepViewForCompany(companyId: string): Promise<
+    {
+      id: string;
+      sku: string | null;
+      barcode: string | null;
+      nameAr: string;
+      nameEn: string;
+      packageTypeNameAr: string | null;
+      packageTypeNameEn: string | null;
+      availabilityStatus: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+    }[]
+  > {
+    const rows = await this.repo
+      .createQueryBuilder('p')
+      .leftJoin('stock_levels', 'sl', 'sl."productId" = p.id')
+      .leftJoin('package_types', 'pt', 'pt.id = p."packageTypeId"')
+      .select('p.id', 'id')
+      .addSelect('p.sku', 'sku')
+      .addSelect('p.barcode', 'barcode')
+      .addSelect('p."nameAr"', 'nameAr')
+      .addSelect('p."nameEn"', 'nameEn')
+      .addSelect('pt."nameAr"', 'packageTypeNameAr')
+      .addSelect('pt."nameEn"', 'packageTypeNameEn')
+      .addSelect('p."reorderLevel"', 'reorderLevel')
+      .addSelect('COALESCE(SUM(sl."quantityOnHand"), 0)', 'totalOnHand')
+      .where('p."isActive" = true')
+      .andWhere('p."companyId" = :companyId', { companyId })
+      .groupBy('p.id')
+      .addGroupBy('pt.id')
+      .orderBy('p."nameAr"', 'ASC')
+      .getRawMany();
+
+    return rows.map((r) => {
+      const total = Number(r.totalOnHand);
+      const reorderLevel = Number(r.reorderLevel ?? 0);
+      const availabilityStatus: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK' =
+        total <= 0 ? 'OUT_OF_STOCK' : total <= reorderLevel ? 'LOW_STOCK' : 'IN_STOCK';
+      return {
+        id: r.id,
+        sku: r.sku,
+        barcode: r.barcode,
+        nameAr: r.nameAr,
+        nameEn: r.nameEn,
+        packageTypeNameAr: r.packageTypeNameAr,
+        packageTypeNameEn: r.packageTypeNameEn,
+        availabilityStatus,
+      };
+    });
+  }
+
+  /**
    * Catalog items carry no real category/unit/packaging — those columns are mandatory on the
    * shared `products` table purely for the raw-materials side, so this finds (or lazily creates,
    * first time only) one hidden placeholder row per company to satisfy them, invisible to the

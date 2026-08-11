@@ -13,7 +13,6 @@ import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 
 type PaymentType = 'DEPOSIT' | 'PARTIAL' | 'FINAL_SETTLEMENT' | 'SHIPPING_COST';
-type PaymentAccount = 'CASH' | 'BANK';
 
 interface ShipmentOption {
   id: string;
@@ -27,7 +26,6 @@ interface ShipmentPayment {
   shipment: ShipmentOption | null;
   paymentType: PaymentType;
   amount: number;
-  account: PaymentAccount;
   notes: string | null;
 }
 
@@ -36,7 +34,6 @@ const emptyForm = {
   shipmentId: '',
   paymentType: 'DEPOSIT' as PaymentType,
   amount: '',
-  account: 'CASH' as PaymentAccount,
   notes: '',
 };
 
@@ -120,7 +117,7 @@ export function ShipmentPaymentsTab() {
 
   const detailsShipmentName = detailsPayments[0]?.shipment?.shipmentName ?? '';
 
-  const isValid = !!form.paymentDate && !!form.shipmentId && !!form.paymentType && !!form.amount && !!form.account;
+  const isValid = !!form.paymentDate && !!form.shipmentId && !!form.paymentType && !!form.amount;
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -129,7 +126,6 @@ export function ShipmentPaymentsTab() {
         shipmentId: form.shipmentId,
         paymentType: form.paymentType,
         amount: Number(form.amount),
-        account: form.account,
         notes: form.notes || undefined,
       };
       return editingId
@@ -168,7 +164,6 @@ export function ShipmentPaymentsTab() {
       shipmentId: row.shipmentId,
       paymentType: row.paymentType,
       amount: String(row.amount),
-      account: row.account,
       notes: row.notes ?? '',
     });
     setModalOpen(true);
@@ -184,7 +179,6 @@ export function ShipmentPaymentsTab() {
     { header: t('imports.paymentDate'), accessor: (r) => r.paymentDate },
     { header: t('imports.shipmentName'), accessor: (r) => r.shipment?.shipmentName ?? '—' },
     { header: t('imports.paymentType'), accessor: (r) => t(`imports.paymentTypes.${r.paymentType}`) },
-    { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.account}`) },
     { header: t('imports.amountPaid'), accessor: (r) => money(Number(r.amount ?? 0)), align: 'right' },
     { header: t('common.notes'), accessor: (r) => r.notes ?? '—' },
     {
@@ -303,23 +297,11 @@ export function ShipmentPaymentsTab() {
             />
           </FormField>
           <div className="col-span-2">
-            <FormField label={t('treasury.paymentAccount')} required>
-              <Select
-                required
-                value={form.account}
-                onChange={(e) => setForm({ ...form, account: e.target.value as PaymentAccount })}
-              >
-                <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
-                <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
-              </Select>
-              <p className="mt-1 text-xs text-[var(--text-muted)]">{t('imports.paymentMemoHint')}</p>
-            </FormField>
-          </div>
-          <div className="col-span-2">
             <FormField label={t('common.notes')}>
               <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </FormField>
           </div>
+          <p className="col-span-2 -mt-1 text-xs text-[var(--text-muted)]">{t('imports.paymentMemoHint')}</p>
           <div className="col-span-2 mt-2 flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               {t('common.cancel')}
@@ -355,10 +337,6 @@ export function ShipmentPaymentsTab() {
           columns={[
             { header: t('imports.paymentDate'), accessor: (r: ShipmentPayment) => r.paymentDate },
             { header: t('imports.paymentType'), accessor: (r: ShipmentPayment) => t(`imports.paymentTypes.${r.paymentType}`) },
-            {
-              header: t('treasury.paymentAccount'),
-              accessor: (r: ShipmentPayment) => t(`treasury.paymentAccounts.${r.account}`),
-            },
             {
               header: t('imports.amountPaid'),
               accessor: (r: ShipmentPayment) => money(Number(r.amount ?? 0)),

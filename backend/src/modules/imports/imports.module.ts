@@ -15,8 +15,10 @@ import { ShipmentPaymentsService } from './shipment-payments.service';
 import { ShipmentPaymentsController } from './shipment-payments.controller';
 import { ShippingExpenseTypesService, ShippingExpenseTypesController } from './shipping-expense-types.controller';
 import { SettingsModule } from '../settings/settings.module';
-import { TreasuryModule } from '../treasury/treasury.module';
 
+// Deliberately does NOT import TreasuryModule — the whole Import module is a standalone cost/
+// statistics unit, isolated from CashMovementsService by design (see ShipmentPaymentsService's
+// doc comment). Only Suppliers/SupplierPayments (a separate module) remain financially connected.
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -29,7 +31,6 @@ import { TreasuryModule } from '../treasury/treasury.module';
       Product,
     ]),
     SettingsModule,
-    TreasuryModule,
   ],
   controllers: [
     ImportCargoItemsController,

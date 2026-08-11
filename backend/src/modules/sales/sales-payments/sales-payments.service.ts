@@ -15,11 +15,14 @@ import { NumberingSeriesService } from '../../settings/numbering-series.controll
 import { CashMovementsService } from '../../treasury/cash-movements.service';
 import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 import { SalesRepAccessService } from '../../../common/services/sales-rep-access.service';
+import { Company } from '../../settings/entities/company.entity';
+import { assertPaymentAccountProvided } from '../../../common/utils/payment-account.util';
 
 @Injectable()
 export class SalesPaymentsService {
   constructor(
     @InjectRepository(SalesPayment) private readonly repo: Repository<SalesPayment>,
+    @InjectRepository(Company) private readonly companyRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly cashMovementsService: CashMovementsService,
@@ -57,11 +60,13 @@ export class SalesPaymentsService {
 
     const documentNumber = await this.numberingSeriesService.getNextNumber(companyId, 'SALES_PAYMENT');
 
-    // Printing Press explicitly picks the treasury account (dto.paymentAccount). Every other
-    // company has no such field — its receipt only records `method` (cash in hand, bank transfer,
-    // cheque, card, online) — so the treasury account must be derived from that: CASH stays CASH,
-    // anything else settles into BANK. This used to default everything to CASH regardless of
-    // method, silently mis-crediting the cash drawer for money that was actually wired to the bank.
+    // Press/Stationery/Air Conditioning must explicitly pick the treasury account
+    // (dto.paymentAccount) — assertPaymentAccountProvided throws if it's missing for one of these.
+    // Any other company has no such field — its receipt only records `method` (cash in hand, bank
+    // transfer, cheque, card, online) — so the treasury account is derived from that instead: CASH
+    // stays CASH, anything else settles into BANK.
+    const company = await this.companyRepo.findOne({ where: { id: companyId } });
+    assertPaymentAccountProvided(company?.code, dto.paymentAccount);
     const resolvedAccount =
       dto.paymentAccount ??
       (dto.method && dto.method !== PaymentMethod.CASH ? CashMovementAccount.BANK : CashMovementAccount.CASH);
@@ -176,6 +181,8 @@ export class SalesPaymentsService {
         dto.salesRepresentativeId,
         companyId,
       );
+      const company = await this.companyRepo.findOne({ where: { id: companyId } });
+      assertPaymentAccountProvided(company?.code, dto.paymentAccount);
       const resolvedAccount =
         dto.paymentAccount ??
         (dto.method && dto.method !== PaymentMethod.CASH ? CashMovementAccount.BANK : CashMovementAccount.CASH);

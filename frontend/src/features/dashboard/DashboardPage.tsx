@@ -56,7 +56,12 @@ function money(n: number): string {
 export function DashboardPage() {
   const { t } = useTranslation();
   const companyId = useAuthStore((s) => s.user?.companyId);
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  // Stationery and Air Conditioning only — adds an "الأصول" (Assets) card to the top row and
+  // reorders/relabels the second row into exactly [bank, cash, financial balance, outstanding
+  // customers], while keeping the existing inventory-value and partners-contribution cards
+  // alongside them. Press's own layout (and any other future company's) is untouched.
+  const showAssetCards = isStationery || isAirConditioning;
 
   // Printing Press only — "تصفية حسب الفرع". A non-empty sentinel (never ''), same trick
   // SalesReportPage's own branch filter uses and for the exact same reason: the shared Select
@@ -152,23 +157,42 @@ export function DashboardPage() {
     { label: t('dashboard.profitToday'), value: money(s?.profitToday ?? 0) },
     { label: t('dashboard.monthlyRevenue'), value: money(s?.monthlyRevenue ?? 0) },
     { label: t('dashboard.monthlyExpenses'), value: money(s?.monthlyExpenses ?? 0) },
+    // Stationery/AC only — total company assets (same formula as PartnersPage's "الأصول" tab:
+    // inventory + cash + bank), placed at the end of the top row.
+    ...(showAssetCards
+      ? [{ label: t('dashboard.assets'), value: money(treasuryBalance + (s?.inventoryValue ?? 0)) }]
+      : []),
     // Row 2: assets and financial liquidity.
     { label: t('dashboard.inventoryValue'), value: money(s?.inventoryValue ?? 0) },
-    // Same figure, same source (getBalance(BANK)), as TreasuryTransactionsPage's own "رصيد البنك"
-    // card — showing the combined cash+bank total here under this label was the bug: two screens
-    // both titled "Bank Balance" disagreeing because one silently meant something else.
-    { label: t('dashboard.cashBalance'), value: money(s?.bankBalance ?? 0), to: '/treasury/transactions' },
-    // Printing Press has no customer-receivables management (see RequireNotPrintingPress on
-    // /customers) — its own cash-only treasury figure is more useful here than a balance that's
-    // always zero for this tenant.
-    isPrintingPress
-      ? {
-          label: t('dashboard.printingPressCashTreasury'),
-          value: money(s?.cashBalance ?? 0),
-          to: '/treasury/transactions',
-        }
-      : { label: t('dashboard.outstandingCustomers'), value: money(s?.outstandingCustomerBalances ?? 0) },
-    { label: t('dashboard.financialBalance'), value: money(financialBalance) },
+    ...(showAssetCards
+      ? [
+          { label: t('dashboard.bankBalance'), value: money(s?.bankBalance ?? 0), to: '/treasury/transactions' },
+          {
+            label: t('dashboard.cashTreasuryBalance'),
+            value: money(s?.cashBalance ?? 0),
+            to: '/treasury/transactions',
+          },
+          { label: t('dashboard.financialBalance'), value: money(financialBalance) },
+          { label: t('dashboard.outstandingCustomers'), value: money(s?.outstandingCustomerBalances ?? 0) },
+        ]
+      : [
+          // Same figure, same source (getBalance(BANK)), as TreasuryTransactionsPage's own "رصيد
+          // البنك" card — showing the combined cash+bank total here under this label was the bug:
+          // two screens both titled "Bank Balance" disagreeing because one silently meant
+          // something else.
+          { label: t('dashboard.cashBalance'), value: money(s?.bankBalance ?? 0), to: '/treasury/transactions' },
+          // Printing Press has no customer-receivables management (see RequireNotPrintingPress on
+          // /customers) — its own cash-only treasury figure is more useful here than a balance
+          // that's always zero for this tenant.
+          isPrintingPress
+            ? {
+                label: t('dashboard.printingPressCashTreasury'),
+                value: money(s?.cashBalance ?? 0),
+                to: '/treasury/transactions',
+              }
+            : { label: t('dashboard.outstandingCustomers'), value: money(s?.outstandingCustomerBalances ?? 0) },
+          { label: t('dashboard.financialBalance'), value: money(financialBalance) },
+        ]),
     { label: t('partners.totalContribution'), value: money(partnersBalancesQuery.data?.total ?? 0), to: '/partners' },
   ];
 
@@ -199,7 +223,7 @@ export function DashboardPage() {
         <PageHeader title={t('nav.dashboard')} />
       )}
 
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className={`mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 ${showAssetCards ? 'lg:grid-cols-6' : 'lg:grid-cols-5'}`}>
         {kpis.map((k) =>
           k.to ? (
             <Link key={k.label} to={k.to} className="block transition-shadow hover:shadow-md">

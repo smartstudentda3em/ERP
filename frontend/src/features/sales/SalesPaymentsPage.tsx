@@ -62,7 +62,11 @@ interface SalesRepresentative {
 
 export function SalesPaymentsPage() {
   const { t } = useTranslation();
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  // Stationery/AC keep the normal customer+method fields (they're not Press) but must also pick a
+  // بنك/كاش deposit account, same requirement as Press — see SalesPaymentsService.create()'s
+  // assertPaymentAccountProvided. Branch stays Press-only, unrelated to this request.
+  const requiresPaymentAccount = isPrintingPress || isStationery || isAirConditioning;
   const toast = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -177,7 +181,7 @@ export function SalesPaymentsPage() {
         method: isPrintingPress ? undefined : method,
         amount: Number(amount),
         notes: notes || undefined,
-        paymentAccount: isPrintingPress ? paymentAccount || undefined : undefined,
+        paymentAccount: requiresPaymentAccount ? paymentAccount || undefined : undefined,
         branchId: isPrintingPress ? branchId || undefined : undefined,
       };
       return editingId
@@ -420,7 +424,7 @@ export function SalesPaymentsPage() {
           <FormField label={t('fields.amount')}>
             <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </FormField>
-          {isPrintingPress && (
+          {requiresPaymentAccount && (
             <FormField label={t('salesPayments.depositAccountLabel')} required>
               <Select
                 required
@@ -476,7 +480,9 @@ export function SalesPaymentsPage() {
             </Button>
             <Button
               type="submit"
-              disabled={saveMutation.isPending || (isPrintingPress && (!branchId || !paymentAccount))}
+              disabled={
+                saveMutation.isPending || (isPrintingPress && !branchId) || (requiresPaymentAccount && !paymentAccount)
+              }
             >
               {t('common.save')}
             </Button>

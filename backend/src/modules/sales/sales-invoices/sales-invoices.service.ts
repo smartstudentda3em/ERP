@@ -27,6 +27,7 @@ import { UserCompany } from '../../users/entities/user-company.entity';
 import { SalesRepresentative } from '../../parties/entities/sales-representative.entity';
 import { CommissionException } from '../../parties/entities/commission-exception.entity';
 import { buildExceptionsByRepId, resolveLineCommissionRate } from '../../parties/commission-rate.util';
+import { assertPaymentAccountProvided } from '../../../common/utils/payment-account.util';
 
 @Injectable()
 export class SalesInvoicesService {
@@ -176,6 +177,7 @@ export class SalesInvoicesService {
     const company = await this.companyRepo.findOne({ where: { id: companyId } });
     const warnOnSellBelowCost = company?.warnOnSellBelowCost ?? true;
     const canSellBelowCost = userPermissions.includes('sales.invoice.sellBelowCost');
+    assertPaymentAccountProvided(company?.code, dto.paymentAccount);
 
     return this.dataSource.transaction(async (manager) => {
       let costOfGoodsSold = 0;

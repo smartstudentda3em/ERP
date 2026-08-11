@@ -66,10 +66,11 @@ export function TreasuryTransactionsPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
-  // Bank/Cash split cards + the internal transfer feature are scoped to Printing Press and Air
-  // Conditioning only — every other company keeps the single combined-balance card unchanged.
-  const { isPrintingPress, isAirConditioning } = useActiveCompany();
-  const showAccountSplit = isPrintingPress || isAirConditioning;
+  // Bank/Cash split cards + the internal transfer feature are scoped to Printing Press, Air
+  // Conditioning, and Stationery only — every other company keeps the single combined-balance
+  // card unchanged.
+  const { isPrintingPress, isAirConditioning, isStationery } = useActiveCompany();
+  const showAccountSplit = isPrintingPress || isAirConditioning || isStationery;
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
@@ -104,8 +105,9 @@ export function TreasuryTransactionsPage() {
   });
   const company = companiesQuery.data?.find((c) => c.id === companyId) ?? companiesQuery.data?.[0];
 
-  // Branches only exist for Printing Press — Air Conditioning also uses the transfer feature
-  // (see showAccountSplit) but has no branches, so its transfers stay unattributed.
+  // Branches only exist for Printing Press — Air Conditioning and Stationery also use the
+  // transfer feature (see showAccountSplit) but have no branches, so their transfers stay
+  // unattributed.
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),

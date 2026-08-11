@@ -158,6 +158,10 @@ export function SalesInvoicesPage() {
   // unaffected) — every sale there is silently attributed to the one seeded walk-in customer
   // instead of showing a picker, since there's nowhere to manage real customer records for it.
   const isPrintingPress = currentCompany?.code === 'PRESS';
+  // Stationery and Air Conditioning must also pick a بنك/كاش deposit account on every invoice
+  // (see SalesInvoicesService.create()'s assertPaymentAccountProvided) — unlike Press they keep
+  // the normal customer/warehouse form, this just adds the required selector alongside it.
+  const requiresPaymentAccount = isPrintingPress || currentCompany?.code === 'STAT' || currentCompany?.code === 'AC';
   const walkInCustomer = customersQuery.data?.find((c) => c.code === 'WALKIN');
 
   // Printing Press only — the invoice form shows a Branch field instead of Warehouse; the linked
@@ -223,7 +227,7 @@ export function SalesInvoicesPage() {
         salesRepresentativeId: resolvedRepId,
         createdById: (isAdmin ? createdById : currentUserId) || undefined,
         paidAmount: paidAmountNumber,
-        paymentAccount: isPrintingPress ? paymentAccount : undefined,
+        paymentAccount: requiresPaymentAccount ? paymentAccount : undefined,
         branchId: isPrintingPress ? branchId || undefined : undefined,
         customerName: isPrintingPress ? customerName || undefined : undefined,
         customerPhone: isPrintingPress ? customerPhone || undefined : undefined,
@@ -352,7 +356,7 @@ export function SalesInvoicesPage() {
       header: isPrintingPress ? t('fields.customerName') : t('nav.customers'),
       accessor: (r) => (isPrintingPress ? r.customerName || r.customer?.name || '—' : r.customer?.name),
     },
-    ...(isPrintingPress
+    ...(requiresPaymentAccount
       ? [
           {
             header: t('table.paymentMethod'),
@@ -431,7 +435,7 @@ export function SalesInvoicesPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={t('common.create')}
-        widthClass={isPrintingPress ? 'max-w-5xl' : 'max-w-3xl'}
+        widthClass="max-w-5xl"
       >
         <form
           className="grid grid-cols-2 gap-3"
@@ -503,50 +507,66 @@ export function SalesInvoicesPage() {
             </Card>
           ) : (
             <>
-              <FormField label={t('nav.customers')}>
-                <Select required value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                  <option value="">{t('actions.selectCustomer')}</option>
-                  {(customersQuery.data ?? []).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
-              </FormField>
-              <FormField label={t('fields.warehouse')}>
-                <Select required value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-                  <option value="">{t('actions.selectWarehouse')}</option>
-                  {(warehousesQuery.data ?? []).map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.nameEn}
-                    </option>
-                  ))}
-                </Select>
-              </FormField>
-              <FormField label={t('common.date')}>
-                <Input type="date" required value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
-              </FormField>
-              <FormField label={t('fields.invoiceOwner')}>
-                <Select value={assigneeValue} disabled={!isAdmin} onChange={(e) => handleAssigneeChange(e.target.value)}>
-                  {isAdmin ? (
-                    <>
-                      <option value="">{t('actions.selectSalesRep')}</option>
-                      {(salesRepsQuery.data ?? []).map((r) => (
-                        <option key={r.id} value={`rep:${r.id}`}>
-                          {r.name}
-                        </option>
-                      ))}
-                      {(assignableUsersQuery.data ?? []).map((u) => (
-                        <option key={u.id} value={`user:${u.id}`}>
-                          {u.fullName}
-                        </option>
-                      ))}
-                    </>
-                  ) : (
-                    <option value={assigneeValue}>{lockedAssigneeLabel}</option>
-                  )}
-                </Select>
-              </FormField>
+              <div className="col-span-2 grid grid-cols-2 gap-3">
+                <FormField label={t('nav.customers')}>
+                  <Select required value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                    <option value="">{t('actions.selectCustomer')}</option>
+                    {(customersQuery.data ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+                <FormField label={t('fields.warehouse')}>
+                  <Select required value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+                    <option value="">{t('actions.selectWarehouse')}</option>
+                    {(warehousesQuery.data ?? []).map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.nameEn}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              </div>
+              <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <FormField label={t('common.date')}>
+                  <Input type="date" required value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                </FormField>
+                <FormField label={t('fields.invoiceOwner')}>
+                  <Select value={assigneeValue} disabled={!isAdmin} onChange={(e) => handleAssigneeChange(e.target.value)}>
+                    {isAdmin ? (
+                      <>
+                        <option value="">{t('actions.selectSalesRep')}</option>
+                        {(salesRepsQuery.data ?? []).map((r) => (
+                          <option key={r.id} value={`rep:${r.id}`}>
+                            {r.name}
+                          </option>
+                        ))}
+                        {(assignableUsersQuery.data ?? []).map((u) => (
+                          <option key={u.id} value={`user:${u.id}`}>
+                            {u.fullName}
+                          </option>
+                        ))}
+                      </>
+                    ) : (
+                      <option value={assigneeValue}>{lockedAssigneeLabel}</option>
+                    )}
+                  </Select>
+                </FormField>
+                {requiresPaymentAccount && (
+                  <FormField label={t('fields.depositDestination')}>
+                    <Select
+                      required
+                      value={paymentAccount}
+                      onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
+                    >
+                      <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+                      <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                    </Select>
+                  </FormField>
+                )}
+              </div>
             </>
           )}
 
@@ -554,6 +574,7 @@ export function SalesInvoicesPage() {
             lines={lines}
             onChange={setLines}
             warnOnSellBelowCost={currentCompany?.warnOnSellBelowCost ?? true}
+            layout={isPrintingPress ? 'grid' : 'table'}
           />
 
           {isPrintingPress ? (
@@ -583,25 +604,32 @@ export function SalesInvoicesPage() {
               </div>
             </Card>
           ) : (
-            <div className="col-span-2 grid grid-cols-1 gap-3 rounded-lg border border-[var(--border)] p-3 sm:grid-cols-3">
-              <FormField label={t('common.total')}>
-                <Input disabled value={formatAmount(grandTotal)} />
-              </FormField>
-              <FormField label={t('fields.paidAmount')}>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={paidAmount}
-                  onChange={(e) => setPaidAmount(e.target.value)}
-                />
-              </FormField>
-              <FormField label={t('fields.remainingAmount')}>
-                <Input disabled value={formatAmount(remainingAmount)} />
-              </FormField>
-              <div className="sm:col-span-3">
-                <Badge color={paymentStatusColor}>{t(`docStatus.${paymentStatusKey}`)}</Badge>
-              </div>
+            <div className="col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('common.total')}</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(grandTotal)}</div>
+              </Card>
+              <Card>
+                <FormField label={t('fields.paidAmount')}>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={paidAmount}
+                    onChange={(e) => setPaidAmount(e.target.value)}
+                  />
+                </FormField>
+              </Card>
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('fields.remainingAmount')}</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(remainingAmount)}</div>
+              </Card>
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('common.status')}</div>
+                <div className="mt-1.5">
+                  <Badge color={paymentStatusColor}>{t(`docStatus.${paymentStatusKey}`)}</Badge>
+                </div>
+              </Card>
             </div>
           )}
 

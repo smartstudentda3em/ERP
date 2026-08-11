@@ -20,6 +20,10 @@ export const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
  * this constant rather than a hardcoded company id. */
 export const AIR_CONDITIONING_COMPANY_CODE = 'AC';
 
+/** The Stationery & Printing Supplies company's fixed code — mirrors
+ * backend/src/database/seeds/run-seed.ts's COMPANY_DEFS. */
+export const STATIONERY_COMPANY_CODE = 'STAT';
+
 /** Resolves the currently active company's full row (not just its id) — shared by the Sidebar,
  * the Printing-Press route guard, and the sales screens that need to know whether the active
  * tenant is the Printing Press. `isLoading` lets callers avoid a flash of the wrong UI before the
@@ -45,6 +49,7 @@ export function useActiveCompany() {
     company,
     isPrintingPress: company?.code === PRINTING_PRESS_COMPANY_CODE,
     isAirConditioning: company?.code === AIR_CONDITIONING_COMPANY_CODE,
+    isStationery: company?.code === STATIONERY_COMPANY_CODE,
     isLoading: companiesQuery.isLoading,
   };
 }

@@ -291,9 +291,6 @@ export function ShipmentPaymentsTab() {
               <option value="FINAL_SETTLEMENT">{t('imports.paymentTypes.FINAL_SETTLEMENT')}</option>
               <option value="SHIPPING_COST">{t('imports.paymentTypes.SHIPPING_COST')}</option>
             </Select>
-            {form.paymentType === 'SHIPPING_COST' && (
-              <p className="mt-1 text-xs text-[var(--text-muted)]">{t('imports.shippingCostMemoHint')}</p>
-            )}
           </FormField>
           <FormField label={t('imports.amountPaid')} required>
             <Input
@@ -315,6 +312,7 @@ export function ShipmentPaymentsTab() {
                 <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
                 <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
               </Select>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">{t('imports.paymentMemoHint')}</p>
             </FormField>
           </div>
           <div className="col-span-2">

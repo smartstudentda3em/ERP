@@ -119,7 +119,10 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
   ref,
 ) {
   const { t } = useTranslation();
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  // Stationery/AC must also explicitly pick a بنك/كاش account for the paid-now amount, same as
+  // Press — see PurchaseReceiptsService's paymentAccount requirement whenever paidAmount > 0.
+  const requiresPaymentAccount = isPrintingPress || isStationery || isAirConditioning;
   const queryClient = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
@@ -188,7 +191,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       unwrap<BranchBalanceSummary>(
         apiClient.get('/dashboard/summary', { params: { companyId, branchId: form.branchId || undefined } }),
       ),
-    enabled: isPrintingPress && !!companyId,
+    enabled: requiresPaymentAccount && !!companyId,
   });
 
   const filteredWarehouses = useMemo(() => {
@@ -316,7 +319,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
         // Printing Press only: the user picks Cash Treasury vs. Bank Account explicitly (see the
         // form field below). Every other company keeps the prior fixed behavior — settled through
         // the bank account, with no cash-box option — since that was never user-selectable here.
-        paymentAccount: paidAmount > 0 ? (isPrintingPress ? form.paymentAccount : 'BANK') : undefined,
+        paymentAccount: paidAmount > 0 ? (requiresPaymentAccount ? form.paymentAccount : 'BANK') : undefined,
       };
       return editingId
         ? apiClient.patch(`/inventory/purchase-receipts/${editingId}`, payload)
@@ -677,7 +680,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
             </FormField>
           </div>
 
-          {isPrintingPress && paidAmount > 0 && (
+          {requiresPaymentAccount && paidAmount > 0 && (
             <div className="col-span-2">
               <FormField label={t('purchasing.paymentSource')}>
                 {/* Live balances for the branch selected above, fetched off the same

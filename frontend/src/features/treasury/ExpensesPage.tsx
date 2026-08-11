@@ -92,7 +92,10 @@ function money(n: number): string {
 
 export function ExpensesPage() {
   const { t } = useTranslation();
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  // Stationery/AC may also settle an expense into البنك, not just الخزينة (كاش) — same requirement
+  // as Press. Branch selection stays Press-only, unrelated to this request.
+  const requiresPaymentAccount = isPrintingPress || isStationery || isAirConditioning;
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const toast = useToast();
@@ -686,7 +689,7 @@ export function ExpensesPage() {
           <FormField label={t('treasury.paymentAccount')}>
             <Select value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })}>
               <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
-              {isPrintingPress && <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>}
+              {requiresPaymentAccount && <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>}
             </Select>
           </FormField>
           {isPrintingPress && (
@@ -783,7 +786,7 @@ export function ExpensesPage() {
               onChange={(e) => setRecurringForm({ ...recurringForm, account: e.target.value })}
             >
               <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
-              {isPrintingPress && <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>}
+              {requiresPaymentAccount && <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>}
             </Select>
           </FormField>
           <div className="col-span-2">
@@ -853,7 +856,7 @@ export function ExpensesPage() {
               onChange={(e) => setExpenseForm({ ...expenseForm, account: e.target.value })}
             >
               <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
-              {isPrintingPress && <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>}
+              {requiresPaymentAccount && <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>}
             </Select>
           </FormField>
           {isPrintingPress && (

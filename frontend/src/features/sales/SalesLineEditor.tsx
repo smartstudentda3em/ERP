@@ -83,10 +83,17 @@ export function SalesLineEditor({
   lines,
   onChange,
   warnOnSellBelowCost = true,
+  layout = 'grid',
 }: {
   lines: SalesLineForm[];
   onChange: (lines: SalesLineForm[]) => void;
   warnOnSellBelowCost?: boolean;
+  /** 'table' opts into a real horizontal <table> (Product/Quantity/Unit Price/Line Total/Actions
+   * columns) instead of the default CSS-grid row layout — used only by the Sales Invoice modal for
+   * Stationery/Air Conditioning (see SalesInvoicesPage.tsx). Every other caller (Quotations, and
+   * Printing Press, which always gets its own dedicated table below regardless of this prop) is
+   * unaffected by this flag. */
+  layout?: 'grid' | 'table';
 }) {
   const { t } = useTranslation();
   // Printing Press only: the "الصنف" list sources from its own "المنتجات" sales catalog
@@ -305,6 +312,126 @@ export function SalesLineEditor({
         </Button>
         <div className="mt-3 text-end text-sm font-semibold">
           {t('common.total')}: {formatAmount(computeGrandTotal(lines))}
+        </div>
+      </div>
+    );
+  }
+
+  if (layout === 'table') {
+    return (
+      <div className="col-span-2">
+        <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+          <table className="app-table w-full">
+            <thead>
+              <tr>
+                <th>{t('fields.product')}</th>
+                <th>{t('fields.quantity')}</th>
+                <th>{t('fields.unitPrice')}</th>
+                <th>{t('fields.lineTotal')}</th>
+                <th>{t('common.actions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line, i) => {
+                const product = products.find((p) => p.id === line.productId);
+                const canSellByPackage = !!(product?.packageTypeId && product?.unitsPerPackage);
+                const unitPrice = Number(line.unitPrice || 0);
+                const quantity = Number(line.quantity || 0);
+                const pricing = product ? pricingFor(product, line.unitKind) : null;
+                const profitPerUnit = pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
+                const belowCost = profitPerUnit !== null && profitPerUnit < 0;
+
+                return (
+                  <Fragment key={i}>
+                    <tr>
+                      <td className="min-w-[220px] text-start">
+                        <Select value={line.productId} onChange={(e) => updateLine(i, { productId: e.target.value })}>
+                          <option value="">{t('actions.selectProduct')}</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>{`${p.sku} — ${p.nameEn}`}</option>
+                          ))}
+                        </Select>
+                        {canSellByPackage && (
+                          <Select
+                            className="mt-1"
+                            value={line.unitKind}
+                            onChange={(e) => switchUnitKind(i, e.target.value as UnitKind)}
+                          >
+                            <option value="UNIT">{unitName(product!.unitId)}</option>
+                            <option value="PACKAGE">{packageTypeName(product!.packageTypeId)}</option>
+                          </Select>
+                        )}
+                      </td>
+                      <td className="w-24">
+                        <Input
+                          type="number"
+                          value={line.quantity}
+                          onChange={(e) => updateLine(i, { quantity: e.target.value })}
+                        />
+                      </td>
+                      <td className="w-32">
+                        <Input
+                          className={belowCost && warnOnSellBelowCost ? 'border-yellow-500' : ''}
+                          type="number"
+                          step="0.01"
+                          title={t('fields.actualSellingPrice')}
+                          value={line.unitPrice}
+                          onChange={(e) => updateLine(i, { unitPrice: e.target.value })}
+                        />
+                      </td>
+                      <td className="w-32">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          title={t('fields.lineTotal')}
+                          value={line.lineTotal}
+                          onChange={(e) => updateLine(i, { lineTotal: e.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="text-red-600"
+                          onClick={() => onChange(lines.filter((_, idx) => idx !== i))}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                    {product && pricing && (
+                      <tr>
+                        <td colSpan={5} className="!border-t-0 !py-1 !text-start">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-[var(--text-muted)]">
+                            {pricing.suggestedPrice != null && (
+                              <span>
+                                {t('fields.suggestedPrice')}:{' '}
+                                <span className="font-medium">{formatAmount(pricing.suggestedPrice)}</span>{' '}
+                                <span className="italic">({t('fields.referenceOnly')})</span>
+                              </span>
+                            )}
+                            {profitPerUnit !== null && (
+                              <span className={belowCost ? 'font-medium text-red-600' : ''}>
+                                {t('fields.profit')}: {formatAmount(profitPerUnit)} × {quantity} ={' '}
+                                {formatAmount(profitPerUnit * quantity)}
+                              </span>
+                            )}
+                            {belowCost && warnOnSellBelowCost && (
+                              <span className="font-medium text-red-600">⚠ {t('fields.belowCostWarning')}</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2 flex justify-end">
+          <Button type="button" variant="secondary" onClick={() => onChange([...lines, emptyLine()])}>
+            {t('actions.addLine')}
+          </Button>
         </div>
       </div>
     );

@@ -880,6 +880,7 @@
     "localUnitPrice": "السعر بالعملة المحلية",
     "unitPriceLocal": "سعر الوحدة",
     "unitShippingCost": "تكلفة الشحن",
+    "finalPrice": "السعر النهائي",
     "totalPrice": "السعر الإجمالي",
     "cargoReportTitle": "تقرير شحنات الاستيراد",
     "importFileTitle": "ملف استيراد",

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { CashMovement } from './entities/cash-movement.entity';
 import { CashMovementAccount, CashMovementSourceType, CashMovementType } from '../../entities/enums';
 import { NumberingSeriesService } from '../settings/numbering-series.controller';
@@ -8,6 +8,13 @@ import { Company } from '../settings/entities/company.entity';
 
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
+
+/** Postgres unique_violation on the documentNumber column specifically (not some unrelated constraint). */
+function isDuplicateDocumentNumber(err: unknown): boolean {
+  if (!(err instanceof QueryFailedError)) return false;
+  const driverError = (err as QueryFailedError & { driverError?: { code?: string; constraint?: string } }).driverError;
+  return driverError?.code === '23505' && driverError?.constraint === 'UQ_041377ac896c542d0fabc69a8d8';
+}
 
 export interface RecordCashMovementInput {
   companyId: string;
@@ -43,13 +50,33 @@ export class CashMovementsService {
   ) {}
 
   async record(input: RecordCashMovementInput, manager?: EntityManager): Promise<CashMovement> {
-    // Reserve the number on the SAME manager/transaction as the row insert below (when the caller
-    // is already inside one, e.g. the dual-row capital-injection path) so a rolled-back insert
-    // rolls the reservation back with it too, instead of the two drifting out of sync.
+    if (manager) {
+      // Already inside the caller's transaction (e.g. the legacy dual-row capital-injection path)
+      // — reserve and insert on that same manager so a rolled-back insert rolls the reservation
+      // back with it too, instead of the two drifting out of sync.
+      return this.recordWithManager(input, manager);
+    }
+    // No caller-provided transaction: reserve the number and insert the row as ONE atomic unit of
+    // our own, retrying with a freshly-reserved number if the insert ever collides on
+    // documentNumber (e.g. a numbering series left out of sync with rows already in the table —
+    // the exact "duplicate key value violates unique constraint" failure this guards against)
+    // instead of leaving a burned reservation behind with nothing to show for it.
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        return await this.dataSource.transaction((txManager) => this.recordWithManager(input, txManager));
+      } catch (err) {
+        if (attempt === MAX_ATTEMPTS || !isDuplicateDocumentNumber(err)) throw err;
+      }
+    }
+    throw new Error('unreachable');
+  }
+
+  private async recordWithManager(input: RecordCashMovementInput, manager: EntityManager): Promise<CashMovement> {
     const documentNumber =
       (await this.numberingSeriesService.tryGetNextNumber(input.companyId, 'CASH_MOVEMENT', manager)) ??
-      `CM-${Date.now()}`;
-    const repo = manager ? manager.getRepository(CashMovement) : this.repo;
+      `CM-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const repo = manager.getRepository(CashMovement);
     const row = repo.create({
       documentNumber,
       movementDate: input.movementDate,

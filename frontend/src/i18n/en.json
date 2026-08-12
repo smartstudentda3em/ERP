@@ -880,6 +880,7 @@
     "localUnitPrice": "Unit Price (Local Currency)",
     "unitPriceLocal": "Unit Price",
     "unitShippingCost": "Shipping Cost",
+    "finalPrice": "Final Price",
     "totalPrice": "Total Price",
     "cargoReportTitle": "Import Shipments Report",
     "importFileTitle": "Import File",

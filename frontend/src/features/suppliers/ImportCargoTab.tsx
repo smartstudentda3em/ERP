@@ -245,6 +245,12 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     [allCurrenciesQuery.data, fixedLocalCurrencyCode],
   );
 
+  // The header totals (إجمالي مصاريف الشحن / إجمالي سعر الشحنة) always report in the company's own
+  // pinned currency — never derived from whatever the visible cargo rows happen to carry, so an
+  // empty or mixed-currency shipment still shows KD/EGP instead of silently falling back to the
+  // system base currency (e.g. USD).
+  const headerTotalsCurrency = fixedLocalCurrency ?? baseCurrency;
+
   const productsQuery = useQuery({
     queryKey: ['products'],
     queryFn: () => unwrap<ProductOption[]>(apiClient.get('/inventory/products')),
@@ -429,20 +435,6 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredCargo, shipmentQuantityTotals, shipmentsQuery.data]);
 
-  // إجمالي مصاريف الشحن should be denominated in whatever currency the table's own "تكلفة شحن
-  // الوحدة"/"السعر الإجمالي" columns are actually showing (each row's localCurrency, same fallback
-  // to baseCurrency those columns use) rather than always the system base currency — only falls
-  // back to baseCurrency itself when the visible rows don't all agree on one local currency, since
-  // there's no single correct unit to label a mixed-currency sum with.
-  const visibleLocalCurrency = useMemo(() => {
-    const currencies = new Map<string, Currency>();
-    for (const item of filteredCargo) {
-      const c = item.localCurrency ?? baseCurrency;
-      if (c) currencies.set(c.id, c);
-    }
-    return currencies.size === 1 ? [...currencies.values()][0] : baseCurrency;
-  }, [filteredCargo, baseCurrency]);
-
   // The report's printed/exported title becomes "ملف استيراد - [shipment name]" only when every
   // currently-visible row belongs to the same single shipment (typically because the search box
   // is being used to filter down to one) — otherwise it falls back to the generic multi-shipment
@@ -606,6 +598,7 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
       accessor: (r) => formatAmount(r.quantity),
       align: 'right',
       highlight: true,
+      width: '1%',
     },
     {
       header: t('imports.supplierUnitPrice'),
@@ -624,6 +617,17 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
         return cost === null ? '—' : money(cost, r.localCurrency ?? baseCurrency);
       },
       align: 'right',
+    },
+    {
+      // السعر النهائي للوحدة = سعر الوحدة (بالعملة المحلية) + تكلفة الشحن للوحدة.
+      header: t('imports.finalPrice'),
+      accessor: (r) => {
+        const unit = localAmount(r.unitPrice, r.conversionRate);
+        const shippingUnit = shippingCostPerUnit(r) ?? 0;
+        return money(unit + shippingUnit, r.localCurrency ?? baseCurrency);
+      },
+      align: 'right',
+      highlight: true,
     },
     {
       // السعر الإجمالي = (سعر الوحدة + تكلفة الشحن) × الكمية.
@@ -760,13 +764,13 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
 
         <div className="cargo-print-summary">
           <span className="cargo-print-summary-badge">
-            {t('imports.totalShippingExpenses')}: {money(visibleShippingExpensesTotal, visibleLocalCurrency)}
+            {t('imports.totalShippingExpenses')}: {money(visibleShippingExpensesTotal, headerTotalsCurrency)}
           </span>
           <span className="cargo-print-summary-badge">
             {t('imports.totalUnits')}: {formatAmount(visibleTotalQuantity)}
           </span>
           <span className="cargo-print-summary-badge">
-            {t('imports.totalShipmentPrice')}: {money(visibleTotalPriceSum, visibleLocalCurrency)}
+            {t('imports.totalShipmentPrice')}: {money(visibleTotalPriceSum, headerTotalsCurrency)}
           </span>
         </div>
 
@@ -787,7 +791,7 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
             <div className="flex flex-nowrap items-center justify-self-center gap-3">
               <div className="flex flex-row min-w-[200px] items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm">
                 <span className="whitespace-nowrap text-[var(--text-muted)]">{t('imports.totalShippingExpenses')}</span>
-                <span className="whitespace-nowrap font-semibold">{money(visibleShippingExpensesTotal, visibleLocalCurrency)}</span>
+                <span className="whitespace-nowrap font-semibold">{money(visibleShippingExpensesTotal, headerTotalsCurrency)}</span>
               </div>
               <div className="flex flex-row min-w-[160px] items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm">
                 <span className="whitespace-nowrap text-[var(--text-muted)]">{t('imports.totalUnits')}</span>
@@ -795,7 +799,7 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
               </div>
               <div className="flex flex-row min-w-[200px] items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm">
                 <span className="whitespace-nowrap text-[var(--text-muted)]">{t('imports.totalShipmentPrice')}</span>
-                <span className="whitespace-nowrap font-semibold">{money(visibleTotalPriceSum, visibleLocalCurrency)}</span>
+                <span className="whitespace-nowrap font-semibold">{money(visibleTotalPriceSum, headerTotalsCurrency)}</span>
               </div>
             </div>
             <Button className="justify-self-end" onClick={openCreate}>

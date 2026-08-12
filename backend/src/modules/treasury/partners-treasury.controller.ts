@@ -17,6 +17,7 @@ import { Partner } from '../settings/entities/partner.entity';
 import { CashMovement } from './entities/cash-movement.entity';
 import { Company } from '../settings/entities/company.entity';
 import { SalesRepresentative } from '../parties/entities/sales-representative.entity';
+import { assertPaymentAccountProvided, requiresPaymentAccountSelection } from '../../common/utils/payment-account.util';
 
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
@@ -55,36 +56,41 @@ export class PartnersTreasuryController {
       throw new BadRequestException('Selected partner was not found or is not active');
     }
 
-    // Printing Press: the user explicitly picks which real account the money actually lands in
-    // (CASH or BANK) — a single row covers both the treasury liquidity effect and the partner's
-    // equity attribution, no linked memo row needed.
-    if (dto.account) {
-      const company = await this.companiesRepo.findOne({ where: { id: companyId } });
-      if (company?.code === PRINTING_PRESS_COMPANY_CODE) {
-        // The partner's own branchId (when set) is authoritative — a branch-bound partner's
-        // contribution can only ever be attributed to their own branch, same rule as a dividend.
-        return this.cashMovementsService.record({
-          companyId,
-          branchId: partner.branchId ?? dto.branchId ?? null,
-          movementDate: dto.movementDate,
-          type: CashMovementType.INCOME,
-          account: dto.account,
-          amount: dto.amount,
-          sourceType: CashMovementSourceType.CAPITAL_INJECTION,
-          category: 'Capital Injection',
-          partnerId: dto.partnerId,
-          description: dto.description,
-          createdById: user.userId,
-        });
-      }
+    // PRESS/STAT/AC (every company that exists today — see PAYMENT_ACCOUNT_REQUIRED_COMPANY_CODES):
+    // the user explicitly picks which real account the money actually lands in (الخزنة النقدي /
+    // الحساب البنكي) — a single row covers both that company's own treasury liquidity effect and
+    // the partner's equity attribution, no linked memo row needed. Each company's own CASH/BANK
+    // balance is unaffected by another company's injections, since `record()` is already scoped by
+    // this companyId end to end.
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    assertPaymentAccountProvided(company?.code, dto.account);
+
+    if (requiresPaymentAccountSelection(company?.code)) {
+      // The partner's own branchId (when set) is authoritative — a branch-bound partner's
+      // contribution can only ever be attributed to their own branch, same rule as a dividend.
+      return this.cashMovementsService.record({
+        companyId,
+        branchId: partner.branchId ?? dto.branchId ?? null,
+        movementDate: dto.movementDate,
+        type: CashMovementType.INCOME,
+        account: dto.account!,
+        amount: dto.amount,
+        sourceType: CashMovementSourceType.CAPITAL_INJECTION,
+        category: 'Capital Injection',
+        partnerId: dto.partnerId,
+        description: dto.description,
+        createdById: user.userId,
+      });
     }
 
-    // A contribution is real money ONE partner puts in from their own pocket — never split across
-    // the others by ownership share the way a dividend payout is, since they didn't pay any of it.
-    // It lands in TWO places at once, in one transaction: the actual treasury liquidity (CASH,
-    // unattributed) and that one partner's equity row (BANK, partnerId) for the FULL amount — the
-    // CASH row is linked back via sourceId so editing/deleting the visible contribution keeps both
-    // in sync.
+    // Legacy dual-row path — unreachable today (the three companies above all require an explicit
+    // account), kept only for a hypothetical future company not added to
+    // PAYMENT_ACCOUNT_REQUIRED_COMPANY_CODES. A contribution is real money ONE partner puts in
+    // from their own pocket — never split across the others by ownership share the way a dividend
+    // payout is, since they didn't pay any of it. It lands in TWO places at once, in one
+    // transaction: the actual treasury liquidity (CASH, unattributed) and that one partner's
+    // equity row (BANK, partnerId) for the FULL amount — the CASH row is linked back via sourceId
+    // so editing/deleting the visible contribution keeps both in sync.
     return this.dataSource.transaction(async (manager) => {
       const cashMovement = await this.cashMovementsService.record(
         {

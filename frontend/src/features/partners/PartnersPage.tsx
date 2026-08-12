@@ -134,7 +134,12 @@ export function PartnersPage() {
     queryFn: () => unwrap<Company[]>(apiClient.get('/settings/companies')),
   });
   const company = companiesQuery.data?.find((c) => c.id === companyId) ?? companiesQuery.data?.[0];
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  // PRESS/STAT/AC (every company that exists today) all require the "جهة الإيداع" selector on
+  // capital injections, matching PAYMENT_ACCOUNT_REQUIRED_COMPANY_CODES on the backend — only the
+  // branch attribution stays isPrintingPress-only below, since branches are a Press-specific
+  // concept, not part of this requirement.
+  const requiresPaymentAccount = isPrintingPress || isStationery || isAirConditioning;
 
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
@@ -245,7 +250,7 @@ export function PartnersPage() {
         partnerId: contribForm.partnerId,
         amount: contribAmount,
         description: contribForm.description || undefined,
-        account: isPrintingPress ? contribForm.account : undefined,
+        account: requiresPaymentAccount ? contribForm.account : undefined,
         branchId: isPrintingPress ? contribForm.branchId || undefined : undefined,
       }),
     onSuccess: () => {
@@ -278,7 +283,7 @@ export function PartnersPage() {
           partnerId: editContribForm.partnerId,
           amount: Number(editContribForm.amount),
           description: editContribForm.description || undefined,
-          account: isPrintingPress ? editContribForm.account : undefined,
+          account: requiresPaymentAccount ? editContribForm.account : undefined,
           branchId: isPrintingPress ? editContribForm.branchId || undefined : undefined,
         },
         { params: { companyId } },
@@ -327,7 +332,7 @@ export function PartnersPage() {
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('fields.partnerName'), accessor: (r) => r.partnerName },
     { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
-    ...(isPrintingPress
+    ...(requiresPaymentAccount
       ? [
           {
             header: t('fields.depositDestination'),
@@ -943,9 +948,10 @@ export function PartnersPage() {
               onChange={(e) => setContribForm({ ...contribForm, amount: e.target.value })}
             />
           </FormField>
-          {isPrintingPress && (
+          {requiresPaymentAccount && (
             <FormField label={t('fields.depositDestination')}>
               <Select
+                required
                 value={contribForm.account}
                 onChange={(e) => setContribForm({ ...contribForm, account: e.target.value as 'CASH' | 'BANK' })}
               >
@@ -1043,9 +1049,10 @@ export function PartnersPage() {
               onChange={(e) => setEditContribForm({ ...editContribForm, amount: e.target.value })}
             />
           </FormField>
-          {isPrintingPress && (
+          {requiresPaymentAccount && (
             <FormField label={t('fields.depositDestination')}>
               <Select
+                required
                 value={editContribForm.account}
                 onChange={(e) => setEditContribForm({ ...editContribForm, account: e.target.value as 'CASH' | 'BANK' })}
               >

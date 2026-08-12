@@ -11,6 +11,8 @@
   --table-header-bg: #eef1f6;
   --table-stripe: rgba(15, 23, 42, 0.025);
   --table-hover: rgba(15, 23, 42, 0.05);
+  --table-highlight-bg: #e3f2fd;
+  --table-highlight-border: #90caf9;
 }
 
 .dark {
@@ -22,6 +24,8 @@
   --table-header-bg: #1a2333;
   --table-stripe: rgba(255, 255, 255, 0.02);
   --table-hover: rgba(255, 255, 255, 0.06);
+  --table-highlight-bg: rgba(59, 130, 246, 0.16);
+  --table-highlight-border: rgba(96, 165, 250, 0.5);
 }
 
 html,
@@ -83,6 +87,17 @@ body {
 .app-table tfoot td {
   background-color: var(--table-header-bg);
   font-weight: 700;
+}
+
+/* Opt-in per-column emphasis (Column.highlight in DataTable) — a light/dark-aware background plus
+   bold text and a distinct side border so a column stays visually identifiable at a glance while
+   scrolling a wide table, without needing its own bespoke styling per screen. */
+.app-table th.col-highlight,
+.app-table td.col-highlight {
+  background-color: var(--table-highlight-bg);
+  font-weight: 700;
+  color: var(--text);
+  border-inline: 1.5px solid var(--table-highlight-border);
 }
 
 ::-webkit-scrollbar {

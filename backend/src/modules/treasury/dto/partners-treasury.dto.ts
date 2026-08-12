@@ -8,7 +8,9 @@ export class CreateCapitalInjectionDto {
   /** The one partner actually paying this in from their own pocket — never split across the others. */
   @IsUUID() partnerId: string;
   @IsOptional() @IsString() description?: string;
-  /** Printing Press only: which real account this contribution lands in (CASH or BANK). Ignored by every other company, which keeps the legacy CASH+BANK-memo double row. */
+  /** Required for PRESS/STAT/AC (see PAYMENT_ACCOUNT_REQUIRED_COMPANY_CODES): which real account
+   * — الخزنة النقدي (CASH) or الحساب البنكي (BANK) — this contribution lands in. Enforced server-side
+   * by assertPaymentAccountProvided, not just a UI nicety. */
   @IsOptional() @IsEnum(CashMovementAccount) account?: CashMovementAccount;
   /** Printing Press only: which branch this contribution is attributed to. Ignored by every other company. */
   @IsOptional() @IsUUID() branchId?: string;
@@ -19,7 +21,7 @@ export class UpdateCapitalInjectionDto {
   @IsNumber() @Min(0.01) amount: number;
   @IsOptional() @IsUUID() partnerId?: string;
   @IsOptional() @IsString() description?: string;
-  /** Printing Press only: lets an edited contribution move to the other account. */
+  /** Required for PRESS/STAT/AC: lets an edited contribution move to the other account. */
   @IsOptional() @IsEnum(CashMovementAccount) account?: CashMovementAccount;
   /** Printing Press only: lets an edited contribution move to another branch. */
   @IsOptional() @IsUUID() branchId?: string;

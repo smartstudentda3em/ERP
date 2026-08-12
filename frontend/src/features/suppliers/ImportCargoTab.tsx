@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
+import { useActiveCompany, STATIONERY_COMPANY_CODE, AIR_CONDITIONING_COMPANY_CODE } from '../../lib/use-active-company';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input, FormField, Select } from '../../components/ui/Input';
@@ -104,12 +105,6 @@ interface ShipmentOption {
   totalCost: number;
 }
 
-interface Company {
-  id: string;
-  nameAr?: string | null;
-  nameEn?: string | null;
-}
-
 interface CargoItem {
   id: string;
   productId: string;
@@ -140,6 +135,14 @@ const emptyForm = {
   conversionRate: '',
   localCurrencyId: '',
   specifications: '',
+};
+
+/** "العملة المحلية" is pinned per company on this screen (not user-selectable) to keep every cargo
+ * line's local-currency figures consistent — القرطاسية always reports in KWD, التكييفات always in
+ * EGP. Matches the KWD/EGP currency rows seeded per-company in run-seed.ts. */
+const FIXED_LOCAL_CURRENCY_CODE_BY_COMPANY: Record<string, string> = {
+  [STATIONERY_COMPANY_CODE]: 'KWD',
+  [AIR_CONDITIONING_COMPANY_CODE]: 'EGP',
 };
 
 /** Print/PDF are triggered from SuppliersPage's unified top bar (opposite the "الاستيراد" title),
@@ -183,11 +186,10 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     enabled: !!companyId,
   });
 
-  const companiesQuery = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => unwrap<Company[]>(apiClient.get('/settings/companies')),
-  });
-  const company = companiesQuery.data?.find((c) => c.id === companyId) ?? companiesQuery.data?.[0];
+  // /auth/my-companies (not the settings.company.view-gated /settings/companies) — same reasoning
+  // as every other Press/AC/STAT-conditional screen in this codebase, so this never silently 403s
+  // for a role that lacks Settings access.
+  const { company } = useActiveCompany();
 
   // Needed for the table's local-currency columns, so unlike the modal's dropdown data these are
   // fetched unconditionally rather than gated behind modalOpen.
@@ -204,6 +206,16 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
   const baseCurrency = useMemo(
     () => (allCurrenciesQuery.data ?? []).find((c) => c.isBaseCurrency) ?? null,
     [allCurrenciesQuery.data],
+  );
+
+  // The active company's pinned "العملة المحلية" row (KWD for القرطاسية, EGP للتكييفات) — looked
+  // up by code rather than assumed by position, so it resolves correctly regardless of the
+  // company's own currency list ordering. null only while still loading or for a company this
+  // screen isn't scoped to (this tab itself only renders for STAT/AC — see SuppliersPage.tsx).
+  const fixedLocalCurrencyCode = company?.code ? FIXED_LOCAL_CURRENCY_CODE_BY_COMPANY[company.code] : undefined;
+  const fixedLocalCurrency = useMemo(
+    () => (allCurrenciesQuery.data ?? []).find((c) => c.code === fixedLocalCurrencyCode) ?? null,
+    [allCurrenciesQuery.data, fixedLocalCurrencyCode],
   );
 
   const productsQuery = useQuery({
@@ -278,6 +290,14 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     return total;
   }, [filteredCargo, shipmentsQuery.data]);
 
+  // إجمالي عدد الوحدات: plain sum of the الكمية column across whatever rows are currently visible
+  // (post-search-filter) — recomputes automatically whenever filteredCargo changes, same pattern as
+  // the shipping-expenses/total-price cards below rather than a separately-tracked counter.
+  const visibleTotalQuantity = useMemo(
+    () => filteredCargo.reduce((sum, item) => sum + Number(item.quantity ?? 0), 0),
+    [filteredCargo],
+  );
+
   // إجمالي سعر الشحنة: live sum of every visible row's السعر الإجمالي column value — same formula
   // as that column's own accessor below, recomputed here so the card stays in sync automatically
   // whenever a cargo line is added, edited, or deleted (filteredCargo/shipmentQuantityTotals
@@ -347,14 +367,42 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
   // العملة المحلية المختارة في النموذج — falls back to the system's base currency so the preview
   // still shows something sensible before the user has touched the new dropdown.
   const selectedLocalCurrency = useMemo(
-    () => (allCurrenciesQuery.data ?? []).find((c) => c.id === form.localCurrencyId) ?? baseCurrency,
-    [allCurrenciesQuery.data, form.localCurrencyId, baseCurrency],
+    () => fixedLocalCurrency ?? (allCurrenciesQuery.data ?? []).find((c) => c.id === form.localCurrencyId) ?? baseCurrency,
+    [fixedLocalCurrency, allCurrenciesQuery.data, form.localCurrencyId, baseCurrency],
   );
 
   // السعر بالعملة المحلية = سعر المورد × معامل التحويل — a live preview computed straight from the
   // two form fields; "—" only until a unit price is entered, defaulting the rate to 1 like the
   // saved value will, so the preview never disagrees with what actually gets stored.
   const localUnitPricePreview = form.unitPrice ? localAmount(form.unitPrice, form.conversionRate) : null;
+
+  // تكلفة الشحن preview for the السعر النهائي field below — same formula the table column uses
+  // (shipment's total cost ÷ shipment's total quantity across all its lines), but recomputed from
+  // this in-progress form instead of only already-saved rows: sums every OTHER saved line under the
+  // selected shipment (excluding the row being edited, so its old quantity isn't double-counted)
+  // plus whatever quantity is currently typed into the form, so the preview reacts as the user types
+  // instead of only reflecting the shipment's state before this line was touched.
+  const previewShipmentQuantityTotal = useMemo(() => {
+    if (!form.shipmentId) return 0;
+    let total = Number(form.quantity || 0);
+    for (const item of cargoQuery.data ?? []) {
+      if (item.shipmentId !== form.shipmentId) continue;
+      if (editingId && item.id === editingId) continue;
+      total += Number(item.quantity ?? 0);
+    }
+    return total;
+  }, [cargoQuery.data, form.shipmentId, form.quantity, editingId]);
+
+  const shippingCostPerUnitPreview =
+    form.shipmentId && previewShipmentQuantityTotal > 0
+      ? Number((shipmentsQuery.data ?? []).find((s) => s.id === form.shipmentId)?.totalCost ?? 0) /
+        previewShipmentQuantityTotal
+      : null;
+
+  // السعر النهائي = سعر الوحدة (بالعملة المحلية) + تكلفة الشحن — mirrors the table column's own
+  // formula so the modal preview never disagrees with what the row will show once saved.
+  const finalPricePreview =
+    localUnitPricePreview !== null ? localUnitPricePreview + (shippingCostPerUnitPreview ?? 0) : null;
 
   const isValid =
     !!form.productId && !!form.supplierId && !!form.shipmentId && !!form.quantity && !!form.unitPrice;
@@ -391,7 +439,7 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
 
   function openCreate() {
     setEditingId(null);
-    setForm({ ...emptyForm, localCurrencyId: baseCurrency?.id ?? '' });
+    setForm({ ...emptyForm, localCurrencyId: fixedLocalCurrency?.id ?? baseCurrency?.id ?? '' });
     setModalOpen(true);
   }
 
@@ -405,7 +453,10 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
       unitPrice: String(row.unitPrice),
       // Show what was actually saved on this line, not a freshly re-derived guess.
       conversionRate: String(row.conversionRate ?? 1),
-      localCurrencyId: row.localCurrencyId ?? baseCurrency?.id ?? '',
+      // العملة المحلية is pinned per company (not user-editable — see the disabled field below), so
+      // re-saving an older line here also normalizes it onto the company's fixed currency instead
+      // of preserving whatever it happened to be saved with before this was locked down.
+      localCurrencyId: fixedLocalCurrency?.id ?? row.localCurrencyId ?? baseCurrency?.id ?? '',
       specifications: row.specifications ?? '',
     });
     setModalOpen(true);
@@ -456,7 +507,12 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     { header: t('imports.shipmentName'), accessor: (r) => r.shipment?.shipmentName ?? '—' },
     { header: t('fields.product'), accessor: (r) => productLabel(r.product) },
     { header: t('fields.supplier'), accessor: (r) => r.supplier?.companyName ?? '—' },
-    { header: t('imports.quantity'), accessor: (r) => formatAmount(r.quantity), align: 'right' },
+    {
+      header: t('imports.quantity'),
+      accessor: (r) => formatAmount(r.quantity),
+      align: 'right',
+      highlight: true,
+    },
     {
       header: t('imports.supplierUnitPrice'),
       accessor: (r) => money(Number(r.unitPrice ?? 0), r.currency),
@@ -474,6 +530,18 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
         return cost === null ? '—' : money(cost, r.localCurrency ?? baseCurrency);
       },
       align: 'right',
+    },
+    {
+      // السعر النهائي = سعر الوحدة + تكلفة الشحن — per-unit figure, distinct from السعر الإجمالي
+      // which multiplies this same sum by the line's quantity.
+      header: t('imports.finalPrice'),
+      accessor: (r) => {
+        const unit = localAmount(r.unitPrice, r.conversionRate);
+        const shippingUnit = shippingCostPerUnit(r) ?? 0;
+        return money(unit + shippingUnit, r.localCurrency ?? baseCurrency);
+      },
+      align: 'right',
+      highlight: true,
     },
     {
       header: t('imports.totalPrice'),
@@ -533,6 +601,9 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
             {t('imports.totalShippingExpenses')}: {money(visibleShippingExpensesTotal, visibleLocalCurrency)}
           </span>
           <span className="cargo-print-summary-badge">
+            {t('imports.totalUnits')}: {formatAmount(visibleTotalQuantity)}
+          </span>
+          <span className="cargo-print-summary-badge">
             {t('imports.totalShipmentPrice')}: {money(visibleTotalPriceSum, visibleLocalCurrency)}
           </span>
         </div>
@@ -547,14 +618,18 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
               onChange={(e) => setCargoSearch(e.target.value)}
             />
             {/* إجمالي مصاريف الشحن shifted toward the (RTL) right of this middle slot to make room
-                beside it for إجمالي سعر الشحنة — both live totals now sit as a pair of cards.
-                flex-nowrap on the pair (so the two cards themselves never stack onto two lines)
+                beside it for إجمالي عدد الوحدات and إجمالي سعر الشحنة — all three live totals now
+                sit as a row of cards. flex-nowrap (so the row never stacks onto multiple lines)
                 plus whitespace-nowrap + a wider min-width/padding on each card keeps its own
                 label+amount on one line even at the widest currency/amount combinations. */}
             <div className="flex flex-nowrap items-center justify-self-center gap-3">
               <div className="flex flex-row min-w-[200px] items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm">
                 <span className="whitespace-nowrap text-[var(--text-muted)]">{t('imports.totalShippingExpenses')}</span>
                 <span className="whitespace-nowrap font-semibold">{money(visibleShippingExpensesTotal, visibleLocalCurrency)}</span>
+              </div>
+              <div className="flex flex-row min-w-[160px] items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm">
+                <span className="whitespace-nowrap text-[var(--text-muted)]">{t('imports.totalUnits')}</span>
+                <span className="whitespace-nowrap font-semibold">{formatAmount(visibleTotalQuantity)}</span>
               </div>
               <div className="flex flex-row min-w-[200px] items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm">
                 <span className="whitespace-nowrap text-[var(--text-muted)]">{t('imports.totalShipmentPrice')}</span>
@@ -663,23 +738,25 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
             />
           </FormField>
           <FormField label={t('imports.localCurrency')}>
-            <Select
-              value={form.localCurrencyId}
-              onChange={(e) => setForm({ ...form, localCurrencyId: e.target.value })}
-            >
-              <option value="">—</option>
-              {(allCurrenciesQuery.data ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {currencyLabel(c)} — {c.nameEn}
-                </option>
-              ))}
-            </Select>
+            {/* Pinned per company (KWD for القرطاسية, EGP للتكييفات) rather than user-selectable —
+                a free-choice dropdown here was the exact source of the mixed-currency inconsistency
+                this field now exists to prevent, so it's shown read-only like the price previews
+                below it instead of as an interactive control. */}
+            <Input disabled value={fixedLocalCurrency ? `${currencyLabel(fixedLocalCurrency)} — ${fixedLocalCurrency.nameEn}` : '—'} />
           </FormField>
           <div className="col-span-2">
             <FormField label={t('imports.localUnitPrice')}>
               <Input
                 disabled
                 value={localUnitPricePreview === null ? '—' : money(localUnitPricePreview, selectedLocalCurrency)}
+              />
+            </FormField>
+          </div>
+          <div className="col-span-2">
+            <FormField label={t('imports.finalPrice')}>
+              <Input
+                disabled
+                value={finalPricePreview === null ? '—' : money(finalPricePreview, selectedLocalCurrency)}
               />
             </FormField>
           </div>

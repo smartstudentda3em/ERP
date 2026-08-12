@@ -508,10 +508,17 @@ async function main() {
       );
     }
 
-    for (const c of [
+    const currencyDefs = [
       { code: 'USD', nameEn: 'US Dollar', nameAr: 'دولار أمريكي', symbol: '$', isBaseCurrency: true },
       { code: 'EGP', nameEn: 'Egyptian Pound', nameAr: 'جنيه مصري', symbol: 'E£', isBaseCurrency: false },
-    ]) {
+      // القرطاسية ومستلزمات الطباعة's Import/Cargo screen pins "العملة المحلية" to KWD for this
+      // company only — see STAT_LOCAL_CURRENCY_CODE in ImportCargoTab.tsx, which looks this row up
+      // by code rather than assuming a fixed id.
+      ...(def.code === 'STAT'
+        ? [{ code: 'KWD', nameEn: 'Kuwaiti Dinar', nameAr: 'دينار كويتي', symbol: 'KD', isBaseCurrency: false }]
+        : []),
+    ];
+    for (const c of currencyDefs) {
       const existing = await currencyRepo.findOne({ where: { companyId: company.id, code: c.code } });
       if (!existing) await currencyRepo.save(currencyRepo.create({ ...c, companyId: company.id }));
     }

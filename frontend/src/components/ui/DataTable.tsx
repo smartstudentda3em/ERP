@@ -9,6 +9,10 @@ export interface Column<T> {
   sortKey?: string;
   /** Optional CSS width (e.g. '1%', '12rem') for columns that need to be narrower/wider than their neighbors. */
   width?: string;
+  /** Opt-in visual emphasis (light/dark-aware background, bold text, distinct border) for a column
+   * the user needs to spot at a glance while scanning a wide table — applies to both the header and
+   * every data cell via the shared `.col-highlight` rule in index.css. */
+  highlight?: boolean;
 }
 
 export interface ServerPagination {
@@ -97,10 +101,13 @@ export function DataTable<T>({
               {columns.map((col, i) => {
                 const sortable = !!sort && !!col.sortKey;
                 const active = sortable && sort!.sortBy === col.sortKey;
+                const thClassNames = [sortable ? 'cursor-pointer select-none' : '', col.highlight ? 'col-highlight' : '']
+                  .filter(Boolean)
+                  .join(' ');
                 return (
                   <th
                     key={i}
-                    className={sortable ? 'cursor-pointer select-none' : undefined}
+                    className={thClassNames || undefined}
                     onClick={() => sortable && sort!.onSortChange(col.sortKey!)}
                   >
                     <span className="inline-flex items-center justify-center gap-1">
@@ -133,7 +140,9 @@ export function DataTable<T>({
                   onClick={() => onRowClick?.(row)}
                 >
                   {columns.map((col, i) => (
-                    <td key={i}>{col.accessor(row)}</td>
+                    <td key={i} className={col.highlight ? 'col-highlight' : undefined}>
+                      {col.accessor(row)}
+                    </td>
                   ))}
                 </tr>
               ))

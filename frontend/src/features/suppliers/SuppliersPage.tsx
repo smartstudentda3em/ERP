@@ -61,6 +61,9 @@ export function SuppliersPage() {
   }
   const cargoRef = useRef<ImportCargoTabHandle>(null);
   const [cargoPdfLoading, setCargoPdfLoading] = useState(false);
+  // The Cargo tab now opens on a master shipment list (nothing to print there) before drilling
+  // into one shipment's own cargo — only show the shared print/PDF buttons once it's drilled in.
+  const [cargoInDetailView, setCargoInDetailView] = useState(false);
   const purchasingRef = useRef<PurchasingTabHandle>(null);
   const [purchasingPdfLoading, setPurchasingPdfLoading] = useState(false);
   const productsRef = useRef<ProductsTabHandle>(null);
@@ -96,7 +99,13 @@ export function SuppliersPage() {
   }, [isPrintingPress, isCompanyLoading, tab, purchasingTabRestricted]);
 
   const printHandle =
-    tab === 'cargo' ? cargoRef : tab === 'purchasing' ? purchasingRef : tab === 'products' ? productsRef : null;
+    tab === 'cargo' && cargoInDetailView
+      ? cargoRef
+      : tab === 'purchasing'
+        ? purchasingRef
+        : tab === 'products'
+          ? productsRef
+          : null;
   const printPdfLoading =
     tab === 'cargo' ? cargoPdfLoading : tab === 'purchasing' ? purchasingPdfLoading : productsPdfLoading;
 
@@ -131,7 +140,9 @@ export function SuppliersPage() {
       </div>
 
       {tab === 'suppliers' && <SuppliersTab />}
-      {tab === 'cargo' && <ImportCargoTab ref={cargoRef} onPdfLoadingChange={setCargoPdfLoading} />}
+      {tab === 'cargo' && (
+        <ImportCargoTab ref={cargoRef} onPdfLoadingChange={setCargoPdfLoading} onDetailViewChange={setCargoInDetailView} />
+      )}
       {tab === 'shipping' && <ShippingTab />}
       {tab === 'shipmentPayments' && <ShipmentPaymentsTab />}
       {tab === 'products' && <ProductsTab ref={productsRef} onPdfLoadingChange={setProductsPdfLoading} />}

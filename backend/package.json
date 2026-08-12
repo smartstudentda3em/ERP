@@ -23,7 +23,8 @@
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeds/run-seed.ts",
     "seed:demo": "ts-node -r tsconfig-paths/register src/database/seeds/demo-data-seed.ts",
-    "fix:payment-account-mapping": "ts-node -r tsconfig-paths/register src/database/fix-payment-account-mapping.ts"
+    "fix:payment-account-mapping": "ts-node -r tsconfig-paths/register src/database/fix-payment-account-mapping.ts",
+    "verify:cargo-shipment-links": "ts-node -r tsconfig-paths/register src/database/verify-cargo-shipment-links.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",

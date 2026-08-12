@@ -1,8 +1,16 @@
-import { Column, Entity } from "typeorm";
+import { Column, Entity, Unique } from "typeorm";
 import { BaseEntity } from "../../../entities/base.entity";
 import { NumberingResetPeriod } from "../../../entities/enums";
 
+/**
+ * One series per company+documentType — without this, two rows for the same
+ * (companyId, documentType) can coexist (e.g. created via a race in the Settings UI), and
+ * reserveNumber()'s unordered `.getOne()` would then alternate between their independently
+ * drifting counters, eventually reserving the same formatted number twice and blowing up
+ * cash_movements' documentNumber unique constraint on save.
+ */
 @Entity("numbering_series")
+@Unique(["companyId", "documentType"])
 export class NumberingSeries extends BaseEntity {
   @Column("uuid")
   companyId: string;

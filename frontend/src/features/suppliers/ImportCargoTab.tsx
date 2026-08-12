@@ -7,7 +7,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { useActiveCompany, STATIONERY_COMPANY_CODE, AIR_CONDITIONING_COMPANY_CODE } from '../../lib/use-active-company';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
-import { Input, FormField, Select } from '../../components/ui/Input';
+import { Input, FormField } from '../../components/ui/Input';
 import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
@@ -101,6 +101,8 @@ interface SupplierOption {
 interface ShipmentOption {
   id: string;
   shipmentName: string;
+  shipmentDate: string | null;
+  shippingCompanyName: string;
   /** Live sum of the shipment's expense lines — computed server-side, never a stored figure. */
   totalCost: number;
 }
@@ -137,6 +139,12 @@ const emptyForm = {
   specifications: '',
 };
 
+const emptyShipmentForm = {
+  shipmentName: '',
+  shipmentDate: '',
+  shippingCompanyName: '',
+};
+
 /** "العملة المحلية" is pinned per company on this screen (not user-selectable) to keep every cargo
  * line's local-currency figures consistent — القرطاسية always reports in KWD, التكييفات always in
  * EGP. Matches the KWD/EGP currency rows seeded per-company in run-seed.ts. */
@@ -157,10 +165,14 @@ interface ImportCargoTabProps {
   /** Lets the parent's "تحميل PDF" button (which lives outside this component) disable itself
    * for the duration of the export, since `pdfLoading` itself can't be read through a ref. */
   onPdfLoadingChange?: (loading: boolean) => void;
+  /** The parent's print/PDF buttons only make sense while a specific shipment's cargo is open
+   * (the master shipment list has nothing to export) — this lets SuppliersPage's shared top bar
+   * hide them while this tab is showing the master view. */
+  onDetailViewChange?: (inDetailView: boolean) => void;
 }
 
 export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabProps>(function ImportCargoTab(
-  { onPdfLoadingChange },
+  { onPdfLoadingChange, onDetailViewChange },
   ref,
 ) {
   const { t } = useTranslation();
@@ -176,9 +188,24 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
   // buttons) vanishes from both — mirrors the same pattern used on the invoice/statement pages.
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
+  // null = master view (shipment list). Set = detail view, scoped to one shipment's cargo items.
+  // Resets to null whenever this tab remounts (SuppliersPage renders it conditionally on the outer
+  // tab switch), which is an acceptable, simple default rather than persisting to the URL.
+  const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null);
+  const [shipmentModalOpen, setShipmentModalOpen] = useState(false);
+  const [editingShipmentId, setEditingShipmentId] = useState<string | null>(null);
+  const [shipmentForm, setShipmentForm] = useState(emptyShipmentForm);
+  // Row click on the cargo table opens a read-only details view for that one line — separate from
+  // openEdit()'s modal, which stays reserved for the explicit "تعديل" action.
+  const [detailItem, setDetailItem] = useState<CargoItem | null>(null);
+
   useEffect(() => {
     onPdfLoadingChange?.(pdfLoading);
   }, [pdfLoading, onPdfLoadingChange]);
+
+  useEffect(() => {
+    onDetailViewChange?.(selectedShipmentId !== null);
+  }, [selectedShipmentId, onDetailViewChange]);
 
   const cargoQuery = useQuery({
     queryKey: ['import-cargo-items', companyId],
@@ -239,6 +266,92 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     enabled: !!companyId,
   });
 
+  const selectedShipment = useMemo(
+    () => (shipmentsQuery.data ?? []).find((s) => s.id === selectedShipmentId) ?? null,
+    [shipmentsQuery.data, selectedShipmentId],
+  );
+
+  // تعديل/حذف on the master shipment list reuse the exact same /imports/shipments endpoints
+  // ShippingTab.tsx's own CRUD calls — this tab just offers a second entry point into them so a
+  // shipment can be corrected without leaving the "البضاعة" tab.
+  const saveShipmentMutation = useMutation({
+    mutationFn: () => {
+      const payload = {
+        companyId,
+        shipmentName: shipmentForm.shipmentName,
+        shipmentDate: shipmentForm.shipmentDate || undefined,
+        shippingCompanyName: shipmentForm.shippingCompanyName,
+      };
+      return editingShipmentId
+        ? apiClient.patch(`/imports/shipments/${editingShipmentId}`, payload)
+        : apiClient.post('/imports/shipments', payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shipments'] });
+      setShipmentModalOpen(false);
+      setEditingShipmentId(null);
+      setShipmentForm(emptyShipmentForm);
+    },
+  });
+
+  const deleteShipmentMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/imports/shipments/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['shipments'] }),
+  });
+
+  function openEditShipment(e: MouseEvent, row: ShipmentOption) {
+    e.stopPropagation();
+    setEditingShipmentId(row.id);
+    setShipmentForm({
+      shipmentName: row.shipmentName,
+      shipmentDate: row.shipmentDate ?? '',
+      shippingCompanyName: row.shippingCompanyName,
+    });
+    setShipmentModalOpen(true);
+  }
+
+  async function handleDeleteShipment(e: MouseEvent, row: ShipmentOption) {
+    e.stopPropagation();
+    const ok = await confirm({ message: t('common.confirmDelete', { name: row.shipmentName }) });
+    if (ok) deleteShipmentMutation.mutate(row.id);
+  }
+
+  const shipmentColumns: Column<ShipmentOption>[] = [
+    { header: t('imports.shipmentName'), accessor: (r) => r.shipmentName },
+    { header: t('imports.shipmentDate'), accessor: (r) => r.shipmentDate ?? '—' },
+    { header: t('imports.shippingCompany'), accessor: (r) => r.shippingCompanyName },
+    { header: t('imports.totalShipmentExpenses'), accessor: (r) => formatAmount(r.totalCost), align: 'right' },
+    {
+      header: t('common.actions'),
+      accessor: (r) => (
+        <div className="flex justify-center gap-3">
+          <button
+            type="button"
+            className="text-primary-600 hover:underline"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedShipmentId(r.id);
+            }}
+          >
+            {t('imports.viewManageCargo')}
+          </button>
+          <button type="button" className="text-primary-600 hover:underline" onClick={(e) => openEditShipment(e, r)}>
+            {t('common.edit')}
+          </button>
+          <button
+            type="button"
+            className="text-red-600 hover:underline"
+            disabled={deleteShipmentMutation.isPending}
+            onClick={(e) => handleDeleteShipment(e, r)}
+          >
+            {t('common.delete')}
+          </button>
+        </div>
+      ),
+      align: 'center',
+    },
+  ];
+
   // إجمالي كمية الوحدات لكل شحنة — summed across every cargo line sharing that shipmentId, so the
   // shipment's total expenses can be spread per-unit and then multiplied back out per line below.
   const shipmentQuantityTotals = useMemo(() => {
@@ -264,15 +377,18 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
   // for print/PDF (via print:hidden + isExportingPdf) the same way the rest of this toolbar is.
   const [cargoSearch, setCargoSearch] = useState('');
   const filteredCargo = useMemo(() => {
+    // Detail view only ever shows the currently open shipment's own lines — applied before the
+    // text search below so search only ever narrows within that shipment, never across others.
+    const scoped = (cargoQuery.data ?? []).filter((r) => r.shipmentId === selectedShipmentId);
     const q = cargoSearch.trim().toLowerCase();
-    if (!q) return cargoQuery.data ?? [];
-    return (cargoQuery.data ?? []).filter(
+    if (!q) return scoped;
+    return scoped.filter(
       (r) =>
         productLabel(r.product).toLowerCase().includes(q) ||
         (r.supplier?.companyName ?? '').toLowerCase().includes(q) ||
         (r.shipment?.shipmentName ?? '').toLowerCase().includes(q),
     );
-  }, [cargoQuery.data, cargoSearch]);
+  }, [cargoQuery.data, cargoSearch, selectedShipmentId]);
 
   // إجمالي مصاريف الشحن: sums each DISTINCT shipment's totalCost exactly once across whatever
   // rows are currently visible in the table (post-search-filter) — never per cargo line, since
@@ -376,34 +492,6 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
   // saved value will, so the preview never disagrees with what actually gets stored.
   const localUnitPricePreview = form.unitPrice ? localAmount(form.unitPrice, form.conversionRate) : null;
 
-  // تكلفة الشحن preview for the السعر النهائي field below — same formula the table column uses
-  // (shipment's total cost ÷ shipment's total quantity across all its lines), but recomputed from
-  // this in-progress form instead of only already-saved rows: sums every OTHER saved line under the
-  // selected shipment (excluding the row being edited, so its old quantity isn't double-counted)
-  // plus whatever quantity is currently typed into the form, so the preview reacts as the user types
-  // instead of only reflecting the shipment's state before this line was touched.
-  const previewShipmentQuantityTotal = useMemo(() => {
-    if (!form.shipmentId) return 0;
-    let total = Number(form.quantity || 0);
-    for (const item of cargoQuery.data ?? []) {
-      if (item.shipmentId !== form.shipmentId) continue;
-      if (editingId && item.id === editingId) continue;
-      total += Number(item.quantity ?? 0);
-    }
-    return total;
-  }, [cargoQuery.data, form.shipmentId, form.quantity, editingId]);
-
-  const shippingCostPerUnitPreview =
-    form.shipmentId && previewShipmentQuantityTotal > 0
-      ? Number((shipmentsQuery.data ?? []).find((s) => s.id === form.shipmentId)?.totalCost ?? 0) /
-        previewShipmentQuantityTotal
-      : null;
-
-  // السعر النهائي = سعر الوحدة (بالعملة المحلية) + تكلفة الشحن — mirrors the table column's own
-  // formula so the modal preview never disagrees with what the row will show once saved.
-  const finalPricePreview =
-    localUnitPricePreview !== null ? localUnitPricePreview + (shippingCostPerUnitPreview ?? 0) : null;
-
   const isValid =
     !!form.productId && !!form.supplierId && !!form.shipmentId && !!form.quantity && !!form.unitPrice;
 
@@ -439,7 +527,13 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
 
   function openCreate() {
     setEditingId(null);
-    setForm({ ...emptyForm, localCurrencyId: fixedLocalCurrency?.id ?? baseCurrency?.id ?? '' });
+    setForm({
+      ...emptyForm,
+      // Programmatically bound to whichever shipment's detail view is open — the "اسم الشحنة"
+      // field is no longer shown in this modal at all, see the master/detail render below.
+      shipmentId: selectedShipmentId ?? '',
+      localCurrencyId: fixedLocalCurrency?.id ?? baseCurrency?.id ?? '',
+    });
     setModalOpen(true);
   }
 
@@ -504,9 +598,9 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
   }));
 
   const columns: Column<CargoItem>[] = [
-    { header: t('imports.shipmentName'), accessor: (r) => r.shipment?.shipmentName ?? '—' },
+    // No "اسم الشحنة" column here — every row in this view already belongs to the one shipment
+    // named in the detail header above, see the master/detail render below.
     { header: t('fields.product'), accessor: (r) => productLabel(r.product) },
-    { header: t('fields.supplier'), accessor: (r) => r.supplier?.companyName ?? '—' },
     {
       header: t('imports.quantity'),
       accessor: (r) => formatAmount(r.quantity),
@@ -532,18 +626,7 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
       align: 'right',
     },
     {
-      // السعر النهائي = سعر الوحدة + تكلفة الشحن — per-unit figure, distinct from السعر الإجمالي
-      // which multiplies this same sum by the line's quantity.
-      header: t('imports.finalPrice'),
-      accessor: (r) => {
-        const unit = localAmount(r.unitPrice, r.conversionRate);
-        const shippingUnit = shippingCostPerUnit(r) ?? 0;
-        return money(unit + shippingUnit, r.localCurrency ?? baseCurrency);
-      },
-      align: 'right',
-      highlight: true,
-    },
-    {
+      // السعر الإجمالي = (سعر الوحدة + تكلفة الشحن) × الكمية.
       header: t('imports.totalPrice'),
       accessor: (r) => {
         const unit = localAmount(r.unitPrice, r.conversionRate);
@@ -580,8 +663,87 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     },
   ];
 
+  // Master view — the shipment list this tab now opens on. Detail view (below) only renders once
+  // a shipment is picked from here.
+  if (selectedShipmentId === null) {
+    return (
+      <div>
+        <DataTable
+          columns={shipmentColumns}
+          data={shipmentsQuery.data ?? []}
+          keyField={(r) => r.id}
+          isLoading={shipmentsQuery.isLoading}
+          onRowClick={(r) => setSelectedShipmentId(r.id)}
+        />
+
+        <Modal
+          open={shipmentModalOpen}
+          onClose={() => {
+            setShipmentModalOpen(false);
+            setEditingShipmentId(null);
+          }}
+          title={t('common.edit')}
+        >
+          <form
+            className="grid grid-cols-1 gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveShipmentMutation.mutate();
+            }}
+          >
+            <FormField label={t('imports.shipmentName')}>
+              <Input
+                required
+                value={shipmentForm.shipmentName}
+                onChange={(e) => setShipmentForm({ ...shipmentForm, shipmentName: e.target.value })}
+              />
+            </FormField>
+            <FormField label={t('imports.shipmentDate')}>
+              <Input
+                type="date"
+                value={shipmentForm.shipmentDate}
+                onChange={(e) => setShipmentForm({ ...shipmentForm, shipmentDate: e.target.value })}
+              />
+            </FormField>
+            <FormField label={t('imports.shippingCompany')}>
+              <Input
+                required
+                value={shipmentForm.shippingCompanyName}
+                onChange={(e) => setShipmentForm({ ...shipmentForm, shippingCompanyName: e.target.value })}
+              />
+            </FormField>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setShipmentModalOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" disabled={saveShipmentMutation.isPending}>
+                {t('common.save')}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      </div>
+    );
+  }
+
   return (
     <div>
+      <div className="mb-3 flex items-center gap-3 print:hidden">
+        <button
+          type="button"
+          className="text-primary-600 hover:underline"
+          onClick={() => {
+            setSelectedShipmentId(null);
+            setCargoSearch('');
+          }}
+        >
+          {t('imports.backToShipments')}
+        </button>
+        <span className="text-[var(--text-muted)]">
+          {t('imports.shipmentHeading')}: <strong className="text-[var(--text)]">{selectedShipment?.shipmentName ?? '—'}</strong>
+        </span>
+      </div>
+
       <div ref={printRef} className="cargo-print-report">
         <div className="cargo-print-header">
           <div className="cargo-print-header-grid">
@@ -649,8 +811,52 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
           isLoading={cargoQuery.isLoading}
           searchable={false}
           pageSize={500}
+          onRowClick={(r) => setDetailItem(r)}
         />
       </div>
+
+      <Modal open={!!detailItem} onClose={() => setDetailItem(null)} title={t('imports.itemDetails')}>
+        {detailItem && (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+            {[
+              [t('fields.product'), productLabel(detailItem.product)],
+              [t('imports.itemDescription'), detailItem.product?.nameEn ?? '—'],
+              [t('imports.quantity'), formatAmount(detailItem.quantity)],
+              [t('fields.supplier'), detailItem.supplier?.companyName ?? '—'],
+              [t('imports.supplierUnitPrice'), money(Number(detailItem.unitPrice ?? 0), detailItem.currency)],
+              [t('fields.currency'), currencyLabel(detailItem.currency)],
+              [
+                t('imports.unitShippingCost'),
+                (() => {
+                  const cost = shippingCostPerUnit(detailItem);
+                  return cost === null ? '—' : money(cost, detailItem.localCurrency ?? baseCurrency);
+                })(),
+              ],
+              [
+                t('imports.totalPrice'),
+                (() => {
+                  const unit = localAmount(detailItem.unitPrice, detailItem.conversionRate);
+                  const shippingUnit = shippingCostPerUnit(detailItem) ?? 0;
+                  return money((unit + shippingUnit) * Number(detailItem.quantity ?? 0), detailItem.localCurrency ?? baseCurrency);
+                })(),
+              ],
+              [t('imports.shipmentName'), detailItem.shipment?.shipmentName ?? '—'],
+              [t('imports.conversionRate'), formatAmount(detailItem.conversionRate ?? 1)],
+              [t('imports.specifications'), detailItem.specifications || '—'],
+            ].map(([label, value]) => (
+              <div key={label as string}>
+                <div className="text-[var(--text-muted)]">{label}</div>
+                <div className="font-medium">{value}</div>
+              </div>
+            ))}
+            <div className="col-span-2 mt-2 flex justify-end">
+              <Button type="button" variant="secondary" onClick={() => setDetailItem(null)}>
+                {t('common.close')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={modalOpen}
@@ -691,20 +897,9 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
               placeholder={t('actions.selectSupplier') ?? ''}
             />
           </FormField>
-          <FormField label={t('imports.shipmentName')} required>
-            <Select
-              required
-              value={form.shipmentId}
-              onChange={(e) => setForm({ ...form, shipmentId: e.target.value })}
-            >
-              <option value="">—</option>
-              {(shipmentsQuery.data ?? []).map((sh) => (
-                <option key={sh.id} value={sh.id}>
-                  {sh.shipmentName}
-                </option>
-              ))}
-            </Select>
-          </FormField>
+          {/* No "اسم الشحنة" field here — this modal only ever opens from inside one shipment's
+              detail view, so form.shipmentId is bound programmatically to selectedShipmentId in
+              openCreate()/openEdit() above rather than picked here. */}
           <FormField label={t('imports.quantity')} required>
             <Input
               type="number"
@@ -749,14 +944,6 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
               <Input
                 disabled
                 value={localUnitPricePreview === null ? '—' : money(localUnitPricePreview, selectedLocalCurrency)}
-              />
-            </FormField>
-          </div>
-          <div className="col-span-2">
-            <FormField label={t('imports.finalPrice')}>
-              <Input
-                disabled
-                value={finalPricePreview === null ? '—' : money(finalPricePreview, selectedLocalCurrency)}
               />
             </FormField>
           </div>

@@ -43,8 +43,11 @@ export class CashMovementsService {
   ) {}
 
   async record(input: RecordCashMovementInput, manager?: EntityManager): Promise<CashMovement> {
+    // Reserve the number on the SAME manager/transaction as the row insert below (when the caller
+    // is already inside one, e.g. the dual-row capital-injection path) so a rolled-back insert
+    // rolls the reservation back with it too, instead of the two drifting out of sync.
     const documentNumber =
-      (await this.numberingSeriesService.tryGetNextNumber(input.companyId, 'CASH_MOVEMENT')) ??
+      (await this.numberingSeriesService.tryGetNextNumber(input.companyId, 'CASH_MOVEMENT', manager)) ??
       `CM-${Date.now()}`;
     const repo = manager ? manager.getRepository(CashMovement) : this.repo;
     const row = repo.create({

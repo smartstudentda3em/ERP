@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Injectable, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CompanyScopedCrudService } from '../../common/services/base-crud.service';
@@ -29,10 +29,15 @@ export class NumberingSeriesService extends CompanyScopedCrudService<NumberingSe
     return super.createForCompany(companyId, { startNumber, nextNumber: startNumber, ...dto });
   }
 
-  /** Atomically reserves and returns the next formatted document number for a document type. Throws if unconfigured. */
-  async getNextNumber(companyId: string, documentType: string): Promise<string> {
-    return this.repo.manager.transaction(async (manager) => {
-      const seriesRepo = manager.getRepository(NumberingSeries);
+  /**
+   * Atomically reserves and returns the next formatted document number for a document type.
+   * Throws if unconfigured. Pass `manager` when the caller already has an open transaction (e.g.
+   * inserting the document row right after) so the reservation and the insert commit or roll back
+   * together as one atomic unit instead of the reservation silently outliving a failed insert.
+   */
+  async getNextNumber(companyId: string, documentType: string, manager?: EntityManager): Promise<string> {
+    const run = async (m: EntityManager) => {
+      const seriesRepo = m.getRepository(NumberingSeries);
       const series = await seriesRepo
         .createQueryBuilder('s')
         .setLock('pessimistic_write')
@@ -47,7 +52,8 @@ export class NumberingSeriesService extends CompanyScopedCrudService<NumberingSe
       }
 
       return this.reserveNumber(series, seriesRepo);
-    });
+    };
+    return manager ? run(manager) : this.repo.manager.transaction(run);
   }
 
   /**
@@ -55,9 +61,9 @@ export class NumberingSeriesService extends CompanyScopedCrudService<NumberingSe
    * for non-critical flows (product/party/warehouse codes) that should fall back to their old
    * ad-hoc numbering rather than fail outright until an admin configures a series for them.
    */
-  async tryGetNextNumber(companyId: string, documentType: string): Promise<string | null> {
-    return this.repo.manager.transaction(async (manager) => {
-      const seriesRepo = manager.getRepository(NumberingSeries);
+  async tryGetNextNumber(companyId: string, documentType: string, manager?: EntityManager): Promise<string | null> {
+    const run = async (m: EntityManager) => {
+      const seriesRepo = m.getRepository(NumberingSeries);
       const series = await seriesRepo
         .createQueryBuilder('s')
         .setLock('pessimistic_write')
@@ -69,7 +75,8 @@ export class NumberingSeriesService extends CompanyScopedCrudService<NumberingSe
 
       if (!series) return null;
       return this.reserveNumber(series, seriesRepo);
-    });
+    };
+    return manager ? run(manager) : this.repo.manager.transaction(run);
   }
 
   private async reserveNumber(series: NumberingSeries, seriesRepo: Repository<NumberingSeries>): Promise<string> {

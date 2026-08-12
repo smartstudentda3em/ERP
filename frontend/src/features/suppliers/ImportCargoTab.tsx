@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input, FormField, Select } from '../../components/ui/Input';
+import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { localToday } from '../../lib/date-utils';
@@ -326,6 +327,23 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     [suppliersQuery.data, form.supplierId],
   );
 
+  // Combined "sku — name" / "company — currency" labels so the searchable dropdowns below show
+  // enough context to disambiguate a match without opening it, matching productLabel()'s existing
+  // convention rather than introducing a separate two-column option layout.
+  const productOptions = useMemo(
+    () => (productsQuery.data ?? []).map((p) => ({ value: p.id, label: productLabel(p) })),
+    [productsQuery.data],
+  );
+
+  const supplierOptions = useMemo(
+    () =>
+      (suppliersQuery.data ?? []).map((s) => ({
+        value: s.id,
+        label: s.currency ? `${s.companyName} — ${currencyLabel(s.currency)}` : s.companyName,
+      })),
+    [suppliersQuery.data],
+  );
+
   // العملة المحلية المختارة في النموذج — falls back to the system's base currency so the preview
   // still shows something sensible before the user has touched the new dropdown.
   const selectedLocalCurrency = useMemo(
@@ -576,38 +594,27 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
         >
           <div className="col-span-2">
             <FormField label={t('fields.product')} required>
-              <Select
+              <SearchableSelect
                 required
+                options={productOptions}
                 value={form.productId}
-                onChange={(e) => setForm({ ...form, productId: e.target.value })}
-              >
-                <option value="">{t('actions.selectProduct')}</option>
-                {(productsQuery.data ?? []).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {productLabel(p)}
-                  </option>
-                ))}
-              </Select>
+                onChange={(productId) => setForm({ ...form, productId })}
+                placeholder={t('actions.selectProduct') ?? ''}
+              />
             </FormField>
           </div>
           <FormField label={t('nav.suppliers')} required>
-            <Select
+            <SearchableSelect
               required
+              options={supplierOptions}
               value={form.supplierId}
-              onChange={(e) => {
-                const supplierId = e.target.value;
+              onChange={(supplierId) => {
                 const supplier = (suppliersQuery.data ?? []).find((s) => s.id === supplierId) ?? null;
                 const rate = getRateToBase(supplier?.currency, baseCurrency, exchangeRatesQuery.data ?? []);
                 setForm({ ...form, supplierId, conversionRate: rate !== null ? String(rate) : '' });
               }}
-            >
-              <option value="">{t('actions.selectSupplier')}</option>
-              {(suppliersQuery.data ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.companyName}
-                </option>
-              ))}
-            </Select>
+              placeholder={t('actions.selectSupplier') ?? ''}
+            />
           </FormField>
           <FormField label={t('imports.shipmentName')} required>
             <Select

@@ -84,7 +84,10 @@ export function SalesRepresentativesPage() {
     // label, so it needs no separate tab there.
     ...(isPrintingPress ? [{ key: 'reps' as Tab, label: t('salesRepresentativesReports.repsTab') }] : []),
     { key: 'reports', label: t(isPrintingPress ? 'salesRepresentativesReports.reportsTabPress' : 'salesRepresentativesReports.reportsTab') },
-    { key: 'mine', label: t('managerDashboard.tabLabel') },
+    // Press keeps "لوحة المدير" (this tab shows a مدير فرع's own dashboard there, a role scoped
+    // exclusively to Press); every other company relabels it "لوحة المندوب" since مدير فرع doesn't
+    // exist outside Press and this same tab there is really a مندوب's own dashboard instead.
+    { key: 'mine', label: t(isPrintingPress ? 'managerDashboard.tabLabelPress' : 'managerDashboard.tabLabel') },
     // Branch-manager commission payouts only make sense for the Printing Press, same gating as
     // every other branch/commission feature on this page — further restricted away from a
     // Manager-role user in that same branch (see useIsPressManagerRestricted).

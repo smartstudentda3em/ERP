@@ -443,7 +443,8 @@
     }
   },
   "managerDashboard": {
-    "tabLabel": "Manager Dashboard",
+    "tabLabel": "Representative Dashboard",
+    "tabLabelPress": "Manager Dashboard",
     "salesOverviewTitle": "Total Sales",
     "commissionTitle": "Sales Commission",
     "payrollTitle": "Salary & Deductions",

@@ -239,6 +239,7 @@ export function SalesLineEditor({
                           value={line.productId}
                           onChange={(v) => updateLine(i, { productId: v })}
                           placeholder={t('actions.searchProduct') ?? ''}
+                          clearable
                         />
                       </td>
                       <td className="w-32">
@@ -345,12 +346,13 @@ export function SalesLineEditor({
                   <Fragment key={i}>
                     <tr>
                       <td className="min-w-[220px] text-start">
-                        <Select value={line.productId} onChange={(e) => updateLine(i, { productId: e.target.value })}>
-                          <option value="">{t('actions.selectProduct')}</option>
-                          {products.map((p) => (
-                            <option key={p.id} value={p.id}>{`${p.sku} — ${p.nameEn}`}</option>
-                          ))}
-                        </Select>
+                        <SearchableSelect
+                          options={productOptions}
+                          value={line.productId}
+                          onChange={(v) => updateLine(i, { productId: v })}
+                          placeholder={t('actions.searchProduct') ?? ''}
+                          clearable
+                        />
                         {canSellByPackage && (
                           <Select
                             className="mt-1"

@@ -1,4 +1,4 @@
-import { MouseEvent, useEffect, useState } from 'react';
+import { MouseEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,13 +9,14 @@ import { useActiveCompany } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
-import { FormField, Input, Select } from '../../components/ui/Input';
+import { FormField, Input } from '../../components/ui/Input';
+import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
-import { SalesLineEditor, SalesLineForm, emptyLine, linesToPayload } from './SalesLineEditor';
+import { SalesLineEditor, SalesLineForm, emptyLine, linesToPayload, computeGrandTotal } from './SalesLineEditor';
 import { useSalesRepLock } from './useSalesRepLock';
 
 // Once a quotation moves past DRAFT, editing/deleting it is restricted to a true Administrator —
@@ -124,6 +125,21 @@ export function QuotationsPage() {
   const { isAdmin, ownRep, currentUserName } = useSalesRepLock(salesRepsQuery.data);
   const effectiveSalesRepId = isAdmin ? salesRepresentativeId : ownRep?.id ?? '';
   const effectiveEditSalesRepId = isAdmin ? editSalesRepresentativeId : ownRep?.id ?? '';
+
+  const customerOptions = useMemo(
+    () => (customersQuery.data ?? []).map((c) => ({ value: c.id, label: c.name })),
+    [customersQuery.data],
+  );
+  const repOptions = useMemo(
+    () => (salesRepsQuery.data ?? []).map((r) => ({ value: r.id, label: r.name })),
+    [salesRepsQuery.data],
+  );
+  // Non-admin مندوب/مدير فرع: the rep field is locked to their own identity — a single
+  // non-clearable option instead of the full searchable list, matching useSalesRepLock's contract.
+  const lockedRepOptions = useMemo(
+    () => (ownRep ? [{ value: ownRep.id, label: ownRep.name }] : currentUserName ? [{ value: '', label: currentUserName }] : []),
+    [ownRep, currentUserName],
+  );
 
   // Printing Press has no Customers screen at all (confirmed scope: every other company is
   // unaffected) — every quotation there is silently attributed to the one seeded walk-in customer.
@@ -307,116 +323,112 @@ export function QuotationsPage() {
         onRowClick={(r) => navigate(`/sales/quotations/${r.id}`)}
       />
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={t('common.create')} widthClass="max-w-3xl">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={t('common.create')} widthClass="max-w-4xl">
         <form
-          className="grid grid-cols-2 gap-3"
+          className="flex flex-col gap-5"
           onSubmit={(e) => {
             e.preventDefault();
             createMutation.mutate();
           }}
         >
-          {!isPrintingPress && (
-            <FormField label={t('nav.customers')}>
-              <Select required value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                <option value="">{t('actions.selectCustomer')}</option>
-                {(customersQuery.data ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {!isPrintingPress && (
+              <FormField label={t('nav.customers')}>
+                <SearchableSelect
+                  options={customerOptions}
+                  value={customerId}
+                  onChange={setCustomerId}
+                  placeholder={t('actions.selectCustomer') ?? ''}
+                  required
+                  clearable
+                />
+              </FormField>
+            )}
+            <FormField label={t(isPrintingPress ? 'fields.salesRepresentativePress' : 'fields.salesRepresentative')}>
+              <SearchableSelect
+                options={isAdmin ? repOptions : lockedRepOptions}
+                value={effectiveSalesRepId}
+                onChange={setSalesRepresentativeId}
+                placeholder={t(isPrintingPress ? 'actions.selectSalesRepPress' : 'actions.selectSalesRep') ?? ''}
+                disabled={!isAdmin}
+                clearable={isAdmin}
+              />
             </FormField>
-          )}
-          <FormField label={t('common.date')}>
-            <Input type="date" required value={quotationDate} onChange={(e) => setQuotationDate(e.target.value)} />
-          </FormField>
-          <FormField label={t(isPrintingPress ? 'fields.salesRepresentativePress' : 'fields.salesRepresentative')}>
-            <Select
-              value={effectiveSalesRepId}
-              disabled={!isAdmin}
-              onChange={(e) => setSalesRepresentativeId(e.target.value)}
-            >
-              {isAdmin ? (
-                <>
-                  <option value="">{t(isPrintingPress ? 'actions.selectSalesRepPress' : 'actions.selectSalesRep')}</option>
-                  {(salesRepsQuery.data ?? []).map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </>
-              ) : (
-                <option value={ownRep?.id ?? ''}>{ownRep?.name ?? currentUserName}</option>
-              )}
-            </Select>
-          </FormField>
+            <FormField label={t('common.date')}>
+              <Input type="date" required value={quotationDate} onChange={(e) => setQuotationDate(e.target.value)} />
+            </FormField>
+          </div>
 
-          <SalesLineEditor lines={lines} onChange={setLines} />
+          <SalesLineEditor lines={lines} onChange={setLines} layout="table" />
 
-          <div className="col-span-2 mt-2 flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" disabled={createMutation.isPending}>
-              {t('common.save')}
-            </Button>
+          <div className="flex flex-col gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="card flex items-center justify-between gap-4 px-4 py-3 sm:w-64">
+              <span className="text-sm font-medium text-[var(--text-muted)]">{t('common.total')}</span>
+              <span className="text-2xl font-bold text-[var(--text)]">{formatAmount(computeGrandTotal(lines))}</span>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending}>
+                {t('common.save')}
+              </Button>
+            </div>
           </div>
         </form>
       </Modal>
 
-      <Modal open={!!editingQuotationId} onClose={() => setEditingQuotationId(null)} title={t('common.edit')} widthClass="max-w-3xl">
+      <Modal open={!!editingQuotationId} onClose={() => setEditingQuotationId(null)} title={t('common.edit')} widthClass="max-w-4xl">
         <form
-          className="grid grid-cols-2 gap-3"
+          className="flex flex-col gap-5"
           onSubmit={(e) => {
             e.preventDefault();
             updateMutation.mutate();
           }}
         >
-          {!isPrintingPress && (
-            <FormField label={t('nav.customers')}>
-              <Select required value={editCustomerId} onChange={(e) => setEditCustomerId(e.target.value)}>
-                <option value="">{t('actions.selectCustomer')}</option>
-                {(customersQuery.data ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {!isPrintingPress && (
+              <FormField label={t('nav.customers')}>
+                <SearchableSelect
+                  options={customerOptions}
+                  value={editCustomerId}
+                  onChange={setEditCustomerId}
+                  placeholder={t('actions.selectCustomer') ?? ''}
+                  required
+                  clearable
+                />
+              </FormField>
+            )}
+            <FormField label={t(isPrintingPress ? 'fields.salesRepresentativePress' : 'fields.salesRepresentative')}>
+              <SearchableSelect
+                options={isAdmin ? repOptions : lockedRepOptions}
+                value={effectiveEditSalesRepId}
+                onChange={setEditSalesRepresentativeId}
+                placeholder={t(isPrintingPress ? 'actions.selectSalesRepPress' : 'actions.selectSalesRep') ?? ''}
+                disabled={!isAdmin}
+                clearable={isAdmin}
+              />
             </FormField>
-          )}
-          <FormField label={t('common.date')}>
-            <Input type="date" required value={editQuotationDate} onChange={(e) => setEditQuotationDate(e.target.value)} />
-          </FormField>
-          <FormField label={t(isPrintingPress ? 'fields.salesRepresentativePress' : 'fields.salesRepresentative')}>
-            <Select
-              value={effectiveEditSalesRepId}
-              disabled={!isAdmin}
-              onChange={(e) => setEditSalesRepresentativeId(e.target.value)}
-            >
-              {isAdmin ? (
-                <>
-                  <option value="">{t(isPrintingPress ? 'actions.selectSalesRepPress' : 'actions.selectSalesRep')}</option>
-                  {(salesRepsQuery.data ?? []).map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </>
-              ) : (
-                <option value={ownRep?.id ?? ''}>{ownRep?.name ?? currentUserName}</option>
-              )}
-            </Select>
-          </FormField>
+            <FormField label={t('common.date')}>
+              <Input type="date" required value={editQuotationDate} onChange={(e) => setEditQuotationDate(e.target.value)} />
+            </FormField>
+          </div>
 
-          <SalesLineEditor lines={editLines} onChange={setEditLines} />
+          <SalesLineEditor lines={editLines} onChange={setEditLines} layout="table" />
 
-          <div className="col-span-2 mt-2 flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setEditingQuotationId(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" disabled={updateMutation.isPending}>
-              {t('common.save')}
-            </Button>
+          <div className="flex flex-col gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="card flex items-center justify-between gap-4 px-4 py-3 sm:w-64">
+              <span className="text-sm font-medium text-[var(--text-muted)]">{t('common.total')}</span>
+              <span className="text-2xl font-bold text-[var(--text)]">{formatAmount(computeGrandTotal(editLines))}</span>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setEditingQuotationId(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" disabled={updateMutation.isPending}>
+                {t('common.save')}
+              </Button>
+            </div>
           </div>
         </form>
       </Modal>

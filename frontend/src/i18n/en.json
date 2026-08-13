@@ -59,6 +59,7 @@
   },
   "common": {
     "noResults": "No results",
+    "clear": "Clear",
     "save": "Save",
     "cancel": "Cancel",
     "close": "Close",

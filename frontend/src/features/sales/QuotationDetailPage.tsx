@@ -168,10 +168,14 @@ export function QuotationDetailPage() {
                   {q.lines.map((l, i) => (
                     <tr key={l.id ?? i}>
                       <td>
-                        {l.product.sku} — {l.product.nameEn}
+                        <bdi dir="ltr">
+                          {l.product.sku} — {l.product.nameEn}
+                        </bdi>
                       </td>
                       <td>{money(l.quantity)}</td>
-                      <td className="text-[var(--text-muted)]">{l.product.unit?.nameEn}</td>
+                      <td className="text-[var(--text-muted)]">
+                        <bdi dir="ltr">{l.product.unit?.nameEn}</bdi>
+                      </td>
                       <td>{money(l.unitPrice)}</td>
                       <td>{money(l.lineTotal)}</td>
                     </tr>

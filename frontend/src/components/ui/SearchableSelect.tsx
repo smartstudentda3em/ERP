@@ -21,6 +21,7 @@ export function SearchableSelect({
   placeholder,
   required,
   disabled,
+  clearable = false,
 }: {
   options: SearchableSelectOption[];
   value: string;
@@ -28,6 +29,9 @@ export function SearchableSelect({
   placeholder?: string;
   required?: boolean;
   disabled?: boolean;
+  /** Shows a small × button (start of the toggle arrow) once a value is selected, letting the user
+   * empty the field in one click instead of opening the menu to hunt for a blank/placeholder row. */
+  clearable?: boolean;
 }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
@@ -131,6 +135,8 @@ export function SearchableSelect({
     }
   }
 
+  const showClear = clearable && !!value && !disabled;
+
   return (
     <div ref={containerRef} className="relative">
       <span className="pointer-events-none absolute start-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
@@ -140,7 +146,7 @@ export function SearchableSelect({
         </svg>
       </span>
       <Input
-        style={{ paddingInlineStart: '1.75rem', paddingInlineEnd: '1.75rem' }}
+        style={{ paddingInlineStart: '1.75rem', paddingInlineEnd: showClear ? '3.25rem' : '1.75rem' }}
         value={open ? query : (selected?.label ?? '')}
         placeholder={placeholder}
         disabled={disabled}
@@ -167,6 +173,21 @@ export function SearchableSelect({
           onChange={() => {}}
           style={{ position: 'absolute', inset: 0, height: 0, width: '100%', opacity: 0, border: 0, padding: 0 }}
         />
+      )}
+      {showClear && (
+        <button
+          type="button"
+          className="absolute end-7 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text)]"
+          aria-label={t('common.clear') ?? 'Clear'}
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange('');
+            setQuery('');
+            setOpen(false);
+          }}
+        >
+          ✕
+        </button>
       )}
       <button
         type="button"

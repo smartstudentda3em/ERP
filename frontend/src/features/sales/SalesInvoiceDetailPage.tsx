@@ -255,14 +255,18 @@ export function SalesInvoiceDetailPage() {
                   {inv.lines.map((l) => (
                     <tr key={l.id}>
                       <td>
-                        {l.product.sku} — {l.product.nameEn}
+                        <bdi dir="ltr">
+                          {l.product.sku} — {l.product.nameEn}
+                        </bdi>
                       </td>
                       <td>{money(l.quantity)}</td>
                       <td className="text-[var(--text-muted)]">
-                        {l.unitKind === 'PACKAGE' ? l.product.packageType?.nameEn : l.product.unit?.nameEn}
+                        <bdi dir="ltr">{l.unitKind === 'PACKAGE' ? l.product.packageType?.nameEn : l.product.unit?.nameEn}</bdi>
                         {l.unitKind === 'PACKAGE' && (
                           <div className="text-xs">
-                            ({money(l.baseQuantity)} {l.product.unit?.nameEn})
+                            <bdi dir="ltr">
+                              ({money(l.baseQuantity)} {l.product.unit?.nameEn})
+                            </bdi>
                           </div>
                         )}
                       </td>

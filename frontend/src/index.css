@@ -122,7 +122,7 @@ body {
    split across a page break. */
 @page {
   size: A4;
-  margin: 15mm;
+  margin: 10mm;
 }
 
 /* Global print reset — applies to every printed page/table in the app, not just one report.

@@ -330,13 +330,13 @@ body {
     vertical-align: middle;
   }
   .cargo-print-report th {
-    font-size: 15px;
+    font-size: 19px;
     font-weight: 700;
-    padding: 8px 6px;
+    padding: 10px 6px;
   }
   .cargo-print-report td {
-    font-size: 13px;
-    padding: 6px 5px;
+    font-size: 17px;
+    padding: 8px 6px;
   }
   .cargo-print-report .app-table thead th {
     background-color: #1e3a5f !important;
@@ -381,13 +381,13 @@ body {
   vertical-align: middle;
 }
 .cargo-print-report.pdf-export-mode th {
-  font-size: 15px;
+  font-size: 19px;
   font-weight: 700;
-  padding: 8px 6px;
+  padding: 10px 6px;
 }
 .cargo-print-report.pdf-export-mode td {
-  font-size: 13px;
-  padding: 6px 5px;
+  font-size: 17px;
+  padding: 8px 6px;
 }
 .cargo-print-report.pdf-export-mode .app-table thead th {
   background-color: #1e3a5f !important;

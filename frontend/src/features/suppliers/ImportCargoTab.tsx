@@ -596,7 +596,7 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     // named in the detail header above, see the master/detail render below.
     {
       header: t('fields.product'),
-      accessor: (r) => productLabel(r.product),
+      accessor: (r) => <bdi dir="ltr">{productLabel(r.product)}</bdi>,
       width: '30%',
     },
     {

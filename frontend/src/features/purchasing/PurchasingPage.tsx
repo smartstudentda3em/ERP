@@ -389,7 +389,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('common.date'), accessor: (r) => r.receiptDate },
     { header: t('fields.supplier'), accessor: (r) => r.supplier?.companyName ?? '—' },
-    { header: t('fields.product'), accessor: (r) => r.product?.nameEn ?? '—' },
+    { header: t('fields.product'), accessor: (r) => (r.product?.nameEn ? <bdi dir="ltr">{r.product.nameEn}</bdi> : '—') },
     {
       header: t('fields.quantityPackages'),
       accessor: (r) => `${formatAmount(r.quantityPackages)} × ${formatQuantity(r.unitsPerPackage)}`,

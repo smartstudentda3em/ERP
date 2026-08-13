@@ -546,7 +546,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
           { header: t('fields.sku'), accessor: (r: Product) => r.sku ?? '—', width: '8%' },
           { header: t('fields.barcode'), accessor: (r: Product) => r.barcode ?? '—', width: '10%' },
         ]),
-    { header: t('common.name'), accessor: (r) => r.nameEn },
+    { header: t('common.name'), accessor: (r) => <bdi dir="ltr">{r.nameEn}</bdi> },
     ...(isPrintingPress ? [{ header: t('fields.category'), accessor: (r: Product) => categoryLabel(r) }] : []),
     { header: t('fields.brand'), accessor: (r) => brandLabel(r) },
     { header: t('fields.package'), accessor: (r) => packageLabel(r) },

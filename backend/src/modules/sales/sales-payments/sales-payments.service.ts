@@ -60,16 +60,23 @@ export class SalesPaymentsService {
 
     const documentNumber = await this.numberingSeriesService.getNextNumber(companyId, 'SALES_PAYMENT');
 
+    // A مندوب's own follow-up collection routes into their own REP_TREASURY pocket instead of the
+    // company's real CASH/BANK — same rule SalesInvoicesService applies to an invoice's upfront
+    // payment (see SalesRepAccessService.isSalesAgentRep) — and, like that flow, they never choose
+    // an account at all, so the usual paymentAccount requirement never applies to them.
+    const isRepTreasurySale = await this.salesRepAccess.isSalesAgentRep(salesRepresentativeId);
+
     // Press/Stationery/Air Conditioning must explicitly pick the treasury account
     // (dto.paymentAccount) — assertPaymentAccountProvided throws if it's missing for one of these.
     // Any other company has no such field — its receipt only records `method` (cash in hand, bank
     // transfer, cheque, card, online) — so the treasury account is derived from that instead: CASH
     // stays CASH, anything else settles into BANK.
     const company = await this.companyRepo.findOne({ where: { id: companyId } });
-    assertPaymentAccountProvided(company?.code, dto.paymentAccount);
-    const resolvedAccount =
-      dto.paymentAccount ??
-      (dto.method && dto.method !== PaymentMethod.CASH ? CashMovementAccount.BANK : CashMovementAccount.CASH);
+    if (!isRepTreasurySale) assertPaymentAccountProvided(company?.code, dto.paymentAccount);
+    const resolvedAccount = isRepTreasurySale
+      ? CashMovementAccount.REP_TREASURY
+      : dto.paymentAccount ??
+        (dto.method && dto.method !== PaymentMethod.CASH ? CashMovementAccount.BANK : CashMovementAccount.CASH);
 
     return this.dataSource.transaction(async (manager) => {
       const movement = await this.cashMovementsService.record(
@@ -79,6 +86,9 @@ export class SalesPaymentsService {
           movementDate: dto.paymentDate,
           type: CashMovementType.INCOME,
           account: resolvedAccount,
+          // REP_TREASURY is a per-رep pocket — only set when this receipt is actually routing
+          // there, same as SalesInvoicesService's own upfront-payment movement.
+          salesRepresentativeId: isRepTreasurySale ? salesRepresentativeId : undefined,
           amount: dto.amount,
           sourceType: CashMovementSourceType.SALES_PAYMENT,
           partyCustomerId: dto.customerId,
@@ -181,17 +191,27 @@ export class SalesPaymentsService {
         dto.salesRepresentativeId,
         companyId,
       );
+      const isRepTreasurySale = await this.salesRepAccess.isSalesAgentRep(salesRepresentativeId);
       const company = await this.companyRepo.findOne({ where: { id: companyId } });
-      assertPaymentAccountProvided(company?.code, dto.paymentAccount);
-      const resolvedAccount =
-        dto.paymentAccount ??
-        (dto.method && dto.method !== PaymentMethod.CASH ? CashMovementAccount.BANK : CashMovementAccount.CASH);
+      if (!isRepTreasurySale) assertPaymentAccountProvided(company?.code, dto.paymentAccount);
+      const resolvedAccount = isRepTreasurySale
+        ? CashMovementAccount.REP_TREASURY
+        : dto.paymentAccount ??
+          (dto.method && dto.method !== PaymentMethod.CASH ? CashMovementAccount.BANK : CashMovementAccount.CASH);
 
       if (existing.invoiceId) {
         await this.reverseInvoicePayment(manager, companyId, existing.invoiceId, Number(existing.amount));
       }
 
+      // A rep-treasury row already swept (fully or partially) into a settlement transfer must not
+      // silently lose that bookkeeping just because the underlying receipt gets edited — the
+      // replacement row below starts fresh at settledAmount=0, so any prior settlement is carried
+      // forward onto it afterward (capped at the new amount) rather than reappearing as
+      // outstanding in the breakdown while its value already left the rep's pocket for good.
+      let carriedSettledAmount = 0;
       if (existing.cashMovementId) {
+        const oldMovement = await manager.getRepository(CashMovement).findOne({ where: { id: existing.cashMovementId } });
+        carriedSettledAmount = Number(oldMovement?.settledAmount ?? 0);
         await manager.getRepository(CashMovement).delete({ id: existing.cashMovementId });
       }
       const movement = await this.cashMovementsService.record(
@@ -201,6 +221,7 @@ export class SalesPaymentsService {
           movementDate: dto.paymentDate,
           type: CashMovementType.INCOME,
           account: resolvedAccount,
+          salesRepresentativeId: isRepTreasurySale ? salesRepresentativeId : undefined,
           amount: dto.amount,
           sourceType: CashMovementSourceType.SALES_PAYMENT,
           partyCustomerId: dto.customerId,
@@ -209,6 +230,10 @@ export class SalesPaymentsService {
         },
         manager,
       );
+      if (carriedSettledAmount > 0.005) {
+        movement.settledAmount = Math.min(carriedSettledAmount, Number(dto.amount));
+        await manager.getRepository(CashMovement).save(movement);
+      }
 
       Object.assign(existing, {
         paymentDate: dto.paymentDate,

@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
@@ -81,6 +82,7 @@ export function TreasuryTransactionsPage() {
   // card unchanged.
   const { isPrintingPress, isAirConditioning, isStationery } = useActiveCompany();
   const showAccountSplit = isPrintingPress || isAirConditioning || isStationery;
+  const navigate = useNavigate();
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
@@ -306,8 +308,16 @@ export function TreasuryTransactionsPage() {
               {summaryQuery.data ? money(summaryQuery.data.cashBalance) : '—'}
             </div>
           </Card>
-          <Card>
-            <div className="text-xs text-[var(--text-muted)]">{t('treasury.repTreasuryBalance')}</div>
+          {/* Stationery only: the card renames to plural "خزينة المناديب" and becomes clickable,
+              opening the per-rep breakdown screen (RepTreasuriesPage). Air Conditioning and
+              Printing Press keep today's exact static card, unchanged. */}
+          <Card
+            onClick={isStationery ? () => navigate('/treasury/rep-treasuries') : undefined}
+            className={isStationery ? 'cursor-pointer transition hover:shadow-md' : undefined}
+          >
+            <div className="text-xs text-[var(--text-muted)]">
+              {t(isStationery ? 'treasury.repTreasuriesBalance' : 'treasury.repTreasuryBalance')}
+            </div>
             <div className="mt-1 text-2xl font-semibold">{money(repTreasuryTotal)}</div>
           </Card>
           <Card>

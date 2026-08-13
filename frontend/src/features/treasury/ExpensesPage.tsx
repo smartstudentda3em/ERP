@@ -71,6 +71,42 @@ interface ProfitTransaction {
   description: string | null;
 }
 
+/** Stationery only — "صرف العمولات" tab: every مندوب commission payout recorded from
+ * RepCommissionPayoutPage.tsx, all reps combined (no salesRepresentativeId filter). */
+interface CommissionPayoutTransaction {
+  id: string;
+  date: string;
+  documentNumber: string;
+  amount: number;
+  account: 'CASH' | 'BANK';
+  repName: string;
+  description: string | null;
+  createdByName: string;
+}
+
+/** Stationery only — "الأرباح المصروفة" tab's "أرباح الشركاء المصروفة" section, reusing the exact
+ * same /treasury/dividends resource the الشركاء screen's own Dividends tab already lists from. */
+interface DividendTransaction {
+  id: string;
+  date: string;
+  documentNumber: string;
+  amount: number;
+  description: string | null;
+  partnerId: string | null;
+  partnerName: string;
+  createdByName: string;
+}
+
+interface PartnerOption {
+  id: string;
+  name: string;
+}
+
+interface RepOption {
+  id: string;
+  name: string;
+}
+
 /** Printing Press only — one row per purchase receipt, backing the "مشتريات المواد الخام" tab
  * instead of COGS. Reuses the same GET /inventory/purchase-receipts resource ProductsPage.tsx's
  * raw-materials report already fetches for this tenant. */
@@ -84,7 +120,7 @@ interface PurchaseReceipt {
   supplier: { companyName: string } | null;
 }
 
-type Tab = 'operating' | 'cogs' | 'salaries' | 'profits';
+type Tab = 'operating' | 'cogs' | 'salaries' | 'profits' | 'commissionPayouts' | 'disbursedProfits';
 
 function money(n: number): string {
   return formatAmount(n);
@@ -105,6 +141,10 @@ export function ExpensesPage() {
   // Printing Press only — narrows all three tabs (operating/raw materials/salaries) and every
   // total shown on this screen to one branch. Empty string means "الكل" (every branch combined).
   const [branchFilter, setBranchFilter] = useState('');
+  // Stationery only — "الأرباح المصروفة" tab's two independent per-section filters (a specific
+  // partner narrows only the partners table below; a specific مندوب narrows only the reps table).
+  const [disbursedPartnerFilter, setDisbursedPartnerFilter] = useState('');
+  const [disbursedRepFilter, setDisbursedRepFilter] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({
     movementDate: localToday(),
@@ -198,6 +238,61 @@ export function ExpensesPage() {
         }),
       ),
     enabled: !!companyId && isPrintingPress,
+  });
+  // Stationery only — "صرف العمولات" tab: every مندوب commission payout in the company, unscoped
+  // to one رep (reuses the exact endpoint RepCommissionPayoutPage.tsx's own history table already
+  // calls with a salesRepresentativeId filter — omitting it here returns every رep's rows combined).
+  const commissionPayoutsQuery = useQuery({
+    queryKey: ['commission-payouts', companyId, dateRange.from, dateRange.to],
+    queryFn: () =>
+      unwrap<CommissionPayoutTransaction[]>(
+        apiClient.get('/treasury/commission-payouts', {
+          params: { dateFrom: dateRange.from || undefined, dateTo: dateRange.to || undefined },
+        }),
+      ),
+    enabled: !!companyId && isStationery,
+  });
+
+  // Stationery only — "الأرباح المصروفة" tab's two beneficiary picklists, and its own two
+  // independently-filtered queries (each narrowed by its own select below, unlike the unfiltered
+  // commissionPayoutsQuery above which always feeds the separate "صرف العمولات" tab's full list).
+  const partnersListQuery = useQuery({
+    queryKey: ['partners', companyId],
+    queryFn: () => unwrap<PartnerOption[]>(apiClient.get('/settings/partners')),
+    enabled: !!companyId && isStationery,
+  });
+  const repsListQuery = useQuery({
+    queryKey: ['sales-representatives'],
+    queryFn: () => unwrap<RepOption[]>(apiClient.get('/sales-representatives')),
+    enabled: !!companyId && isStationery,
+  });
+  const disbursedDividendsQuery = useQuery({
+    queryKey: ['dividends', companyId, dateRange.from, dateRange.to, disbursedPartnerFilter],
+    queryFn: () =>
+      unwrap<DividendTransaction[]>(
+        apiClient.get('/treasury/dividends', {
+          params: {
+            dateFrom: dateRange.from || undefined,
+            dateTo: dateRange.to || undefined,
+            partnerId: disbursedPartnerFilter || undefined,
+          },
+        }),
+      ),
+    enabled: !!companyId && isStationery,
+  });
+  const disbursedCommissionPayoutsQuery = useQuery({
+    queryKey: ['commission-payouts', companyId, dateRange.from, dateRange.to, disbursedRepFilter],
+    queryFn: () =>
+      unwrap<CommissionPayoutTransaction[]>(
+        apiClient.get('/treasury/commission-payouts', {
+          params: {
+            dateFrom: dateRange.from || undefined,
+            dateTo: dateRange.to || undefined,
+            salesRepresentativeId: disbursedRepFilter || undefined,
+          },
+        }),
+      ),
+    enabled: !!companyId && isStationery,
   });
 
   // Applies the Branch filter on top of the server-side date filtering already done for
@@ -371,13 +466,19 @@ export function ExpensesPage() {
   );
   const totalSalaries = filteredSalaries.reduce((sum, s) => sum + s.amount, 0);
   const totalProfitsPaidOut = filteredProfits.reduce((sum, p) => sum + p.amount, 0);
+  const totalCommissionPayouts = (commissionPayoutsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
   // Printing Press's second tab totals raw material purchases instead of COGS — see tabs/columns
   // below — so the grand total follows suit for this tenant only.
   const secondTabTotal = isPrintingPress ? totalRawMaterialPurchases : totalCogs;
   // Grand total across all expense types shown on this screen: operating + raw materials/COGS +
-  // salaries + (Printing Press only) manager/partner profit payouts — the fourth arm the request
-  // adds to this screen's comprehensive expense figure.
-  const grandTotal = totalExpenses + secondTabTotal + totalSalaries + (isPrintingPress ? totalProfitsPaidOut : 0);
+  // salaries + (Printing Press only) manager/partner profit payouts + (Stationery only) مندوب
+  // commission payouts.
+  const grandTotal =
+    totalExpenses +
+    secondTabTotal +
+    totalSalaries +
+    (isPrintingPress ? totalProfitsPaidOut : 0) +
+    (isStationery ? totalCommissionPayouts : 0);
 
   const secondTabCount = isPrintingPress ? dateFilteredRawMaterialPurchases.length : (cogsQuery.data ?? []).length;
   // The transaction-count badge next to each tab's name — the whole reason this exists is so a
@@ -394,6 +495,20 @@ export function ExpensesPage() {
     { key: 'salaries', label: t('accounting.salaries'), count: filteredSalaries.length },
     ...(isPrintingPress
       ? [{ key: 'profits' as Tab, label: t('accounting.managerPartnerProfits'), count: filteredProfits.length }]
+      : []),
+    ...(isStationery
+      ? [
+          {
+            key: 'commissionPayouts' as Tab,
+            label: t('accounting.commissionPayoutsTab'),
+            count: (commissionPayoutsQuery.data ?? []).length,
+          },
+          {
+            key: 'disbursedProfits' as Tab,
+            label: t('accounting.disbursedProfitsTab'),
+            count: (disbursedDividendsQuery.data ?? []).length + (disbursedCommissionPayoutsQuery.data ?? []).length,
+          },
+        ]
       : []),
   ];
 
@@ -434,6 +549,41 @@ export function ExpensesPage() {
     { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
     { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.account}`) },
   ];
+
+  // Read-only — managed from صرف العمولات screen itself (reached via the commission card on
+  // "لوحة المندوب"), same convention as the profitColumns/salaryColumns rows above.
+  const commissionPayoutColumns: Column<CommissionPayoutTransaction>[] = [
+    { header: t('common.date'), accessor: (r) => r.date },
+    { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
+    { header: t('fields.salesRepresentative'), accessor: (r) => r.repName },
+    { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
+    { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.account}`) },
+    { header: t('table.description'), accessor: (r) => r.description ?? '—' },
+    { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
+  ];
+
+  // "الأرباح المصروفة" tab — read-only, same convention as the tabs above: managed from الشركاء's
+  // own Dividends tab / صرف العمولات screen, not editable here.
+  const disbursedDividendColumns: Column<DividendTransaction>[] = [
+    { header: t('common.date'), accessor: (r) => r.date },
+    { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
+    { header: t('fields.partnerName'), accessor: (r) => r.partnerName },
+    { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
+    { header: t('table.description'), accessor: (r) => r.description ?? '—' },
+    { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
+  ];
+  const disbursedCommissionColumns: Column<CommissionPayoutTransaction>[] = [
+    { header: t('common.date'), accessor: (r) => r.date },
+    { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
+    { header: t('fields.salesRepresentative'), accessor: (r) => r.repName },
+    { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
+    { header: t('table.description'), accessor: (r) => r.description ?? '—' },
+  ];
+  const totalDisbursedDividends = (disbursedDividendsQuery.data ?? []).reduce((sum, r) => sum + Number(r.amount), 0);
+  const totalDisbursedCommissions = (disbursedCommissionPayoutsQuery.data ?? []).reduce(
+    (sum, r) => sum + Number(r.amount),
+    0,
+  );
 
   const recurringColumns: Column<RecurringExpense>[] = [
     { header: t('accounting.category'), accessor: (r) => r.category },
@@ -642,6 +792,84 @@ export function ExpensesPage() {
             isLoading={profitsQuery.isLoading}
           />
         </>
+      )}
+
+      {tab === 'commissionPayouts' && (
+        <>
+          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="text-xs text-[var(--text-muted)]">{t('accounting.totalCommissionPayouts')}</div>
+              <div className="mt-1 text-2xl font-semibold">{money(totalCommissionPayouts)}</div>
+            </div>
+          </div>
+
+          <DataTable
+            columns={commissionPayoutColumns}
+            data={commissionPayoutsQuery.data ?? []}
+            keyField={(r) => r.id}
+            isLoading={commissionPayoutsQuery.isLoading}
+          />
+        </>
+      )}
+
+      {tab === 'disbursedProfits' && (
+        <div className="flex flex-col gap-8">
+          <div>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="font-semibold">{t('accounting.partnersDisbursedProfitsTitle')}</h3>
+              <div className="flex items-center gap-3">
+                <div className="text-sm text-[var(--text-muted)]">
+                  {t('accounting.totalDisbursed')}: <span className="font-semibold text-[var(--text)]">{money(totalDisbursedDividends)}</span>
+                </div>
+                <div className="w-56">
+                  <Select value={disbursedPartnerFilter} onChange={(e) => setDisbursedPartnerFilter(e.target.value)}>
+                    <option value="">{t('common.all')}</option>
+                    {(partnersListQuery.data ?? []).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+            </div>
+            <DataTable
+              columns={disbursedDividendColumns}
+              data={disbursedDividendsQuery.data ?? []}
+              keyField={(r) => r.id}
+              isLoading={disbursedDividendsQuery.isLoading}
+              searchable={false}
+            />
+          </div>
+
+          <div>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="font-semibold">{t('accounting.repsDisbursedProfitsTitle')}</h3>
+              <div className="flex items-center gap-3">
+                <div className="text-sm text-[var(--text-muted)]">
+                  {t('accounting.totalDisbursed')}: <span className="font-semibold text-[var(--text)]">{money(totalDisbursedCommissions)}</span>
+                </div>
+                <div className="w-56">
+                  <Select value={disbursedRepFilter} onChange={(e) => setDisbursedRepFilter(e.target.value)}>
+                    <option value="">{t('common.all')}</option>
+                    {(repsListQuery.data ?? []).map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+            </div>
+            <DataTable
+              columns={disbursedCommissionColumns}
+              data={disbursedCommissionPayoutsQuery.data ?? []}
+              keyField={(r) => r.id}
+              isLoading={disbursedCommissionPayoutsQuery.isLoading}
+              searchable={false}
+            />
+          </div>
+        </div>
       )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={t('treasury.addExpense')}>

@@ -4,6 +4,9 @@ import { Repository } from 'typeorm';
 import { User } from '../../modules/users/entities/user.entity';
 import { SalesRepresentative } from '../../modules/parties/entities/sales-representative.entity';
 
+/** Mirrors SALES_REP_ROLE_NAME in backend/src/modules/users/users.service.ts. */
+const SALES_REP_ROLE_NAME = 'مندوب';
+
 /**
  * Enforces that non-admin callers can only ever attribute a sales transaction (quotation, invoice,
  * payment) to themselves — never to another sales representative or user, no matter what the
@@ -21,6 +24,19 @@ export class SalesRepAccessService {
   async isSystemAdmin(userId: string): Promise<boolean> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     return user?.roles?.some((role) => role.isSystemRole) ?? false;
+  }
+
+  /** True when `salesRepresentativeId` is linked to a "مندوب" (field sales agent) login account —
+   * shared by SalesInvoicesService (an invoice's own paid amount) and SalesPaymentsService (a
+   * follow-up receipt) to decide whether a payment routes into that rep's own
+   * CashMovementAccount.REP_TREASURY pocket instead of the company's real CASH/BANK, and to skip
+   * the usual paymentAccount requirement for them (they never choose an account at all). */
+  async isSalesAgentRep(salesRepresentativeId: string | null | undefined): Promise<boolean> {
+    if (!salesRepresentativeId) return false;
+    const rep = await this.repRepo.findOne({ where: { id: salesRepresentativeId } });
+    if (!rep?.userId) return false;
+    const user = await this.userRepo.findOne({ where: { id: rep.userId }, relations: ['roles'] });
+    return user?.roles?.some((r) => r.name === SALES_REP_ROLE_NAME) ?? false;
   }
 
   /** For quotations/payments: a single salesRepresentativeId field. */

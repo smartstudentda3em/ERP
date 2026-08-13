@@ -242,10 +242,11 @@ body {
   display: none;
 }
 
-/* Landscape A4 for this report specifically (named page, applied only via `page: cargo-report`
-   below) — the global @page rule elsewhere stays portrait for every other printable document. */
+/* Portrait A4 for this report, matching every other printable document in the app (named page,
+   applied only via `page: cargo-report` below). The column-width rules further down are tuned to
+   fit this report's 7 visible columns into portrait's narrower width. */
 @page cargo-report {
-  size: A4 landscape;
+  size: A4 portrait;
   margin: 10mm;
 }
 
@@ -300,9 +301,10 @@ body {
   }
   .cargo-print-summary {
     display: flex;
-    justify-content: flex-end;
+    justify-content: center;
+    text-align: center;
     gap: 10px;
-    margin: 14px 0 12px;
+    margin: 14px auto 12px;
   }
   .cargo-print-report {
     page: cargo-report;
@@ -347,9 +349,10 @@ body {
 }
 .cargo-print-report.pdf-export-mode .cargo-print-summary {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
+  text-align: center;
   gap: 10px;
-  margin: 14px 0 12px;
+  margin: 14px auto 12px;
 }
 .cargo-print-report.pdf-export-mode .overflow-x-auto {
   overflow: visible;
@@ -385,22 +388,24 @@ body {
 
 /* Balanced column widths under table-layout: fixed — without these every column would split the
    row equally regardless of content, squeezing name/product columns while wasting space on short
-   numeric ones. The 9th (actions) column is excluded: it's hidden via :last-child above. */
+   numeric ones. The 8th (actions) column is excluded: it's hidden via :last-child above. Mirrors
+   the on-screen DataTable column widths in ImportCargoTab.tsx: product widened, quantity and
+   السعر النهائي narrowed relative to the other price columns. */
 .cargo-print-report table th:nth-child(1),
 .cargo-print-report table td:nth-child(1) {
-  width: 15%;
+  width: 24%;
 }
 .cargo-print-report table th:nth-child(2),
 .cargo-print-report table td:nth-child(2) {
-  width: 14%;
+  width: 7%;
 }
 .cargo-print-report table th:nth-child(3),
 .cargo-print-report table td:nth-child(3) {
-  width: 12%;
+  width: 13%;
 }
 .cargo-print-report table th:nth-child(4),
 .cargo-print-report table td:nth-child(4) {
-  width: 7%;
+  width: 12%;
 }
 .cargo-print-report table th:nth-child(5),
 .cargo-print-report table td:nth-child(5) {
@@ -408,7 +413,7 @@ body {
 }
 .cargo-print-report table th:nth-child(6),
 .cargo-print-report table td:nth-child(6) {
-  width: 12%;
+  width: 11%;
 }
 .cargo-print-report table th:nth-child(7),
 .cargo-print-report table td:nth-child(7) {
@@ -416,7 +421,7 @@ body {
 }
 .cargo-print-report table th:nth-child(8),
 .cargo-print-report table td:nth-child(8) {
-  width: 15%;
+  width: 8%;
 }
 
 /* Explicit defensive hide for the Import section's tab navigation during print, on top of the

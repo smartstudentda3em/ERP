@@ -18,6 +18,8 @@ import { DataSource, Repository } from 'typeorm';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CompanyScopedCrudService } from '../../common/services/base-crud.service';
+import { CashMovementsService } from '../treasury/cash-movements.service';
+import { CashMovementAccount } from '../../entities/enums';
 import { SalesRepresentative } from './entities/sales-representative.entity';
 import { CommissionException } from './entities/commission-exception.entity';
 import { CreateCommissionExceptionDto } from './dto/commission-exception.dto';
@@ -42,6 +44,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     @InjectRepository(PayrollRunLine) private readonly payrollRunLineRepo: Repository<PayrollRunLine>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
+    private readonly cashMovementsService: CashMovementsService,
   ) {
     super(repo);
   }
@@ -680,27 +683,45 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     dateTo: string,
   ) {
     const generalRate = Number(rep.commissionRate ?? 0);
-    const lineRows = rep.branchId
-      ? await this.dataSource
-          .createQueryBuilder()
-          .select('l.id', 'lineId')
-          .addSelect('i.id', 'invoiceId')
-          .addSelect('i."documentNumber"', 'documentNumber')
-          .addSelect('i."invoiceDate"', 'invoiceDate')
-          .addSelect('l."lineTotal"', 'lineTotal')
-          .addSelect('l."productId"', 'productId')
-          .addSelect('p."categoryId"', 'categoryId')
-          .addSelect('COALESCE(p."nameAr", p."nameEn")', 'productName')
-          .from('sales_invoice_lines', 'l')
-          .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
-          .innerJoin('products', 'p', 'p.id = l."productId"')
-          .where('i."companyId" = :companyId', { companyId })
-          .andWhere('i."branchId" = :branchId', { branchId: rep.branchId })
-          .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
-          .orderBy('i."invoiceDate"', 'DESC')
-          .addOrderBy('i."documentNumber"', 'DESC')
-          .getRawMany()
-      : [];
+    // Press branch managers: commission is attributed to the whole branch (see
+    // getBranchManagersCommission's own doc comment) regardless of who created each invoice — every
+    // company gets exactly one seeded "Head Office" branch though (see demo-data-seed.ts), so
+    // rep.branchId is populated even outside Press and can't be used to distinguish the two cases
+    // (same reasoning getManagersProfitability's own isPress check already documents). Every other
+    // company's رep is instead attributed the same way getReportsInvoices already does: their own
+    // salesRepresentativeId, or — for older invoices recorded before that column existed — one
+    // whose creator's own userId matches this رep's.
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
+    const lineRowsQuery = this.dataSource
+      .createQueryBuilder()
+      .select('l.id', 'lineId')
+      .addSelect('i.id', 'invoiceId')
+      .addSelect('i."documentNumber"', 'documentNumber')
+      .addSelect('i."invoiceDate"', 'invoiceDate')
+      .addSelect('l."lineTotal"', 'lineTotal')
+      .addSelect('l."productId"', 'productId')
+      .addSelect('p."categoryId"', 'categoryId')
+      .addSelect('COALESCE(p."nameAr", p."nameEn")', 'productName')
+      .from('sales_invoice_lines', 'l')
+      .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+      .innerJoin('products', 'p', 'p.id = l."productId"')
+      .where('i."companyId" = :companyId', { companyId })
+      .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo });
+    if (isPress) {
+      lineRowsQuery.andWhere('i."branchId" = :branchId', { branchId: rep.branchId });
+    } else if (rep.userId) {
+      lineRowsQuery.andWhere(
+        '(i."salesRepresentativeId" = :repId OR (i."salesRepresentativeId" IS NULL AND i."createdById" = :userId))',
+        { repId: rep.id, userId: rep.userId },
+      );
+    } else {
+      lineRowsQuery.andWhere('i."salesRepresentativeId" = :repId', { repId: rep.id });
+    }
+    const lineRows = await lineRowsQuery
+      .orderBy('i."invoiceDate"', 'DESC')
+      .addOrderBy('i."documentNumber"', 'DESC')
+      .getRawMany();
 
     const exceptionRows = await this.commissionExceptionsRepo.find({
       where: { companyId, salesRepresentativeId: rep.id },
@@ -751,6 +772,19 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       ? await Promise.all(months.map((m) => this.getPayrollMonthSnapshot(employee.id, companyId, m.year, m.month)))
       : months.map(() => null);
 
+    // "خزينة المندوب" card (Stationery only) — this رep's current REP_TREASURY balance, i.e. the
+    // cash still sitting in their own pocket that hasn't been transferred out yet. Not date-range
+    // filtered like the rest of this dashboard (it's a live current balance, not a period total);
+    // always 0 for a Press branch manager or any other رep who never had invoices routed there.
+    const repTreasuryBalance = await this.cashMovementsService.getBalance(
+      companyId,
+      CashMovementAccount.REP_TREASURY,
+      undefined,
+      undefined,
+      undefined,
+      rep.id,
+    );
+
     return {
       manager: {
         id: rep.id,
@@ -760,6 +794,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       employee: employee ? { baseSalary: Number(employee.baseSalary), jobTitle: employee.jobTitle } : null,
       sales: { totalSales, items },
       commission: { generalRate, amount: commissionAmount },
+      repTreasuryBalance,
       payroll: {
         hasEmployeeRecord: !!employee,
         months: payrollMonths,

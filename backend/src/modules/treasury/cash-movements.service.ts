@@ -193,8 +193,111 @@ export class CashMovementsService {
         },
         manager,
       );
+      if (input.fromAccount === CashMovementAccount.REP_TREASURY) {
+        await this.settleRepTreasuryFifo(companyId, input.fromSalesRepresentativeId!, input.amount, manager);
+      }
       return { from, to };
     });
+  }
+
+  /**
+   * Marks specific outstanding رep-collected invoices/receipts as cleared once their value has
+   * actually been transferred out of a rep's REP_TREASURY pocket — walks that rep's unsettled
+   * INCOME rows oldest-first, incrementing each one's settledAmount until `amount` is fully
+   * consumed (a row can be partially settled; the entered transfer amount never has to land on an
+   * exact invoice boundary). This is what lets the "خزينة المناديب" breakdown show exactly which
+   * invoices/receipts still make up a rep's balance — see getRepTreasuryBreakdown below — while
+   * assertSufficientBalance (already called by the caller before this runs) guarantees `amount`
+   * never exceeds the sum of every row's remaining (amount - settledAmount), so this loop always
+   * fully consumes it.
+   */
+  private async settleRepTreasuryFifo(
+    companyId: string,
+    salesRepresentativeId: string,
+    amount: number,
+    manager: EntityManager,
+  ): Promise<void> {
+    const repo = manager.getRepository(CashMovement);
+    const rows = await repo
+      .createQueryBuilder('m')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere('m."salesRepresentativeId" = :salesRepresentativeId', { salesRepresentativeId })
+      .andWhere('m.account = :account', { account: CashMovementAccount.REP_TREASURY })
+      .andWhere('m.type = :type', { type: CashMovementType.INCOME })
+      .andWhere('(m.amount - m."settledAmount") > 0.005')
+      .orderBy('m."movementDate"', 'ASC')
+      .addOrderBy('m."createdAt"', 'ASC')
+      .getMany();
+
+    let remaining = amount;
+    for (const row of rows) {
+      if (remaining <= 0.005) break;
+      const rowRemaining = Number(row.amount) - Number(row.settledAmount);
+      const consume = Math.min(rowRemaining, remaining);
+      row.settledAmount = Number(row.settledAmount) + consume;
+      remaining -= consume;
+      await repo.save(row);
+    }
+  }
+
+  /**
+   * The "خزينة المناديب" detail screen's per-rep breakdown (Stationery only) — every still-
+   * outstanding invoice/receipt that makes up a rep's current REP_TREASURY balance, i.e. every
+   * INCOME row not yet fully cleared by settleRepTreasuryFifo above. An invoice's own upfront
+   * payment (sourceType SALES_INVOICE, sourceId = the invoice) and a later follow-up collection
+   * (sourceType SALES_PAYMENT, linked via sales_payments."cashMovementId" — that row never carries
+   * its own sourceId) are resolved to a customer name and document number differently, since they
+   * attribute back to their source document through two different columns. `dateFrom`/`dateTo`
+   * only narrow what's *displayed*; settleRepTreasuryFifo itself always sweeps the full unsettled
+   * set regardless of the caller's currently-applied filter.
+   *
+   * `salesRepresentativeId` is optional — omitted (the المناديب reports tab's "الكل" filter),
+   * every rep's outstanding rows come back together (each carrying its own `repName`) instead of
+   * being scoped to one rep, which is what lets that screen show a single combined total across
+   * every مندوب for the selected date range.
+   */
+  async getRepTreasuryBreakdown(
+    companyId: string,
+    salesRepresentativeId?: string,
+    dateFrom?: string,
+    dateTo?: string,
+  ) {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('m.id', 'id')
+      .addSelect('m."movementDate"', 'date')
+      .addSelect('m."sourceType"', 'sourceType')
+      .addSelect('m.amount', 'amount')
+      .addSelect('m."settledAmount"', 'settledAmount')
+      .addSelect('sr.name', 'repName')
+      .addSelect('COALESCE(inv."documentNumber", sp."documentNumber")', 'documentNumber')
+      .addSelect('COALESCE(invCustomer.name, spCustomer.name)', 'customerName')
+      .from('cash_movements', 'm')
+      .leftJoin('sales_representatives', 'sr', 'sr.id = m."salesRepresentativeId"')
+      .leftJoin('sales_invoices', 'inv', `m."sourceType" = 'SALES_INVOICE' AND inv.id = m."sourceId"`)
+      .leftJoin('customers', 'invCustomer', 'invCustomer.id = inv."customerId"')
+      .leftJoin('sales_payments', 'sp', `m."sourceType" = 'SALES_PAYMENT' AND sp."cashMovementId" = m.id`)
+      .leftJoin('customers', 'spCustomer', 'spCustomer.id = sp."customerId"')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere('m.account = :account', { account: CashMovementAccount.REP_TREASURY })
+      .andWhere(`m.type = 'INCOME'`)
+      .andWhere('(m.amount - m."settledAmount") > 0.005')
+      .orderBy('m."createdAt"', 'DESC');
+
+    if (salesRepresentativeId) qb.andWhere('m."salesRepresentativeId" = :salesRepresentativeId', { salesRepresentativeId });
+    if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });
+    if (dateTo) qb.andWhere('m."movementDate" <= :dateTo', { dateTo });
+
+    const rows = await qb.getRawMany();
+    return rows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      sourceType: r.sourceType as 'SALES_INVOICE' | 'SALES_PAYMENT',
+      documentNumber: r.documentNumber ?? '—',
+      customerName: r.customerName ?? '—',
+      repName: r.repName ?? '—',
+      remaining: Number(r.amount) - Number(r.settledAmount),
+    }));
   }
 
   /**
@@ -743,7 +846,10 @@ export class CashMovementsService {
     await this.repo.remove(row);
   }
 
-  /** Commission payout log — every "صرف الأرباح" transaction, optionally scoped to one manager. */
+  /** Commission payout log — every "صرف الأرباح"/"صرف العمولات" transaction, optionally scoped to
+   * one manager/رep. Also feeds the Stationery Expenses screen's "صرف العمولات" tab (all reps,
+   * unscoped), hence the repName join — that tab has no reps list of its own to resolve names from,
+   * unlike CommissionPayoutsTab.tsx which already gets managerName from its own branch-commissions query. */
   async getCommissionPayouts(companyId: string, dateFrom?: string, dateTo?: string, salesRepresentativeId?: string) {
     const qb = this.dataSource
       .createQueryBuilder()
@@ -754,11 +860,13 @@ export class CashMovementsService {
       .addSelect('m.account', 'account')
       .addSelect('m."branchId"', 'branchId')
       .addSelect('m."salesRepresentativeId"', 'salesRepresentativeId')
+      .addSelect('sr.name', 'repName')
       .addSelect('m.description', 'description')
       .addSelect('m."createdAt"', 'createdAt')
       .addSelect('u."fullName"', 'createdByName')
       .from('cash_movements', 'm')
       .leftJoin('users', 'u', 'u.id = m."createdById"')
+      .leftJoin('sales_representatives', 'sr', 'sr.id = m."salesRepresentativeId"')
       .where('m."companyId" = :companyId', { companyId })
       .andWhere(`m."sourceType" = 'COMMISSION_PAYOUT'`)
       .orderBy('m."createdAt"', 'DESC');
@@ -776,6 +884,7 @@ export class CashMovementsService {
       account: r.account,
       branchId: r.branchId,
       salesRepresentativeId: r.salesRepresentativeId,
+      repName: r.repName ?? '—',
       description: r.description,
       createdAt: r.createdAt,
       createdByName: r.createdByName ?? '—',

@@ -911,6 +911,11 @@ export function PartnersPage() {
           className="grid grid-cols-2 gap-3"
           onSubmit={(e) => {
             e.preventDefault();
+            // The submit button is already disabled while the mutation is in flight, but that
+            // relies on a re-render landing before the next click is processed — this guard is a
+            // synchronous belt-and-suspenders check so a double-click can never fire two POSTs
+            // (and thus never reserve two document numbers) no matter how fast it lands.
+            if (addContributionMutation.isPending) return;
             addContributionMutation.mutate();
           }}
         >

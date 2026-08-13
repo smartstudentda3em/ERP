@@ -47,6 +47,16 @@ interface RepReceiptRow {
   customerName: string;
 }
 
+interface RepTreasuryBreakdownRow {
+  id: string;
+  date: string;
+  sourceType: 'SALES_INVOICE' | 'SALES_PAYMENT';
+  documentNumber: string;
+  customerName: string;
+  repName: string;
+  remaining: number;
+}
+
 interface QuarterlyTrendPeriod {
   year: number;
   quarter: number;
@@ -87,7 +97,7 @@ function money(n: number): string {
 
 /** 1-4 for a quarter, 0 for the full calendar year. */
 export type ReportsQuarter = 0 | 1 | 2 | 3 | 4;
-type DetailTab = 'invoices' | 'receipts';
+type DetailTab = 'invoices' | 'receipts' | 'treasury';
 
 /** Q1: Jan1–Mar31, Q2: Apr1–Jun30, Q3: Jul1–Sep30, Q4: Oct1–Dec31 — mirrors quarterDateRange() elsewhere in the app. `quarter` 0 means the full year (Jan1–Dec31). */
 function quarterDateRange(year: number, quarter: ReportsQuarter): { dateFrom: string; dateTo: string } {
@@ -130,7 +140,7 @@ export function RepresentativesReportsTab({
   onCustomRangeChange,
 }: RepresentativesReportsTabProps) {
   const { t } = useTranslation();
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isStationery } = useActiveCompany();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const [detailTab, setDetailTab] = useState<DetailTab>('invoices');
   const [comparisonTab, setComparisonTab] = useState<ComparisonTab>('sales');
@@ -178,6 +188,27 @@ export function RepresentativesReportsTab({
     // below, which never lets detailTab become 'receipts' for Press.
     enabled: !!companyId && !isPrintingPress && detailTab === 'receipts',
   });
+
+  // Stationery only — "خزينة المناديب" detail tab, backed by the exact same endpoint as the
+  // Treasury screen's own خزينة المناديب breakdown (CashMovementsService.getRepTreasuryBreakdown).
+  // Leaving representativeId unset ("الكل") omits the rep filter server-side instead of picking
+  // one, so every رep's still-outstanding rows come back together — that's what lets the total
+  // below combine every مندوب's treasury for the selected date range, rather than just one.
+  const treasuryBreakdownQuery = useQuery({
+    queryKey: ['rep-treasury-breakdown-report', companyId, dateFrom, dateTo, representativeId],
+    queryFn: () =>
+      unwrap<RepTreasuryBreakdownRow[]>(
+        apiClient.get('/treasury/rep-treasury-breakdown', {
+          params: { salesRepresentativeId: representativeId || undefined, dateFrom, dateTo },
+        }),
+      ),
+    enabled: !!companyId && isStationery && detailTab === 'treasury',
+  });
+  const treasuryRows = treasuryBreakdownQuery.data ?? [];
+  const totalRepTreasury = useMemo(
+    () => treasuryRows.reduce((sum, r) => sum + Number(r.remaining ?? 0), 0),
+    [treasuryRows],
+  );
 
   // Printing Press only — the quarterly/YoY comparison chart only makes sense once the user has
   // narrowed down to one specific quarter (not "السنة كاملة" or a free-form custom range), since
@@ -343,6 +374,20 @@ export function RepresentativesReportsTab({
     { header: t('common.date'), accessor: (r) => r.paymentDate },
     { header: t('fields.paidAmount'), accessor: (r) => money(r.amount), align: 'right' },
     { header: t('fields.method'), accessor: (r) => t(`paymentMethod.${r.method}`, r.method) },
+  ];
+
+  // The المندوب column only earns its place when "الكل" is selected — with one specific rep
+  // chosen every row already belongs to them, so repeating their name on every line is noise.
+  const treasuryColumns: Column<RepTreasuryBreakdownRow>[] = [
+    { header: t('common.date'), accessor: (r) => r.date },
+    ...(representativeId ? [] : [{ header: t('fields.salesRepresentative'), accessor: (r: RepTreasuryBreakdownRow) => r.repName } as Column<RepTreasuryBreakdownRow>]),
+    {
+      header: t('treasury.sourceDocument'),
+      accessor: (r) => (r.sourceType === 'SALES_INVOICE' ? t('treasury.sourceInvoice') : t('treasury.sourceReceipt')),
+    },
+    { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
+    { header: t('fields.customerName'), accessor: (r) => r.customerName },
+    { header: t('treasury.remainingAmount'), accessor: (r) => money(r.remaining), align: 'right' },
   ];
 
   return (
@@ -690,6 +735,14 @@ export function RepresentativesReportsTab({
           >
             {t('customers.receiptsHistory')}
           </button>
+          {isStationery && (
+            <button
+              className={`rounded-lg px-3 py-1.5 ${detailTab === 'treasury' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+              onClick={() => setDetailTab('treasury')}
+            >
+              {t('treasury.repTreasuriesBalance')}
+            </button>
+          )}
         </div>
       )}
 
@@ -703,7 +756,7 @@ export function RepresentativesReportsTab({
             searchable={false}
           />
         </div>
-      ) : (
+      ) : detailTab === 'receipts' ? (
         <DataTable
           columns={receiptColumns}
           data={receiptsQuery.data ?? []}
@@ -711,6 +764,22 @@ export function RepresentativesReportsTab({
           isLoading={receiptsQuery.isLoading}
           searchable={false}
         />
+      ) : (
+        <div>
+          <div className="mb-3 flex justify-end">
+            <Card>
+              <div className="text-xs text-[var(--text-muted)]">{t('treasury.repTreasuryBalance')}</div>
+              <div className="mt-1 text-lg font-semibold text-green-600">{money(totalRepTreasury)}</div>
+            </Card>
+          </div>
+          <DataTable
+            columns={treasuryColumns}
+            data={treasuryRows}
+            keyField={(r) => r.id}
+            isLoading={treasuryBreakdownQuery.isLoading}
+            searchable={false}
+          />
+        </div>
       )}
     </div>
   );

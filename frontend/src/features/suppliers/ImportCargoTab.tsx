@@ -561,11 +561,13 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     printRef.current.classList.add('pdf-export-mode');
     try {
       await new Promise(requestAnimationFrame);
-      // Landscape — this report has 8 data columns, wider than the portrait documents elsewhere.
+      // Portrait, matching the other printable documents in the app — the column widths below
+      // (and the print CSS's wrap/break-word rules) are tuned to fit this report's 7 visible
+      // columns into A4 portrait instead of relying on landscape's extra width.
       await exportElementToPdf(
         printRef.current,
         buildPdfFileName('طلب استيراد', currentShipmentName, localToday()),
-        'landscape',
+        'portrait',
       );
     } finally {
       printRef.current?.classList.remove('pdf-export-mode');
@@ -592,7 +594,11 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
   const columns: Column<CargoItem>[] = [
     // No "اسم الشحنة" column here — every row in this view already belongs to the one shipment
     // named in the detail header above, see the master/detail render below.
-    { header: t('fields.product'), accessor: (r) => productLabel(r.product) },
+    {
+      header: t('fields.product'),
+      accessor: (r) => productLabel(r.product),
+      width: '30%',
+    },
     {
       header: t('imports.quantity'),
       accessor: (r) => formatAmount(r.quantity),
@@ -628,6 +634,9 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
       },
       align: 'right',
       highlight: true,
+      // Narrowed to match the other price columns' natural (unset) width instead of being left to
+      // soak up whatever extra table width the auto layout algorithm would otherwise hand it.
+      width: '9%',
     },
     {
       // السعر الإجمالي = (سعر الوحدة + تكلفة الشحن) × الكمية.
@@ -732,20 +741,31 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-3 print:hidden">
-        <button
-          type="button"
-          className="text-primary-600 hover:underline"
-          onClick={() => {
-            setSelectedShipmentId(null);
-            setCargoSearch('');
-          }}
-        >
-          {t('imports.backToShipments')}
-        </button>
-        <span className="text-[var(--text-muted)]">
-          {t('imports.shipmentHeading')}: <strong className="text-[var(--text)]">{selectedShipment?.shipmentName ?? '—'}</strong>
-        </span>
+      {/* Search sits on the same row as the back link/shipment title — flex + justify-between
+          keeps them cleanly opposite each other regardless of viewport width. */}
+      <div className="mb-3 flex items-center justify-between gap-3 print:hidden">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="text-primary-600 hover:underline"
+            onClick={() => {
+              setSelectedShipmentId(null);
+              setCargoSearch('');
+            }}
+          >
+            {t('imports.backToShipments')}
+          </button>
+          <span className="text-[var(--text-muted)]">
+            {t('imports.shipmentHeading')}: <strong className="text-[var(--text)]">{selectedShipment?.shipmentName ?? '—'}</strong>
+          </span>
+        </div>
+        <Input
+          type="search"
+          placeholder={t('common.search') ?? ''}
+          className="max-w-xs"
+          value={cargoSearch}
+          onChange={(e) => setCargoSearch(e.target.value)}
+        />
       </div>
 
       <div ref={printRef} className="cargo-print-report">
@@ -775,20 +795,14 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
         </div>
 
         {!isExportingPdf && (
-          <div className="mb-3 grid grid-cols-3 items-center gap-3 print:hidden">
-            <Input
-              type="search"
-              placeholder={t('common.search') ?? ''}
-              className="max-w-xs justify-self-start"
-              value={cargoSearch}
-              onChange={(e) => setCargoSearch(e.target.value)}
-            />
-            {/* إجمالي مصاريف الشحن shifted toward the (RTL) right of this middle slot to make room
-                beside it for إجمالي عدد الوحدات and إجمالي سعر الشحنة — all three live totals now
-                sit as a row of cards. flex-nowrap (so the row never stacks onto multiple lines)
-                plus whitespace-nowrap + a wider min-width/padding on each card keeps its own
-                label+amount on one line even at the widest currency/amount combinations. */}
-            <div className="flex flex-nowrap items-center justify-self-center gap-3">
+          <>
+            {/* The three totals are the row's only content now that search has moved up to the
+                title row, so a plain centered flex row (no absolute-positioning trick needed)
+                already gives equal left/right margins. flex-nowrap (so the row never stacks onto
+                multiple lines) plus whitespace-nowrap + a wider min-width/padding on each card
+                keeps its own label+amount on one line even at the widest currency/amount
+                combinations. */}
+            <div className="mb-3 flex flex-nowrap items-center justify-center gap-3 print:hidden">
               <div className="flex flex-row min-w-[200px] items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm">
                 <span className="whitespace-nowrap text-[var(--text-muted)]">{t('imports.totalShippingExpenses')}</span>
                 <span className="whitespace-nowrap font-semibold">{money(visibleShippingExpensesTotal, headerTotalsCurrency)}</span>
@@ -802,10 +816,12 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
                 <span className="whitespace-nowrap font-semibold">{money(visibleTotalPriceSum, headerTotalsCurrency)}</span>
               </div>
             </div>
-            <Button className="justify-self-end" onClick={openCreate}>
-              + {t('common.create')}
-            </Button>
-          </div>
+            <div className="mb-3 flex justify-end print:hidden">
+              <Button onClick={openCreate}>
+                + {t('common.create')}
+              </Button>
+            </div>
+          </>
         )}
 
         <DataTable

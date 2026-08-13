@@ -40,6 +40,13 @@ export class CashMovement extends BaseEntity {
   @Column({ type: "numeric", precision: 18, scale: 4 })
   amount: number;
 
+  /** How much of this row's own amount has already been swept into a rep-treasury settlement
+   * transfer (see CashMovementsService.settleRepTreasuryFifo) — only meaningful on
+   * account=REP_TREASURY, type=INCOME rows; always 0 elsewhere. `amount - settledAmount` is what
+   * still counts toward the rep's outstanding breakdown. */
+  @Column({ type: "numeric", precision: 18, scale: 4, default: 0 })
+  settledAmount: number;
+
   @Column({ type: "enum", enum: CashMovementSourceType })
   sourceType: CashMovementSourceType;
 

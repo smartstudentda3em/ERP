@@ -57,6 +57,17 @@ export class CashMovementsController {
     return this.service.getRepTreasuryBalances(companyId);
   }
 
+  @Get('rep-treasury-breakdown')
+  @Permissions('treasury.cash-box.view')
+  getRepTreasuryBreakdown(
+    @CurrentUser('companyId') companyId: string,
+    @Query('salesRepresentativeId') salesRepresentativeId?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.service.getRepTreasuryBreakdown(companyId, salesRepresentativeId, dateFrom, dateTo);
+  }
+
   @Get('expenses')
   @Permissions('treasury.expense.view')
   expenseTransactions(

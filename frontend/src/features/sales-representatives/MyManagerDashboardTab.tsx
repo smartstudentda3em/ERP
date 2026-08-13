@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { monthNameOnly } from '../../lib/date-utils';
 import { useAuthStore } from '../../store/auth-store';
+import { useActiveCompany } from '../../lib/use-active-company';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { FormField, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
@@ -44,6 +46,7 @@ interface ManagerDashboard {
   employee: { baseSalary: number; jobTitle: string } | null;
   sales: { totalSales: number; items: SalesItem[] };
   commission: { generalRate: number; amount: number };
+  repTreasuryBalance: number;
   payroll: {
     hasEmployeeRecord: boolean;
     months: (PayrollMonthSnapshot | null)[];
@@ -149,6 +152,8 @@ export interface MyManagerDashboardTabProps {
 
 export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps = {}) {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const { isStationery } = useActiveCompany();
   const now = new Date();
   const currentQuarter = (Math.floor(now.getMonth() / 3) + 1) as DashboardQuarter;
   const [internalYear, setInternalYear] = useState(now.getFullYear());
@@ -274,7 +279,7 @@ export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps
             )}
           </Card>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className={`grid grid-cols-1 gap-4 ${isStationery ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
             <Card>
               <CardHeader>
                 <CardTitle>{t('managerDashboard.salesOverviewTitle')}</CardTitle>
@@ -282,7 +287,18 @@ export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps
               <div className="text-2xl font-bold text-primary-600">{formatAmount(data.sales.totalSales)}</div>
             </Card>
 
-            <Card>
+            {/* Stationery only: clickable only for whoever can see this dashboard for a رep other
+                than themselves (canViewAll, i.e. Admin/Manager) — a مندوب viewing their own tab sees
+                the exact same amount but the card stays inert for them, per spec ("خفية عن المندوب
+                العادي"). Navigates to the detailed commission payout screen for this specific manager. */}
+            <Card
+              className={isStationery && canViewAll ? 'cursor-pointer transition hover:border-primary-400' : undefined}
+              onClick={
+                isStationery && canViewAll
+                  ? () => navigate(`/sales-representatives/${data.manager.id}/commission-payout`)
+                  : undefined
+              }
+            >
               <CardHeader>
                 <CardTitle>{t('managerDashboard.commissionTitle')}</CardTitle>
               </CardHeader>
@@ -290,12 +306,24 @@ export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps
               <div className="mt-1 text-xs text-[var(--text-muted)]">
                 {t('fields.commissionRate')}: {data.commission.generalRate}%
               </div>
+              {isStationery && canViewAll && (
+                <div className="mt-1 text-xs text-primary-600">{t('managerDashboard.clickForCommissionDetails')}</div>
+              )}
             </Card>
+
+            {isStationery && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('treasury.repTreasuryBalance')}</CardTitle>
+                </CardHeader>
+                <div className="text-2xl font-bold text-green-600">{formatAmount(data.repTreasuryBalance)}</div>
+              </Card>
+            )}
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle>{t('managerDashboard.salesListTitle')}</CardTitle>
+              <CardTitle>{t(isStationery ? 'managerDashboard.salesListTitleRep' : 'managerDashboard.salesListTitle')}</CardTitle>
             </CardHeader>
             <DataTable columns={salesColumns} data={data.sales.items} keyField={(r) => r.lineId} pageSize={10} />
           </Card>

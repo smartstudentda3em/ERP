@@ -17,7 +17,7 @@ import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdf } from '../../lib/pdf-export';
 import { useSalesRepLock } from './useSalesRepLock';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep } from '../../lib/use-active-company';
 
 interface Company {
   id: string;
@@ -66,7 +66,11 @@ export function SalesPaymentsPage() {
   // Stationery/AC keep the normal customer+method fields (they're not Press) but must also pick a
   // بنك/كاش deposit account, same requirement as Press — see SalesPaymentsService.create()'s
   // assertPaymentAccountProvided. Branch stays Press-only, unrelated to this request.
-  const requiresPaymentAccount = isPrintingPress || isStationery || isAirConditioning;
+  // A مندوب's own follow-up collection routes straight into their REP_TREASURY pocket (see
+  // SalesPaymentsService.create()) — they never choose an account, same as the Sales Invoice form
+  // already hides its own paymentAccount selector for this role.
+  const isSalesRep = useIsSalesRep();
+  const requiresPaymentAccount = (isPrintingPress || isStationery || isAirConditioning) && !isSalesRep;
   const toast = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();

@@ -172,8 +172,8 @@ export function DashboardPage() {
             value: money(s?.cashBalance ?? 0),
             to: '/treasury/transactions',
           },
-          { label: t('dashboard.financialBalance'), value: money(financialBalance) },
           { label: t('dashboard.outstandingCustomers'), value: money(s?.outstandingCustomerBalances ?? 0) },
+          { label: t('dashboard.financialBalance'), value: money(financialBalance) },
         ]
       : [
           // Same figure, same source (getBalance(BANK)), as TreasuryTransactionsPage's own "رصيد

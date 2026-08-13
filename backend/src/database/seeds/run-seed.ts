@@ -370,6 +370,11 @@ async function main() {
     'treasury.expense.edit',
     'treasury.expense.delete',
     'treasury.cash-box.view',
+    // Lets a Manager use both the general "تحويل بين الحسابات" transfer and, for Stationery, the
+    // per-rep "تحويل المبلغ" settlement action on the خزينة المناديب detail screen — Administrator
+    // already has it via allPermissions, so this is what makes "الأدمنستريتور والمناجر فقط" actually
+    // enforceable server-side (see CashMovementsController.transfer()), not just a hidden button.
+    'treasury.cash-box.create',
     'hr.payroll.view',
     'hr.payroll.create',
     'hr.payroll.edit',
@@ -707,6 +712,14 @@ async function main() {
     'customers.view',
     'settings.warehouse.view',
     'settings.branch.view',
+    // Lets a مندوب reach /sales/payments and record a follow-up collection against their own
+    // outstanding invoices — routes into their REP_TREASURY pocket exactly like an invoice's own
+    // upfront payment (see SalesPaymentsService.create()/isSalesAgentRep()). Needs both
+    // sales.payment.view (the GET /sales/payments route itself) and sales.paymentList.view (the
+    // standalone page/sidebar entry — see PERMISSION_MATRIX's own comment on that module).
+    'sales.payment.view',
+    'sales.payment.create',
+    'sales.paymentList.view',
   ];
   const salesRepPermissions = allPermissions.filter((p) =>
     SALES_REP_PERMISSION_CODES.includes(`${p.module}.${p.action}`),

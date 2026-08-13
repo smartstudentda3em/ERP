@@ -21,6 +21,7 @@ import { SuppliersPage } from './features/suppliers/SuppliersPage';
 import { ShipmentDetailPage } from './features/suppliers/ShipmentDetailPage';
 import { SupplierStatementPage } from './features/suppliers/SupplierStatementPage';
 import { SalesRepresentativesPage } from './features/sales-representatives/SalesRepresentativesPage';
+import { RepCommissionPayoutPage } from './features/sales-representatives/RepCommissionPayoutPage';
 import { ProductsPage } from './features/inventory/ProductsPage';
 import { PrintingProductsPage } from './features/inventory/PrintingProductsPage';
 import { StockPage } from './features/inventory/StockPage';
@@ -40,6 +41,7 @@ import { UsersRolesPage } from './features/users-roles/UsersRolesPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { PurchasingPage } from './features/purchasing/PurchasingPage';
 import { TreasuryTransactionsPage } from './features/treasury/TreasuryTransactionsPage';
+import { RepTreasuriesPage } from './features/treasury/RepTreasuriesPage';
 import { ExpensesPage } from './features/treasury/ExpensesPage';
 import { InstallmentsPage } from './features/installments/InstallmentsPage';
 import { InstallmentPlanDetailPage } from './features/installments/InstallmentPlanDetailPage';
@@ -163,6 +165,14 @@ export const router = createBrowserRouter([
                 ),
               },
               {
+                path: '/sales-representatives/:id/commission-payout',
+                element: (
+                  <RequirePermission code="sales-representatives.view">
+                    <RepCommissionPayoutPage />
+                  </RequirePermission>
+                ),
+              },
+              {
                 path: '/inventory/products',
                 element: (
                   <RequirePermission code="inventory.product.view">
@@ -272,6 +282,14 @@ export const router = createBrowserRouter([
                 element: (
                   <RequirePermission code="treasury.cash-box.view">
                     <TreasuryTransactionsPage />
+                  </RequirePermission>
+                ),
+              },
+              {
+                path: '/treasury/rep-treasuries',
+                element: (
+                  <RequirePermission code="treasury.cash-box.view">
+                    <RepTreasuriesPage />
                   </RequirePermission>
                 ),
               },

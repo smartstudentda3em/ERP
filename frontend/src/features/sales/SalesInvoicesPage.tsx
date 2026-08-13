@@ -141,7 +141,7 @@ export function SalesInvoicesPage() {
     enabled: modalOpen || !!editingInvoiceId,
   });
 
-  const { isAdmin, ownRep, currentUserId, currentUserName } = useSalesRepLock(salesRepsQuery.data);
+  const { isAdmin: isSystemAdmin, ownRep, currentUserId, currentUserName } = useSalesRepLock(salesRepsQuery.data);
   const lockedAssigneeLabel = ownRep?.name ?? currentUserName;
 
   // Printing Press has no Customers screen at all (confirmed scope: every other company is
@@ -150,7 +150,12 @@ export function SalesInvoicesPage() {
   // Queries /auth/my-companies (via useActiveCompany) rather than the settings.company.view-gated
   // /settings/companies — a role like "مدير فرع" or "مندوب" has neither that permission nor any
   // reason to, so the gated endpoint 403'd silently and left isPrintingPress always false for them.
-  const { company: currentCompany, isPrintingPress } = useActiveCompany();
+  const { company: currentCompany, isPrintingPress, isStationery } = useActiveCompany();
+  // Stationery-only governance: even a true Administrator is locked to their own identity here —
+  // no free rep/user picker — so the "المندوب أو المسؤول" field always shows exactly whoever is
+  // logged in, matching Manager/مندوب's existing lock below. AC and Press keep the Administrator's
+  // free assignment exactly as before (confirmed scope: no effect on other companies).
+  const isAdmin = isSystemAdmin && !isStationery;
   // Stationery and Air Conditioning must also pick a بنك/كاش deposit account on every invoice
   // (see SalesInvoicesService.create()'s assertPaymentAccountProvided) — unlike Press they keep
   // the normal customer/warehouse form, this just adds the required selector alongside it.

@@ -270,7 +270,7 @@ body {
    overlap the report title directly below it. */
 .cargo-print-header-date {
   padding-top: 6px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: #4b5563;
   text-align: right;
@@ -288,7 +288,7 @@ body {
   border: 1px solid #1e3a5f;
   border-radius: 6px;
   background: #f8fafc;
-  font-size: 12px;
+  font-size: 17px;
   font-weight: 800;
   color: #1e3a5f;
   white-space: nowrap;
@@ -327,8 +327,16 @@ body {
   .cargo-print-report td {
     overflow-wrap: break-word;
     white-space: normal;
-    font-size: 10px;
-    padding: 4px 6px;
+    vertical-align: middle;
+  }
+  .cargo-print-report th {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .cargo-print-report td {
+    font-size: 13px;
+    padding: 6px 5px;
   }
   .cargo-print-report .app-table thead th {
     background-color: #1e3a5f !important;
@@ -370,8 +378,16 @@ body {
 .cargo-print-report.pdf-export-mode td {
   overflow-wrap: break-word;
   white-space: normal;
-  font-size: 10px;
-  padding: 4px 6px;
+  vertical-align: middle;
+}
+.cargo-print-report.pdf-export-mode th {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 6px;
+}
+.cargo-print-report.pdf-export-mode td {
+  font-size: 13px;
+  padding: 6px 5px;
 }
 .cargo-print-report.pdf-export-mode .app-table thead th {
   background-color: #1e3a5f !important;
@@ -464,8 +480,16 @@ body {
   .sales-report-print td {
     overflow-wrap: break-word;
     white-space: normal;
-    font-size: 10px;
-    padding: 4px 6px;
+    vertical-align: middle;
+  }
+  .sales-report-print th {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .sales-report-print td {
+    font-size: 13px;
+    padding: 6px 5px;
   }
 }
 
@@ -483,8 +507,16 @@ body {
 .sales-report-print.pdf-export-mode td {
   overflow-wrap: break-word;
   white-space: normal;
-  font-size: 10px;
-  padding: 4px 6px;
+  vertical-align: middle;
+}
+.sales-report-print.pdf-export-mode th {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 6px;
+}
+.sales-report-print.pdf-export-mode td {
+  font-size: 13px;
+  padding: 6px 5px;
 }
 
 /* Balanced column widths under table-layout: fixed — 9 columns, no hidden actions column here. */
@@ -553,8 +585,16 @@ body {
   .sales-payments-print td {
     overflow-wrap: break-word;
     white-space: normal;
-    font-size: 10px;
-    padding: 4px 6px;
+    vertical-align: middle;
+  }
+  .sales-payments-print th {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .sales-payments-print td {
+    font-size: 13px;
+    padding: 6px 5px;
   }
 }
 
@@ -572,8 +612,16 @@ body {
 .sales-payments-print.pdf-export-mode td {
   overflow-wrap: break-word;
   white-space: normal;
-  font-size: 10px;
-  padding: 4px 6px;
+  vertical-align: middle;
+}
+.sales-payments-print.pdf-export-mode th {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 6px;
+}
+.sales-payments-print.pdf-export-mode td {
+  font-size: 13px;
+  padding: 6px 5px;
 }
 
 /* Balanced column widths under table-layout: fixed — 8 columns, no hidden actions column here. */
@@ -639,8 +687,16 @@ body {
   .purchasing-print td {
     overflow-wrap: break-word;
     white-space: normal;
-    font-size: 10px;
-    padding: 4px 6px;
+    vertical-align: middle;
+  }
+  .purchasing-print th {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .purchasing-print td {
+    font-size: 13px;
+    padding: 6px 5px;
   }
   /* الإجراءات (edit/delete) — meaningless once printed. */
   .purchasing-print th:last-child,
@@ -663,8 +719,16 @@ body {
 .purchasing-print.pdf-export-mode td {
   overflow-wrap: break-word;
   white-space: normal;
-  font-size: 10px;
-  padding: 4px 6px;
+  vertical-align: middle;
+}
+.purchasing-print.pdf-export-mode th {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 6px;
+}
+.purchasing-print.pdf-export-mode td {
+  font-size: 13px;
+  padding: 6px 5px;
 }
 .purchasing-print.pdf-export-mode th:last-child,
 .purchasing-print.pdf-export-mode td:last-child {
@@ -728,8 +792,16 @@ body {
   .treasury-print td {
     overflow-wrap: break-word;
     white-space: normal;
-    font-size: 10px;
-    padding: 4px 6px;
+    vertical-align: middle;
+  }
+  .treasury-print th {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .treasury-print td {
+    font-size: 13px;
+    padding: 6px 5px;
   }
   /* Browser-native pagination equivalent of the row-boundary-aware slicing the PDF export does
      manually — keeps a transaction row from being split across two printed pages. */
@@ -752,8 +824,16 @@ body {
 .treasury-print.pdf-export-mode td {
   overflow-wrap: break-word;
   white-space: normal;
-  font-size: 10px;
-  padding: 4px 6px;
+  vertical-align: middle;
+}
+.treasury-print.pdf-export-mode th {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 6px;
+}
+.treasury-print.pdf-export-mode td {
+  font-size: 13px;
+  padding: 6px 5px;
 }
 
 .treasury-print-footer {
@@ -764,7 +844,7 @@ body {
   margin-top: 10px;
   padding-top: 8px;
   border-top: 2px solid #1e3a5f;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   color: #1e3a5f;
 }
@@ -848,7 +928,7 @@ body {
 }
 .financial-report-print-section-title {
   margin-bottom: 8px;
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 800;
   color: #1e3a5f;
   border-bottom: 2px solid #1e3a5f;
@@ -857,7 +937,7 @@ body {
 .financial-report-print-total {
   margin-top: 6px;
   text-align: end;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 800;
   color: #1e3a5f;
 }
@@ -880,14 +960,20 @@ body {
   .partners-report-print .overflow-x-auto {
     overflow: visible;
   }
+  /* This report's whole layout is designed to fit one A4 page (see the block comment above), so
+     it gets a smaller proportional bump than the other reports rather than the full th/td scale —
+     a bigger jump here risks pushing it onto a second page. */
   .partners-report-print,
   .partners-report-print th,
   .partners-report-print td {
-    font-size: 10px;
+    font-size: 11px;
+  }
+  .partners-report-print th {
+    font-weight: 700;
   }
   .partners-report-print th,
   .partners-report-print td {
-    padding: 3px 6px;
+    padding: 4px 6px;
   }
   /* No forced break between sections — they should flow together on the one page. */
   .partners-report-print-section-title {
@@ -914,7 +1000,7 @@ body {
   padding: 6px 14px;
   border: 1px solid #1e3a5f;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
   color: #1e3a5f;
 }
@@ -926,7 +1012,7 @@ body {
 }
 .partners-report-print-section-title {
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 800;
   color: #1e3a5f;
   border-bottom: 2px solid #1e3a5f;
@@ -937,13 +1023,13 @@ body {
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 8px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
 }
 .partners-report-print-total {
   margin-top: 6px;
   text-align: end;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
   color: #1e3a5f;
 }
@@ -1037,13 +1123,13 @@ body {
   margin-bottom: 14px;
 }
 .employee-salary-print-title {
-  font-size: 16px;
+  font-size: 21px;
   font-weight: 800;
   color: #1e3a5f;
   margin-bottom: 4px;
 }
 .employee-salary-print-meta {
-  font-size: 12px;
+  font-size: 15px;
   color: #374151;
 }
 .employee-salary-print-section {
@@ -1051,7 +1137,7 @@ body {
 }
 .employee-salary-print-section-title {
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 800;
   color: #1e3a5f;
   border-bottom: 2px solid #1e3a5f;

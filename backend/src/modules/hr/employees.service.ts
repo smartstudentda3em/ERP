@@ -54,6 +54,8 @@ export class EmployeesService {
       companyId,
       name: dto.name,
       jobTitle: dto.jobTitle,
+      phone: dto.phone ?? null,
+      email: dto.email ?? null,
       branchId: dto.branchId,
       baseSalary: dto.baseSalary,
       isActive: dto.isActive ?? true,
@@ -61,15 +63,25 @@ export class EmployeesService {
     return this.repo.save(employee);
   }
 
+  /** name/phone/email/branch/isActive on a رep-linked row (salesRepresentativeId set) are owned by
+   * "المناديب" — SalesRepresentativesService.syncEmployeeForRep() keeps them in sync one-way from
+   * there, and any edit made here would just be overwritten on the rep's next save. Only jobTitle
+   * (customizable after the auto-set default) and baseSalary (never touched by that sync) are ever
+   * HR-editable for such a row; every field stays editable for a manually-added employee. */
   async update(id: string, dto: UpdateEmployeeDto, companyId: string): Promise<Employee> {
     const employee = await this.repo.findOne({ where: { id, companyId } });
     if (!employee) throw new NotFoundException('Employee not found');
+    const isRepLinked = !!employee.salesRepresentativeId;
 
-    if (dto.name !== undefined) employee.name = dto.name;
+    if (!isRepLinked) {
+      if (dto.name !== undefined) employee.name = dto.name;
+      if (dto.phone !== undefined) employee.phone = dto.phone;
+      if (dto.email !== undefined) employee.email = dto.email;
+      if (dto.branchId !== undefined) employee.branchId = dto.branchId;
+      if (dto.isActive !== undefined) employee.isActive = dto.isActive;
+    }
     if (dto.jobTitle !== undefined) employee.jobTitle = dto.jobTitle;
-    if (dto.branchId !== undefined) employee.branchId = dto.branchId;
     if (dto.baseSalary !== undefined) employee.baseSalary = dto.baseSalary;
-    if (dto.isActive !== undefined) employee.isActive = dto.isActive;
 
     return this.repo.save(employee);
   }

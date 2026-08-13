@@ -344,6 +344,9 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
             saveMutation.mutate();
           }}
         >
+          <p className="col-span-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+            {t('salesRepresentativesReports.employeeSyncNote')}
+          </p>
           <div className="col-span-2">
             <FormField label={t('common.name')}>
               <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />

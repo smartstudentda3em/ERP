@@ -24,13 +24,16 @@ interface Employee {
   id: string;
   name: string;
   jobTitle: string;
+  phone: string | null;
+  email: string | null;
   branchId: string;
   branch?: Branch | null;
   baseSalary: number;
   isActive: boolean;
+  salesRepresentativeId: string | null;
 }
 
-const emptyForm = { name: '', jobTitle: '', branchId: '', baseSalary: '', isActive: true };
+const emptyForm = { name: '', jobTitle: '', phone: '', email: '', branchId: '', baseSalary: '', isActive: true };
 
 export function EmployeesPage() {
   const { t } = useTranslation();
@@ -40,6 +43,7 @@ export function EmployeesPage() {
   const companyId = useAuthStore((s) => s.user?.companyId);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -64,6 +68,10 @@ export function EmployeesPage() {
   // Single-branch companies (Stationery/AC today) never make the user pick — same auto-select
   // convention used system-wide for single-option dropdowns.
   const branches = branchesQuery.data ?? [];
+  // Rep-linked employees are read-only for identity fields here — see EmployeesService.update()'s
+  // matching server-side guard, which silently ignores those fields for such a row regardless of
+  // what the client sends (SalesRepresentativesService.syncEmployeeForRep owns them instead).
+  const isSynced = !!editingEmployee?.salesRepresentativeId;
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -94,6 +102,7 @@ export function EmployeesPage() {
 
   function openCreate() {
     setEditingId(null);
+    setEditingEmployee(null);
     setForm({ ...emptyForm, branchId: branches.length === 1 ? branches[0].id : '' });
     setError(null);
     setModalOpen(true);
@@ -102,9 +111,12 @@ export function EmployeesPage() {
   function openEdit(e: MouseEvent, employee: Employee) {
     e.stopPropagation();
     setEditingId(employee.id);
+    setEditingEmployee(employee);
     setForm({
       name: employee.name,
       jobTitle: employee.jobTitle,
+      phone: employee.phone ?? '',
+      email: employee.email ?? '',
       branchId: employee.branchId,
       baseSalary: String(employee.baseSalary),
       isActive: employee.isActive,
@@ -120,7 +132,20 @@ export function EmployeesPage() {
   }
 
   const columns: Column<Employee>[] = [
-    { header: t('hr.employeeName'), accessor: (r) => r.name, width: '22%' },
+    {
+      header: t('hr.employeeName'),
+      accessor: (r) => (
+        <div className="flex items-center gap-1.5">
+          <span>{r.name}</span>
+          {r.salesRepresentativeId && (
+            <Badge color="blue" title={t('hr.syncedFromRepHint') ?? ''}>
+              {t('hr.syncedFromRep')}
+            </Badge>
+          )}
+        </div>
+      ),
+      width: '22%',
+    },
     { header: t('hr.jobTitle'), accessor: (r) => r.jobTitle, width: '18%' },
     { header: t('fields.branch'), accessor: (r) => r.branch?.nameAr || r.branch?.nameEn || '—', width: '18%' },
     { header: t('hr.baseSalary'), accessor: (r) => formatAmount(r.baseSalary), align: 'right', width: '15%' },
@@ -199,6 +224,7 @@ export function EmployeesPage() {
         onClose={() => {
           setModalOpen(false);
           setEditingId(null);
+          setEditingEmployee(null);
         }}
         title={editingId ? t('common.edit') : t('common.create')}
       >
@@ -209,14 +235,44 @@ export function EmployeesPage() {
             saveMutation.mutate();
           }}
         >
+          {isSynced && (
+            <p className="col-span-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+              {t('hr.syncedFromRepNote')}
+            </p>
+          )}
           <FormField label={t('hr.employeeName')}>
-            <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Input
+              required
+              disabled={isSynced}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
           </FormField>
           <FormField label={t('hr.jobTitle')}>
             <Input required value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} />
           </FormField>
+          <FormField label={t('fields.phone')}>
+            <Input
+              disabled={isSynced}
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            />
+          </FormField>
+          <FormField label={t('fields.email')}>
+            <Input
+              type="email"
+              disabled={isSynced}
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+          </FormField>
           <FormField label={t('fields.branch')}>
-            <Select required value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}>
+            <Select
+              required
+              disabled={isSynced}
+              value={form.branchId}
+              onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+            >
               <option value="" disabled>
                 {t('common.select')}
               </option>
@@ -238,6 +294,7 @@ export function EmployeesPage() {
           </FormField>
           <FormField label={t('common.status')}>
             <Select
+              disabled={isSynced}
               value={form.isActive ? '1' : '0'}
               onChange={(e) => setForm({ ...form, isActive: e.target.value === '1' })}
             >

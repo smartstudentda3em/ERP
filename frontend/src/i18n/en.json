@@ -398,6 +398,9 @@
   "hr": {
     "employeeName": "Employee Name",
     "jobTitle": "Job Title",
+    "syncedFromRep": "🔗 Sales Rep",
+    "syncedFromRepHint": "This record is auto-synced from the Sales Representatives section",
+    "syncedFromRepNote": "This employee is linked to a sales representative record in \"Sales Representatives\" — name, phone, email, branch and status are managed there automatically. You can only edit the job title and base salary here.",
     "baseSalary": "Base Salary",
     "absenceDays": "Absence Days",
     "lateHours": "Late Hours",
@@ -1061,6 +1064,7 @@
     "selectBranch": "Select a branch (optional)",
     "selectBranchRequired": "Select a branch",
     "searchByNameOrBranchPress": "Search by branch manager name or branch name…",
+    "employeeSyncNote": "A matching employee record will automatically be created or updated in \"Employees\" with the same data (name, phone, email, branch, status).",
     "quarterlyComparisonTitle": "Quarterly Performance Comparison",
     "quarterlyComparisonSubtitle": "Comparing {{year}}'s quarters against the same quarter in previous years",
     "quarterlyAxisLabel": "Quarter",

@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CompanyScopedCrudService } from '../../common/services/base-crud.service';
@@ -29,9 +29,15 @@ import { NumberingSeriesService } from '../settings/numbering-series.controller'
 import { quarterDateRange } from '../treasury/partners-treasury.controller';
 import { Employee } from '../hr/entities/employee.entity';
 import { PayrollRun, PayrollRunLine } from '../hr/entities/payroll-run.entity';
+import { Branch } from '../settings/entities/branch.entity';
 
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
+
+/** Job title auto-assigned to the Employee row a سales rep is synced into — see
+ * syncEmployeeForRep(). Only ever applied at creation time; an admin can rename it afterwards from
+ * the Employees screen without a later rep update overwriting it back (see EmployeesService.update). */
+const SALES_REP_JOB_TITLE = 'مندوب مبيعات';
 
 @Injectable()
 export class SalesRepresentativesService extends CompanyScopedCrudService<SalesRepresentative> {
@@ -133,11 +139,87 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     return company?.code === PRINTING_PRESS_COMPANY_CODE;
   }
 
+  /** Employee.branchId is NOT NULL, but a رep's own branchId can be null (non-Press companies) — same
+   * fallback UsersService.resolveDefaultBranchId() uses for a "مندوب" user account: fall back to the
+   * company's earliest-created branch so a freshly-synced Employee row always has somewhere to live. */
+  private async resolveDefaultBranchId(
+    companyId: string,
+    branchId: string | null,
+    manager: EntityManager,
+  ): Promise<string | null> {
+    if (branchId) return branchId;
+    const fallback = await manager
+      .getRepository(Branch)
+      .findOne({ where: { companyId }, order: { createdAt: 'ASC' } });
+    return fallback?.id ?? null;
+  }
+
+  /**
+   * Auto-provisions or repairs the Employee row backing this سales representative, so "المناديب"
+   * stays the single source of truth for a rep's own identity data (name/phone/email/branch/active
+   * status) instead of it having to be re-typed a second time in "الموظفين" — every field below is
+   * mirrored one-way (rep -> employee) on every create/update, run on the same `manager` the
+   * caller's own save is already using so the rep row and its employee row commit or roll back
+   * together as one unit. jobTitle is set only once, at creation — never overwritten afterwards, so
+   * an admin can freely rename it from the Employees screen without a later rep edit reverting it.
+   *
+   * Reuses an existing Employee row two ways, in this order, so the same person is never
+   * double-provisioned:
+   *   1. One already linked via salesRepresentativeId (a previous sync of this exact rep).
+   *   2. One already linked via userId (this رep also has a login account, and
+   *      UsersService.syncRepEmployee already auto-provisioned an Employee row for that account) —
+   *      this backfills its salesRepresentativeId link instead of creating a second row for the same
+   *      person.
+   * Only creates a brand-new row when neither exists.
+   */
+  private async syncEmployeeForRep(rep: SalesRepresentative, manager: EntityManager): Promise<void> {
+    const employeeRepo = manager.getRepository(Employee);
+    let employee = await employeeRepo.findOne({ where: { salesRepresentativeId: rep.id } });
+    if (!employee && rep.userId) {
+      employee = await employeeRepo.findOne({ where: { userId: rep.userId } });
+    }
+
+    const branchId = await this.resolveDefaultBranchId(rep.companyId, rep.branchId, manager);
+
+    if (!employee) {
+      if (!branchId) return; // company has no branch at all yet — nothing to provision under
+      await employeeRepo.save(
+        employeeRepo.create({
+          companyId: rep.companyId,
+          branchId,
+          name: rep.name,
+          phone: rep.phone ?? null,
+          email: rep.email ?? null,
+          jobTitle: SALES_REP_JOB_TITLE,
+          baseSalary: 0,
+          isActive: rep.isActive,
+          salesRepresentativeId: rep.id,
+          userId: rep.userId ?? null,
+        }),
+      );
+      return;
+    }
+
+    employee.name = rep.name;
+    employee.phone = rep.phone ?? null;
+    employee.email = rep.email ?? null;
+    employee.companyId = rep.companyId;
+    if (branchId) employee.branchId = branchId;
+    employee.isActive = rep.isActive;
+    employee.salesRepresentativeId = rep.id;
+    await employeeRepo.save(employee);
+  }
+
   async createForCompany(companyId: string, dto: Partial<SalesRepresentative>): Promise<SalesRepresentative> {
     await this.assertBranchRequiredForPress(companyId, dto.branchId);
     const code =
       dto.code || (await this.numberingSeriesService.tryGetNextNumber(companyId, 'SALES_REPRESENTATIVE')) || `REP-${Date.now()}`;
-    return super.createForCompany(companyId, { ...dto, code });
+    return this.dataSource.transaction(async (manager) => {
+      const repRepo = manager.getRepository(SalesRepresentative);
+      const rep = await repRepo.save(repRepo.create({ ...dto, companyId, code } as Partial<SalesRepresentative>));
+      await this.syncEmployeeForRep(rep, manager);
+      return rep;
+    });
   }
 
   async updateForCompany(
@@ -148,7 +230,37 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     const existing = await this.findOneForCompany(id, companyId);
     const branchId = dto.branchId !== undefined ? dto.branchId : existing.branchId;
     await this.assertBranchRequiredForPress(companyId, branchId);
-    return super.updateForCompany(id, companyId, dto);
+    return this.dataSource.transaction(async (manager) => {
+      const repRepo = manager.getRepository(SalesRepresentative);
+      Object.assign(existing, dto, { companyId });
+      const rep = await repRepo.save(existing);
+      await this.syncEmployeeForRep(rep, manager);
+      return rep;
+    });
+  }
+
+  /**
+   * Deleting a رep must never take its linked employee's own payroll/leave/commission history down
+   * with it — so the Employee row is deliberately deactivated, never removed, before the rep itself
+   * is hard-deleted in the same transaction (the FK's onDelete: SET NULL then detaches the now-stale
+   * salesRepresentativeId link automatically). Matches EmployeesService.remove()'s own rule that an
+   * employee with real history is retired by deactivating, not deleting.
+   */
+  async removeForCompany(id: string, companyId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const repRepo = manager.getRepository(SalesRepresentative);
+      const rep = await repRepo.findOne({ where: { id, companyId } as any });
+      if (!rep) throw new NotFoundException('Sales representative not found');
+
+      const employeeRepo = manager.getRepository(Employee);
+      const employee = await employeeRepo.findOne({ where: { salesRepresentativeId: id } });
+      if (employee && employee.isActive) {
+        employee.isActive = false;
+        await employeeRepo.save(employee);
+      }
+
+      await repRepo.remove(rep);
+    });
   }
 
   /**

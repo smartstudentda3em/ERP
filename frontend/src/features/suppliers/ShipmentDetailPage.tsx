@@ -221,9 +221,9 @@ export function ShipmentDetailPage() {
       </div>
 
       <div ref={printRef} className="shipment-print">
-        <div className="shipment-print-header">
-          <div style={{ fontSize: 16, fontWeight: 800 }}>{company?.nameAr || company?.nameEn || '—'}</div>
-          <div style={{ fontSize: 13, fontWeight: 700, margin: '4px 0' }}>{printTitle}</div>
+        <div className="shipment-print-header" style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 24, fontWeight: 800 }}>{company?.nameAr || company?.nameEn || '—'}</div>
+          <div style={{ fontSize: 16, fontWeight: 700, margin: '4px 0' }}>{printTitle}</div>
           <div style={{ fontSize: 11, color: '#4b5563' }}>
             {t('imports.printDate')}: {localToday()}
           </div>
@@ -248,7 +248,7 @@ export function ShipmentDetailPage() {
           </Card>
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('imports.totalShipmentCost')}</div>
-            <div className="mt-1 text-2xl font-semibold text-primary-600">{money(shipment?.totalCost ?? 0)}</div>
+            <div className="mt-1 text-2xl font-bold text-primary-600">{money(shipment?.totalCost ?? 0)}</div>
           </Card>
         </div>
 

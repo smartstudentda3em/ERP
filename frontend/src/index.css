@@ -247,7 +247,7 @@ body {
    fit this report's 7 visible columns into portrait's narrower width. */
 @page cargo-report {
   size: A4 portrait;
-  margin: 10mm;
+  margin: 20mm 15mm;
 }
 
 .cargo-print-header-grid {
@@ -288,7 +288,7 @@ body {
   border: 1px solid #1e3a5f;
   border-radius: 6px;
   background: #f8fafc;
-  font-size: 17px;
+  font-size: 21px;
   font-weight: 800;
   color: #1e3a5f;
   white-space: nowrap;
@@ -1041,7 +1041,18 @@ body {
   display: none;
 }
 
+/* Own named page (like cargo-report above) rather than reusing the shared default @page — this
+   report's 20mm/15mm margins are specific to the "استيراد" report family and must never leak into
+   the shared margin every invoice/quotation/statement in the app also relies on. */
+@page shipment-report {
+  size: A4 portrait;
+  margin: 20mm 15mm;
+}
+
 @media print {
+  .shipment-print {
+    page: shipment-report;
+  }
   .shipment-print-header {
     display: block !important;
     margin-bottom: 10px;

@@ -9,11 +9,20 @@ import { Company } from '../settings/entities/company.entity';
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
 
-/** Postgres unique_violation on the documentNumber column specifically (not some unrelated constraint). */
+/**
+ * Postgres unique_violation on cash_movements specifically (not some unrelated constraint) —
+ * matched by table rather than the exact TypeORM-generated constraint name. That name is a hash
+ * derived from the table/column names at schema-sync time, which silently drifts if the schema was
+ * ever synced under a different TypeORM version or the entity's table/column briefly changed —
+ * a stale hardcoded hash here would make this check quietly stop matching, the retry below would
+ * never fire, and the raw "duplicate key value violates unique constraint ..." error would reach
+ * the caller unhandled instead of self-healing. cash_movements carries exactly one unique
+ * constraint (documentNumber — see the entity), so a 23505 on this table is unambiguous.
+ */
 function isDuplicateDocumentNumber(err: unknown): boolean {
   if (!(err instanceof QueryFailedError)) return false;
-  const driverError = (err as QueryFailedError & { driverError?: { code?: string; constraint?: string } }).driverError;
-  return driverError?.code === '23505' && driverError?.constraint === 'UQ_041377ac896c542d0fabc69a8d8';
+  const driverError = (err as QueryFailedError & { driverError?: { code?: string; table?: string } }).driverError;
+  return driverError?.code === '23505' && driverError?.table === 'cash_movements';
 }
 
 export interface RecordCashMovementInput {
@@ -54,17 +63,24 @@ export class CashMovementsService {
       // Already inside the caller's transaction (e.g. the legacy dual-row capital-injection path)
       // — reserve and insert on that same manager so a rolled-back insert rolls the reservation
       // back with it too, instead of the two drifting out of sync.
-      return this.recordWithManager(input, manager);
+      const documentNumber = await this.reserveDocumentNumber(input.companyId, manager);
+      return this.insertRow(input, documentNumber, manager);
     }
-    // No caller-provided transaction: reserve the number and insert the row as ONE atomic unit of
-    // our own, retrying with a freshly-reserved number if the insert ever collides on
-    // documentNumber (e.g. a numbering series left out of sync with rows already in the table —
-    // the exact "duplicate key value violates unique constraint" failure this guards against)
-    // instead of leaving a burned reservation behind with nothing to show for it.
+    // No caller-provided transaction: retry with a freshly-reserved number if the insert ever
+    // collides on documentNumber (e.g. a numbering series left out of sync with rows already in
+    // the table — the exact "duplicate key value violates unique constraint" failure this guards
+    // against). The reservation is deliberately its OWN committed transaction, separate from the
+    // insert below — reserving and inserting as one atomic unit (as this used to) means a failed
+    // insert rolls its own just-reserved number back right along with it, so every retry re-reads
+    // the SAME stale nextNumber and re-collides on the SAME number forever instead of advancing:
+    // three attempts, three identical failures, the raw Postgres error surfacing to the caller
+    // exactly like there were no retry at all. Reserving independently means the increment survives
+    // the insert's rollback, so the very next attempt is guaranteed a number that hasn't been tried.
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const documentNumber = await this.reserveDocumentNumber(input.companyId);
       try {
-        return await this.dataSource.transaction((txManager) => this.recordWithManager(input, txManager));
+        return await this.dataSource.transaction((txManager) => this.insertRow(input, documentNumber, txManager));
       } catch (err) {
         if (attempt === MAX_ATTEMPTS || !isDuplicateDocumentNumber(err)) throw err;
       }
@@ -72,10 +88,18 @@ export class CashMovementsService {
     throw new Error('unreachable');
   }
 
-  private async recordWithManager(input: RecordCashMovementInput, manager: EntityManager): Promise<CashMovement> {
-    const documentNumber =
-      (await this.numberingSeriesService.tryGetNextNumber(input.companyId, 'CASH_MOVEMENT', manager)) ??
-      `CM-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  private async reserveDocumentNumber(companyId: string, manager?: EntityManager): Promise<string> {
+    return (
+      (await this.numberingSeriesService.tryGetNextNumber(companyId, 'CASH_MOVEMENT', manager)) ??
+      `CM-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    );
+  }
+
+  private async insertRow(
+    input: RecordCashMovementInput,
+    documentNumber: string,
+    manager: EntityManager,
+  ): Promise<CashMovement> {
     const repo = manager.getRepository(CashMovement);
     const row = repo.create({
       documentNumber,

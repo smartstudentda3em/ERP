@@ -635,26 +635,18 @@ async function main() {
     console.log(`Company seeded: ${company.code} (${company.nameEn}) / ${branch.code} / ${warehouse.code}`);
   }
 
-  // --- Branch Manager role, one per company ("مدير فرع") ---
-  // Seeded here (after the companies loop) rather than alongside Administrator/Manager above, since
-  // each needs its own company's real id for restrictedCompanyId — a distinct, narrower role from
-  // the generic "Manager" above: Dashboard (view), Quotations (view+create only, no edit), Products
-  // (view only), Sales Invoices (full — view/create/receive payments), Sales (covered by
-  // sales.invoice.view), Treasury cash movements (view only, no transaction authority). Every other
-  // module is deliberately excluded. `restrictedCompanyId` hard-locks any user given a role here to
-  // that one company (see UsersService.create()/update()). Originally Press-only; now one distinct
-  // role row per company — Role.name is unique system-wide, so a single "مدير فرع" row can never
-  // simultaneously restrict to 3 different companies, hence the company-suffixed names for
-  // Stationery/Air Conditioning below. Press keeps its original unsuffixed name ("مدير فرع") so any
-  // user already assigned it is unaffected. Same permission list for all three, deliberately not
-  // widened per company (no customers.view/settings.warehouse.view/settings.branch.view for
-  // Stationery/AC's own invoice-form pickers — a مدير فرع there is limited to whatever those 9
-  // permissions unlock, matching Press's own scope exactly rather than matching مندوب's broader
-  // one). The *specific* branch is chosen per-user in the Users & Roles "add user" form's
-  // conditional branch select for whichever of these role names is selected, which also
-  // auto-provisions a SalesRepresentative row for that user/branch (see
-  // UsersService.syncBranchManagerRepresentative()) so they immediately appear under "مدراء
-  // الفروع" for an admin to finish their commission/target data.
+  // --- Branch Manager role ("مدير فرع") — single role, unrestricted, shared by every company ---
+  // Reverted from an earlier "one role row per company" design (Stationery/Air Conditioning each
+  // had their own company-suffixed role) back to a single shared role with restrictedCompanyId left
+  // null, by explicit request — so this one row now works for any company, exactly like "مندوب"
+  // below; the specific company/branch is still chosen per-user via the Users & Roles "add user"
+  // form's conditional branch select, which also auto-provisions a SalesRepresentative row for that
+  // user/branch (see UsersService.syncBranchManagerRepresentative()) so they immediately appear
+  // under "مدراء الأفرع" for an admin to finish their commission/target data. A distinct, narrower
+  // role from the generic "Manager" above: Dashboard (view), Quotations (view+create only, no
+  // edit), Products (view only), Sales Invoices (full — view/create/receive payments), Sales
+  // (covered by sales.invoice.view), Treasury cash movements (view only, no transaction authority).
+  // Every other module is deliberately excluded.
   const BRANCH_MANAGER_PERMISSION_CODES = [
     'dashboard.view',
     'sales.quotation.view',
@@ -669,32 +661,36 @@ async function main() {
   const branchManagerPermissions = allPermissions.filter((p) =>
     BRANCH_MANAGER_PERMISSION_CODES.includes(`${p.module}.${p.action}`),
   );
-  const BRANCH_MANAGER_ROLE_DEFS: { companyCode: string; roleName: string; previousName?: string }[] = [
-    { companyCode: PRINTING_PRESS_COMPANY_CODE, roleName: 'مدير فرع', previousName: 'مدير فرع - المطبعة' },
-    { companyCode: 'STAT', roleName: 'مدير فرع - القرطاسية' },
-    { companyCode: 'AC', roleName: 'مدير فرع - التكييفات' },
-  ];
-  for (const def of BRANCH_MANAGER_ROLE_DEFS) {
-    const roleCompany = seededCompanies.find((c) => c.company.code === def.companyCode)?.company;
-    if (!roleCompany) continue;
-    let branchManagerRole =
-      (await roleRepo.findOne({ where: { name: def.roleName } })) ??
-      (def.previousName ? await roleRepo.findOne({ where: { name: def.previousName } }) : null);
-    if (!branchManagerRole) {
-      branchManagerRole = roleRepo.create({
-        name: def.roleName,
-        description: `Branch manager restricted exclusively to ${roleCompany.nameEn} — dashboard, quotations (view/create), products (view), sales invoices (full incl. payments), sales, and treasury (view only)`,
-        isSystemRole: false,
-        restrictedCompanyId: roleCompany.id,
-        permissions: branchManagerPermissions,
-      });
-    } else {
-      branchManagerRole.name = def.roleName;
-      branchManagerRole.permissions = branchManagerPermissions;
-      branchManagerRole.restrictedCompanyId = roleCompany.id;
+  const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
+  let branchManagerRole = await roleRepo.findOne({ where: { name: BRANCH_MANAGER_ROLE_NAME } });
+  if (!branchManagerRole) {
+    branchManagerRole = roleRepo.create({
+      name: BRANCH_MANAGER_ROLE_NAME,
+      description:
+        'Branch manager — dashboard, quotations (view/create), products (view), sales invoices (full incl. payments), sales, and treasury (view only). Not restricted to one company; the specific branch is chosen per-user.',
+      isSystemRole: false,
+      restrictedCompanyId: null,
+      permissions: branchManagerPermissions,
+    });
+  } else {
+    branchManagerRole.permissions = branchManagerPermissions;
+    // Un-restrict it even if this row previously had a company lock from before this rollback.
+    branchManagerRole.restrictedCompanyId = null;
+  }
+  await roleRepo.save(branchManagerRole);
+  console.log('Branch Manager role seeded (unrestricted)');
+
+  // One-off cleanup: delete the now-obsolete per-company Branch Manager role rows left over from
+  // the earlier design. role_permissions.roleId cascades on delete; user_roles.roleId does not, so
+  // this only runs cleanly because no real user was ever assigned either one (confirmed before this
+  // rollback) — if that stops being true this delete will fail loudly (FK violation) rather than
+  // silently orphaning a user's role.
+  for (const obsoleteName of ['مدير فرع - القرطاسية', 'مدير فرع - التكييفات']) {
+    const obsoleteRole = await roleRepo.findOne({ where: { name: obsoleteName } });
+    if (obsoleteRole) {
+      await roleRepo.delete(obsoleteRole.id);
+      console.log(`Obsolete role deleted: ${obsoleteName}`);
     }
-    await roleRepo.save(branchManagerRole);
-    console.log(`Branch Manager (${roleCompany.code}) role seeded`);
   }
 
   // --- Sales Representative role ("مندوب") — every company, unrestricted ---

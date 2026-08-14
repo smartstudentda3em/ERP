@@ -24,15 +24,10 @@ interface SalesRepresentative {
 
 export function SalesRepresentativesPage() {
   const { t, i18n } = useTranslation();
-  const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
-  // Every company now has its own مدير فرع variant (see backend/src/database/seeds/run-seed.ts's
-  // BRANCH_MANAGER_ROLE_DEFS) — this picks the right one so the "مدراء الأفرع" section below
-  // filters correctly no matter which company is active.
-  const branchManagerRoleName = isStationery
-    ? 'مدير فرع - القرطاسية'
-    : isAirConditioning
-      ? 'مدير فرع - التكييفات'
-      : 'مدير فرع';
+  const { isPrintingPress } = useActiveCompany();
+  // "مدير فرع" is a single shared, company-unrestricted role (see BRANCH_MANAGER_ROLE_NAME in
+  // backend/src/modules/users/users.service.ts) — the same name filters correctly for every company.
+  const branchManagerRoleName = 'مدير فرع';
   // Manager-role users in the Press branch never see "صرف الأرباح" — see
   // useIsPressManagerRestricted's own doc comment for the full restriction list this feeds.
   const payoutsTabRestricted = useIsPressManagerRestricted();

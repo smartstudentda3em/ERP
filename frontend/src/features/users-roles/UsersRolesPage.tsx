@@ -41,9 +41,9 @@ function isProtectedAdmin(email: string | null | undefined): boolean {
   return !!email && email.toLowerCase() === PROTECTED_ADMIN_EMAIL;
 }
 
-// The exact role names the "add user" form treats as a branch manager — one per company, matches
-// BRANCH_MANAGER_ROLE_NAMES in backend/src/modules/users/users.service.ts.
-const BRANCH_MANAGER_ROLE_NAMES = ['مدير فرع', 'مدير فرع - القرطاسية', 'مدير فرع - التكييفات'];
+// The exact role name the "add user" form treats as a branch manager — a single shared,
+// company-unrestricted role, matches BRANCH_MANAGER_ROLE_NAME in backend/src/modules/users/users.service.ts.
+const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
 
 // The exact role name the "add user" form treats as a field sales agent — matches
 // SALES_REP_ROLE_NAME in backend/src/modules/users/users.service.ts.
@@ -110,25 +110,25 @@ export function UsersRolesPage() {
     (companiesQuery.data ?? []).find((c) => c.id === editRestrictedCompanyId)?.nameEn ??
     '';
 
-  // A "مدير فرع" role (one per company) is the one whose form shows a conditional branch picker
-  // (see BRANCH_MANAGER_ROLE_NAMES in UsersService) — sourced from Settings > Branches for that
-  // role's own restricted company, not necessarily whichever company the current admin has active.
-  const createIsBranchManager = BRANCH_MANAGER_ROLE_NAMES.includes(
-    rolesQuery.data?.find((r) => r.id === form.roleId)?.name ?? '',
-  );
-  const editIsBranchManager = BRANCH_MANAGER_ROLE_NAMES.includes(
-    rolesQuery.data?.find((r) => r.id === editForm.roleId)?.name ?? '',
-  );
-  // "مندوب" isn't company-restricted (no restrictedCompanyId), so — unlike مدير فرع — there's no
-  // role-level company to source branches from; this only ever offers a branch when the admin is
-  // themselves currently working inside Printing Press, and it's optional (not required) since a
-  // مندوب can just as easily belong to Stationery/AC, where a single default branch already exists.
+  // "مدير فرع" is now a single shared, company-unrestricted role (no restrictedCompanyId) usable by
+  // any company — matches BRANCH_MANAGER_ROLE_NAME in UsersService. Its branch picker is sourced
+  // from whichever company the admin currently has active, since the role itself no longer pins one.
+  const createIsBranchManager = rolesQuery.data?.find((r) => r.id === form.roleId)?.name === BRANCH_MANAGER_ROLE_NAME;
+  const editIsBranchManager =
+    rolesQuery.data?.find((r) => r.id === editForm.roleId)?.name === BRANCH_MANAGER_ROLE_NAME;
+  // "مندوب" isn't company-restricted (no restrictedCompanyId), so — like مدير فرع — there's no
+  // role-level company to source branches from; for مندوب this only ever offers a branch when the
+  // admin is themselves currently working inside Printing Press, and it's optional (not required)
+  // since a مندوب can just as easily belong to Stationery/AC, where a single default branch already
+  // exists. مدير فرع, by contrast, always requires a branch regardless of company.
   const { isPrintingPress, company: activeCompany } = useActiveCompany();
   const createIsRep = rolesQuery.data?.find((r) => r.id === form.roleId)?.name === SALES_REP_ROLE_NAME;
   const editIsRep = rolesQuery.data?.find((r) => r.id === editForm.roleId)?.name === SALES_REP_ROLE_NAME;
+  const isBranchManagerSelected = modalOpen ? createIsBranchManager : editIsBranchManager;
+  const isRepSelected = modalOpen ? createIsRep : editIsRep;
   const branchManagerCompanyId =
     (modalOpen ? createRestrictedCompanyId : editRestrictedCompanyId) ??
-    (isPrintingPress && (modalOpen ? createIsRep : editIsRep) ? (activeCompany?.id ?? null) : null);
+    (isBranchManagerSelected || (isPrintingPress && isRepSelected) ? (activeCompany?.id ?? null) : null);
   const branchesQuery = useQuery({
     queryKey: ['branches-for-role', branchManagerCompanyId],
     queryFn: () =>
@@ -159,11 +159,18 @@ export function UsersRolesPage() {
         password: form.password,
         roleIds: form.roleId ? [form.roleId] : [],
         branchId: (createIsBranchManager || createIsRep) && form.branchId ? form.branchId : undefined,
+        // مدير فرع carries no restrictedCompanyId anymore (single shared, unrestricted role) — its
+        // company is instead whichever company the admin is currently working in, same source as
+        // the branch picker above (branchManagerCompanyId).
         companyIds: isCreateRoleAdmin
           ? []
           : createRestrictedCompanyId
             ? [createRestrictedCompanyId]
-            : form.companyIds,
+            : createIsBranchManager
+              ? branchManagerCompanyId
+                ? [branchManagerCompanyId]
+                : []
+              : form.companyIds,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -208,7 +215,11 @@ export function UsersRolesPage() {
           ? []
           : editRestrictedCompanyId
             ? [editRestrictedCompanyId]
-            : editForm.companyIds,
+            : editIsBranchManager
+              ? branchManagerCompanyId
+                ? [branchManagerCompanyId]
+                : []
+              : editForm.companyIds,
         // Omitted entirely (not sent as an empty string) so the backend/offline mock only resets
         // the password when the admin actually typed a new one.
         password: editForm.password || undefined,
@@ -393,7 +404,7 @@ export function UsersRolesPage() {
                   ...form,
                   roleId: e.target.value,
                   branchId:
-                    BRANCH_MANAGER_ROLE_NAMES.includes(nextRole?.name ?? '') || nextRole?.name === SALES_REP_ROLE_NAME
+                    nextRole?.name === BRANCH_MANAGER_ROLE_NAME || nextRole?.name === SALES_REP_ROLE_NAME
                       ? form.branchId
                       : '',
                 });
@@ -531,7 +542,7 @@ export function UsersRolesPage() {
                   ...editForm,
                   roleId: e.target.value,
                   branchId:
-                    BRANCH_MANAGER_ROLE_NAMES.includes(nextRole?.name ?? '') || nextRole?.name === SALES_REP_ROLE_NAME
+                    nextRole?.name === BRANCH_MANAGER_ROLE_NAME || nextRole?.name === SALES_REP_ROLE_NAME
                       ? editForm.branchId
                       : '',
                 });

@@ -13,7 +13,9 @@ import { RepresentativesReportsTab, ReportsQuarter } from './RepresentativesRepo
 import { MyManagerDashboardTab, DashboardQuarter } from './MyManagerDashboardTab';
 import { CommissionPayoutsTab } from './CommissionPayoutsTab';
 
-type Tab = 'list' | 'reps' | 'reports' | 'mine' | 'payouts';
+type MainSection = 'managers' | 'reps';
+type ManagerSubTab = 'list' | 'reports' | 'mine' | 'payouts';
+type RepSubTab = 'list' | 'reports' | 'mine';
 
 interface SalesRepresentative {
   id: string;
@@ -22,39 +24,65 @@ interface SalesRepresentative {
 
 export function SalesRepresentativesPage() {
   const { t, i18n } = useTranslation();
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  // Every company now has its own مدير فرع variant (see backend/src/database/seeds/run-seed.ts's
+  // BRANCH_MANAGER_ROLE_DEFS) — this picks the right one so the "مدراء الأفرع" section below
+  // filters correctly no matter which company is active.
+  const branchManagerRoleName = isStationery
+    ? 'مدير فرع - القرطاسية'
+    : isAirConditioning
+      ? 'مدير فرع - التكييفات'
+      : 'مدير فرع';
   // Manager-role users in the Press branch never see "صرف الأرباح" — see
   // useIsPressManagerRestricted's own doc comment for the full restriction list this feeds.
   const payoutsTabRestricted = useIsPressManagerRestricted();
   const canViewAll = useAuthStore((s) => s.hasPermission('sales-representatives.view'));
-  const [tab, setTab] = useState<Tab>('list');
+
+  // Top level: "مدراء الأفرع" vs "المناديب" — each keeps its own independent sub-tab so switching
+  // sections and back doesn't reset where the user was.
+  const [mainSection, setMainSection] = useState<MainSection>('managers');
+  const [managerSubTab, setManagerSubTab] = useState<ManagerSubTab>('list');
+  const [repSubTab, setRepSubTab] = useState<RepSubTab>('list');
 
   const now = new Date();
   const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
 
-  // "تقارير مدراء الفروع" tab filters — lifted here so they render inline with the tab bar below
-  // instead of inside RepresentativesReportsTab's own filter row.
+  // "تقارير مدراء الفروع"/"تقارير المناديب" filters — lifted here so they render inline with the
+  // sub-tab bar below instead of inside RepresentativesReportsTab's own filter row. Shared by both
+  // sections since only one reports sub-tab is ever visible at a time.
   const [representativeId, setRepresentativeId] = useState('');
   const [reportsYear, setReportsYear] = useState(now.getFullYear());
   const [reportsQuarter, setReportsQuarter] = useState<ReportsQuarter>(currentQuarter as ReportsQuarter);
   const [customRange, setCustomRange] = useState<DateRange>({ from: '', to: '' });
 
-  // "لوحة المدير" tab filters (admin picking a manager to view) — same idea, lifted for the same reason.
+  // "لوحة المدير"/"لوحة المندوب" filters (admin picking who to view) — same idea, lifted for the
+  // same reason, also shared since only one "mine" sub-tab is ever visible at a time.
   const [selectedManagerId, setSelectedManagerId] = useState('');
   const [dashboardYear, setDashboardYear] = useState(now.getFullYear());
   const [dashboardQuarter, setDashboardQuarter] = useState<DashboardQuarter>(currentQuarter as DashboardQuarter);
 
-  // "صرف الأرباح" tab filter — month/year (not quarter), since payouts are recorded and reviewed
-  // one calendar month at a time.
+  // "صرف الأرباح" filter — month/year (not quarter), since payouts are recorded and reviewed one
+  // calendar month at a time. Managers section only.
   const [payoutsYear, setPayoutsYear] = useState(now.getFullYear());
   const [payoutsMonth, setPayoutsMonth] = useState(now.getMonth() + 1);
 
-  const repsQuery = useQuery({
-    queryKey: ['sales-representatives'],
-    queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives')),
+  // Two role-scoped lists instead of one shared unfiltered list — keeps the "تقارير"/"لوحة" picker
+  // under "مدراء الأفرع" showing only managers, and the one under "المناديب" showing only reps,
+  // rather than mixing both roles into a single dropdown.
+  const managerRepsQuery = useQuery({
+    queryKey: ['sales-representatives', branchManagerRoleName],
+    queryFn: () =>
+      unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives', { params: { roleName: branchManagerRoleName } })),
     enabled: canViewAll,
   });
-  const repOptions = repsQuery.data ?? [];
+  const repRepsQuery = useQuery({
+    queryKey: ['sales-representatives', 'مندوب'],
+    queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives', { params: { roleName: 'مندوب' } })),
+    enabled: canViewAll,
+  });
+  const managerRepOptions = managerRepsQuery.data ?? [];
+  const repRepOptions = repRepsQuery.data ?? [];
+  const activeRepOptions = mainSection === 'managers' ? managerRepOptions : repRepOptions;
 
   const dashboardYearOptions = useMemo(() => {
     const years: number[] = [];
@@ -66,7 +94,7 @@ export function SalesRepresentativesPage() {
   if (!canViewAll) {
     // Reaching this branch means the logged-in user lacks sales-representatives.view — among the
     // three roles that exist, that's only ever a مدير فرع (Branch Manager) — so the title is always
-    // "مدير الفرع", never the admin/manager-facing المناديب/مدراء الفروع list title.
+    // "مدير الفرع", never the admin/manager-facing المناديب/مدراء الأفرع page title.
     return (
       <div>
         <PageHeader title={t('nav.branchManager')} />
@@ -75,47 +103,69 @@ export function SalesRepresentativesPage() {
     );
   }
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: 'list', label: t(isPrintingPress ? 'salesRepresentativesReports.listTabPress' : 'salesRepresentativesReports.listTab') },
-    // Printing Press only, alongside the "مدراء الفروع" tab above — a second, separate list
-    // scoped to "مندوب" (field sales agent) accounts, matching that role's own auto-sync into
-    // this same sales_representatives table (see UsersService.syncRepRepresentative). Every other
-    // company already shows this exact list unfiltered under the "list" tab's own "المناديب"
-    // label, so it needs no separate tab there.
-    ...(isPrintingPress ? [{ key: 'reps' as Tab, label: t('salesRepresentativesReports.repsTab') }] : []),
-    { key: 'reports', label: t(isPrintingPress ? 'salesRepresentativesReports.reportsTabPress' : 'salesRepresentativesReports.reportsTab') },
-    // Press keeps "لوحة المدير" (this tab shows a مدير فرع's own dashboard there, a role scoped
-    // exclusively to Press); every other company relabels it "لوحة المندوب" since مدير فرع doesn't
-    // exist outside Press and this same tab there is really a مندوب's own dashboard instead.
-    { key: 'mine', label: t(isPrintingPress ? 'managerDashboard.tabLabelPress' : 'managerDashboard.tabLabel') },
-    // Branch-manager commission payouts only make sense for the Printing Press, same gating as
-    // every other branch/commission feature on this page — further restricted away from a
-    // Manager-role user in that same branch (see useIsPressManagerRestricted).
+  const managerSubTabs: { key: ManagerSubTab; label: string }[] = [
+    { key: 'list', label: t('salesRepresentativesReports.listTabPress') },
+    { key: 'reports', label: t('salesRepresentativesReports.reportsTabPress') },
+    { key: 'mine', label: t('managerDashboard.tabLabelPress') },
+    // Branch-manager commission payouts only make sense for the Printing Press — further
+    // restricted away from a Manager-role user in that same branch (see useIsPressManagerRestricted).
     ...(isPrintingPress && !payoutsTabRestricted
-      ? [{ key: 'payouts' as Tab, label: t('salesRepresentativesReports.payoutsTab') }]
+      ? [{ key: 'payouts' as ManagerSubTab, label: t('salesRepresentativesReports.payoutsTab') }]
       : []),
   ];
+  const repSubTabs: { key: RepSubTab; label: string }[] = [
+    { key: 'list', label: t('salesRepresentativesReports.repsTab') },
+    { key: 'reports', label: t('salesRepresentativesReports.reportsTab') },
+    { key: 'mine', label: t('managerDashboard.tabLabel') },
+  ];
+
+  const activeSubTab = mainSection === 'managers' ? managerSubTab : repSubTab;
 
   return (
     <div>
-      <PageHeader title={t(isPrintingPress ? 'nav.salesRepresentativesPress' : 'nav.salesRepresentatives')} />
+      <PageHeader title={t('nav.salesRepresentatives')} />
 
-      {/* Single horizontal line: tabs on one end, year/quarter centered between them and the
-          manager-select, manager-select last — order always tabs -> year/quarter -> manager. */}
+      {/* Level 1: مدراء الأفرع / المناديب */}
+      <div className="mb-4 flex gap-2 border-b border-[var(--border)] text-base font-semibold">
+        <button
+          className={`-mb-px border-b-2 px-4 py-2 ${
+            mainSection === 'managers' ? 'border-primary-600 text-primary-600' : 'border-transparent text-[var(--text-muted)]'
+          }`}
+          onClick={() => setMainSection('managers')}
+        >
+          {t('salesRepresentativesReports.listTabPress')}
+        </button>
+        <button
+          className={`-mb-px border-b-2 px-4 py-2 ${
+            mainSection === 'reps' ? 'border-primary-600 text-primary-600' : 'border-transparent text-[var(--text-muted)]'
+          }`}
+          onClick={() => setMainSection('reps')}
+        >
+          {t('salesRepresentativesReports.repsTab')}
+        </button>
+      </div>
+
+      {/* Level 2: the sub-tabs belonging only to the currently selected section above */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex gap-2 text-sm">
-          {tabs.map((tb) => (
+          {(mainSection === 'managers' ? managerSubTabs : repSubTabs).map((tb) => (
             <button
               key={tb.key}
-              className={`rounded-lg px-3 py-1.5 ${tab === tb.key ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
-              onClick={() => setTab(tb.key)}
+              className={`rounded-lg px-3 py-1.5 ${
+                activeSubTab === tb.key ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'
+              }`}
+              onClick={() =>
+                mainSection === 'managers'
+                  ? setManagerSubTab(tb.key as ManagerSubTab)
+                  : setRepSubTab(tb.key as RepSubTab)
+              }
             >
               {tb.label}
             </button>
           ))}
         </div>
 
-        {tab === 'reports' && (
+        {activeSubTab === 'reports' && (
           <div className="flex items-center gap-2">
             <div className="w-24">
               <Input
@@ -141,7 +191,7 @@ export function SalesRepresentativesPage() {
           </div>
         )}
 
-        {tab === 'mine' && (
+        {activeSubTab === 'mine' && (
           <div className="flex items-center gap-2">
             <div className="w-24">
               <Select value={dashboardYear} onChange={(e) => setDashboardYear(Number(e.target.value))}>
@@ -163,13 +213,13 @@ export function SalesRepresentativesPage() {
           </div>
         )}
 
-        {tab === 'reports' && (
+        {activeSubTab === 'reports' && (
           <div className="w-64">
             <Select value={representativeId} onChange={(e) => setRepresentativeId(e.target.value)}>
               <option value="">
-                {t(isPrintingPress ? 'salesRepresentativesReports.allRepresentativesPress' : 'salesRepresentativesReports.allRepresentatives')}
+                {t(mainSection === 'managers' ? 'salesRepresentativesReports.allRepresentativesPress' : 'salesRepresentativesReports.allRepresentatives')}
               </option>
-              {repOptions.map((r) => (
+              {activeRepOptions.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
                 </option>
@@ -178,11 +228,13 @@ export function SalesRepresentativesPage() {
           </div>
         )}
 
-        {tab === 'mine' && (
+        {activeSubTab === 'mine' && (
           <div className="w-64">
             <Select value={selectedManagerId} onChange={(e) => setSelectedManagerId(e.target.value)}>
-              <option value="">{t('managerDashboard.selectManagerPlaceholder')}</option>
-              {repOptions.map((r) => (
+              <option value="">
+                {t(mainSection === 'managers' ? 'managerDashboard.selectManagerPlaceholder' : 'managerDashboard.selectRepPlaceholder')}
+              </option>
+              {activeRepOptions.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
                 </option>
@@ -191,7 +243,7 @@ export function SalesRepresentativesPage() {
           </div>
         )}
 
-        {tab === 'payouts' && (
+        {activeSubTab === 'payouts' && (
           <div className="flex items-center gap-2">
             <div className="w-24">
               <Select value={payoutsYear} onChange={(e) => setPayoutsYear(Number(e.target.value))}>
@@ -215,9 +267,11 @@ export function SalesRepresentativesPage() {
         )}
       </div>
 
-      {tab === 'list' && <RepresentativesListTab roleNameFilter={isPrintingPress ? 'مدير فرع' : undefined} />}
-      {tab === 'reps' && <RepresentativesListTab roleNameFilter="مندوب" />}
-      {tab === 'reports' && (
+      {mainSection === 'managers' && activeSubTab === 'list' && (
+        <RepresentativesListTab roleNameFilter={branchManagerRoleName} />
+      )}
+      {mainSection === 'reps' && activeSubTab === 'list' && <RepresentativesListTab roleNameFilter="مندوب" />}
+      {activeSubTab === 'reports' && (
         <RepresentativesReportsTab
           representativeId={representativeId}
           year={reportsYear}
@@ -226,12 +280,14 @@ export function SalesRepresentativesPage() {
           onCustomRangeChange={setCustomRange}
         />
       )}
-      {tab === 'mine' && (
+      {activeSubTab === 'mine' && (
         <MyManagerDashboardTab
-          controlled={{ selectedRepId: selectedManagerId, year: dashboardYear, quarter: dashboardQuarter, repOptions }}
+          controlled={{ selectedRepId: selectedManagerId, year: dashboardYear, quarter: dashboardQuarter, repOptions: activeRepOptions }}
         />
       )}
-      {tab === 'payouts' && !payoutsTabRestricted && <CommissionPayoutsTab year={payoutsYear} month={payoutsMonth} />}
+      {mainSection === 'managers' && activeSubTab === 'payouts' && !payoutsTabRestricted && (
+        <CommissionPayoutsTab year={payoutsYear} month={payoutsMonth} />
+      )}
     </div>
   );
 }

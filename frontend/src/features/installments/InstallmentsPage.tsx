@@ -13,6 +13,9 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { localToday } from '../../lib/date-utils';
 import { computeInstallmentTerms, generateInstallmentSchedule } from '../../lib/installment-calculator';
+import { InstallmentsReportsTab } from './InstallmentsReportsTab';
+
+type Tab = 'plans' | 'reports';
 
 interface InstallmentPlanRow {
   id: string;
@@ -64,6 +67,9 @@ export function InstallmentsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
+  // Merges what used to be the separate "تقارير التقسيط" page into this one as a second tab — see
+  // InstallmentsReportsTab.tsx's own doc comment. Air Conditioning only (this whole page is).
+  const [tab, setTab] = useState<Tab>('plans');
   const [modalOpen, setModalOpen] = useState(false);
   const [customerId, setCustomerId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
@@ -185,16 +191,35 @@ export function InstallmentsPage() {
     <div>
       <PageHeader
         title={t('nav.installments')}
-        actions={<Button onClick={() => setModalOpen(true)}>+ {t('installments.newPlan')}</Button>}
+        actions={tab === 'plans' && <Button onClick={() => setModalOpen(true)}>+ {t('installments.newPlan')}</Button>}
       />
 
-      <DataTable
-        columns={columns}
-        data={plansQuery.data ?? []}
-        keyField={(r) => r.id}
-        isLoading={plansQuery.isLoading}
-        onRowClick={(r) => navigate(`/installments/${r.id}`)}
-      />
+      <div className="mb-4 flex gap-2 text-sm">
+        <button
+          className={`rounded-lg px-3 py-1.5 ${tab === 'plans' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+          onClick={() => setTab('plans')}
+        >
+          {t('nav.installments')}
+        </button>
+        <button
+          className={`rounded-lg px-3 py-1.5 ${tab === 'reports' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+          onClick={() => setTab('reports')}
+        >
+          {t('nav.installmentsReports')}
+        </button>
+      </div>
+
+      {tab === 'reports' && <InstallmentsReportsTab />}
+
+      {tab === 'plans' && (
+        <DataTable
+          columns={columns}
+          data={plansQuery.data ?? []}
+          keyField={(r) => r.id}
+          isLoading={plansQuery.isLoading}
+          onRowClick={(r) => navigate(`/installments/${r.id}`)}
+        />
+      )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={t('installments.newPlan')} widthClass="max-w-4xl">
         <form

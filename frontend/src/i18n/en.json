@@ -14,8 +14,7 @@
     "suppliers": "Suppliers",
     "imports": "Imports",
     "importsPress": "Purchasing",
-    "salesRepresentatives": "Sales Representatives",
-    "salesRepresentativesPress": "Branch Managers",
+    "salesRepresentatives": "Branch Managers & Sales Reps",
     "branchManager": "Branch Manager",
     "inventory": "Inventory",
     "products": "Products",
@@ -474,6 +473,7 @@
     "previousMonthPreset": "Previous Month",
     "selectManager": "Branch Manager",
     "selectManagerPlaceholder": "Select a manager to view their data",
+    "selectRepPlaceholder": "Select a sales rep to view their data",
     "employeeInfoTitle": "Manager HR Info",
     "branchLabel": "Branch",
     "absenceDays": "Absence Days",
@@ -1046,7 +1046,6 @@
     "deleted": "Quotation deleted successfully"
   },
   "salesRepresentativesReports": {
-    "listTab": "Sales Representatives",
     "listTabPress": "Branch Managers",
     "repsTab": "Sales Representatives",
     "reportsTab": "Sales Representatives Reports",

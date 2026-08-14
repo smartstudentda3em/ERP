@@ -62,9 +62,8 @@ const emptyForm = {
 };
 
 interface RepresentativesListTabProps {
-  /** Narrows the list to only rows whose linked login account holds this exact role — Printing
-   * Press's "مدراء الفروع"/"المناديب" split (see SalesRepresentativesPage.tsx). Omitted everywhere
-   * else, which keeps today's unfiltered behavior. */
+  /** Narrows the list to only rows whose linked login account holds this exact role — every
+   * company's own "مدراء الأفرع"/"المناديب" tab split (see SalesRepresentativesPage.tsx). */
   roleNameFilter?: string;
 }
 

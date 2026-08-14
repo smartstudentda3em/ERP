@@ -43,7 +43,9 @@ interface NavItem {
 // المصروفات، الشركاء، التقارير المالية، المستخدمون والأدوار، الإعدادات. Items not named in that
 // spec (customers/outstanding balances, stock audit/movement, printing products, installments) are
 // each kept immediately beside the closest listed sibling they belong to, so the relative order of
-// every named item stays exactly as specified regardless of which company is active.
+// every named item stays exactly as specified regardless of which company is active. This is the
+// default order for every company EXCEPT Stationery, which reorders it via STATIONERY_NAV_ORDER
+// below instead of changing this base array.
 const items: NavItem[] = [
   // No `permission` here for every other role (implicitly always visible) — but "مندوب" has no
   // dashboard.view at all, so this now hides for it specifically instead of linking to a route it
@@ -143,13 +145,6 @@ const items: NavItem[] = [
     end: true,
     requireAirConditioning: true,
   },
-  {
-    to: '/installments/reports',
-    label: 'nav.installmentsReports',
-    icon: '📑',
-    permission: 'sales.installmentPlan.view',
-    requireAirConditioning: true,
-  },
   { to: '/treasury/transactions', label: 'nav.treasury', icon: '🏦', permission: 'treasury.cash-box.view' },
   // "الموظفين" — applies to every company/branch, no requirePrintingPress/requireAirConditioning flag.
   { to: '/hr/employees', label: 'nav.employees', icon: '🧑‍💼', permission: 'hr.employee.view' },
@@ -162,6 +157,84 @@ const items: NavItem[] = [
   { to: '/settings', label: 'nav.settings', icon: '⚙️', permission: 'settings.company.view' },
 ];
 
+// Stationery-only nav order (explicit request, scoped to that one company only — Press and AC keep
+// the default `items` order above unchanged): لوحة التحكم، العملاء، المنتجات، الاستيراد، المشتريات،
+// الأرصدة المستحقة، عروض الأسعار، فواتير البيع، المبيعات، المخازن، الجرد السنوي، حركة المخزون، حركة
+// الخزينة، المقبوضات، مدراء الأفرع والمناديب، الموظفين، الرواتب، الشركاء، المصروفات، التقارير
+// المالية، المستخدمون والأدوار، الإعدادات. Applied by reordering the already-permission-filtered
+// visibleItems list (see sortForStationery below) rather than duplicating item definitions — any
+// path not listed here (none of Stationery's ever are; printing products/installments are Press/AC-
+// only) just keeps its natural position, appended at the end.
+const STATIONERY_NAV_ORDER = [
+  '/dashboard',
+  '/customers',
+  '/inventory/products',
+  '/suppliers',
+  '/purchasing',
+  '/outstanding-balances',
+  '/sales/quotations',
+  '/sales/invoices',
+  '/sales',
+  '/inventory/warehouses',
+  '/inventory/stock-audit',
+  '/inventory/stock',
+  '/treasury/transactions',
+  '/sales/payments',
+  '/sales-representatives',
+  '/hr/employees',
+  '/hr/payroll',
+  '/partners',
+  '/treasury/expenses',
+  '/accounting/reports',
+  '/users-roles',
+  '/settings',
+];
+
+// Air Conditioning-only nav order (explicit request, scoped to that one company only — Press and
+// Stationery each keep their own order unaffected): لوحة التحكم، العملاء، المنتجات، الاستيراد،
+// المشتريات، الأرصدة المستحقة، عروض الأسعار، فواتير البيع، المبيعات، التقسيط (مباشرة تحت المبيعات)،
+// المخازن، الجرد السنوي، حركة المخزون، حركة الخزينة، المقبوضات، مدراء الأفرع والمناديب، الموظفين،
+// الرواتب، الشركاء، المصروفات، التقارير المالية، المستخدمون والأدوار، الإعدادات. "تقارير التقسيط" no
+// longer has its own sidebar entry or route — it's now the second tab inside "التقسيط" itself (see
+// InstallmentsPage.tsx / InstallmentsReportsTab.tsx), so /installments is this list's only
+// installments-related path.
+const AIR_CONDITIONING_NAV_ORDER = [
+  '/dashboard',
+  '/customers',
+  '/inventory/products',
+  '/suppliers',
+  '/purchasing',
+  '/outstanding-balances',
+  '/sales/quotations',
+  '/sales/invoices',
+  '/sales',
+  '/installments',
+  '/inventory/warehouses',
+  '/inventory/stock-audit',
+  '/inventory/stock',
+  '/treasury/transactions',
+  '/sales/payments',
+  '/sales-representatives',
+  '/hr/employees',
+  '/hr/payroll',
+  '/partners',
+  '/treasury/expenses',
+  '/accounting/reports',
+  '/users-roles',
+  '/settings',
+];
+
+function sortByOrder(visible: NavItem[], order: string[]): NavItem[] {
+  return [...visible].sort((a, b) => {
+    const ai = order.indexOf(a.to);
+    const bi = order.indexOf(b.to);
+    if (ai === -1 && bi === -1) return 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+}
+
 export function Sidebar({ open }: { open: boolean }) {
   const { t } = useTranslation();
   const hasPermission = useAuthStore((s) => s.hasPermission);
@@ -171,8 +244,8 @@ export function Sidebar({ open }: { open: boolean }) {
   // dashboard instead of the full المناديب/مدراء الفروع list.
   const isBranchManagerSelf = !hasPermission('sales-representatives.view');
   const isSalesRep = useIsSalesRep();
-  const { isPrintingPress, isAirConditioning } = useActiveCompany();
-  const visibleItems = items.filter(
+  const { isPrintingPress, isAirConditioning, isStationery } = useActiveCompany();
+  const filteredItems = items.filter(
     (item) =>
       (!item.permission || hasPermission(item.permission)) &&
       (!item.permissionAnyOf || item.permissionAnyOf.some((c) => hasPermission(c))) &&
@@ -182,6 +255,11 @@ export function Sidebar({ open }: { open: boolean }) {
       !(item.requirePrintingPress && !isPrintingPress) &&
       !(item.hideForBranchManager && isBranchManagerSelf),
   );
+  const visibleItems = isStationery
+    ? sortByOrder(filteredItems, STATIONERY_NAV_ORDER)
+    : isAirConditioning
+      ? sortByOrder(filteredItems, AIR_CONDITIONING_NAV_ORDER)
+      : filteredItems;
 
   return (
     <aside
@@ -212,13 +290,11 @@ export function Sidebar({ open }: { open: boolean }) {
               {t(
                 item.to === '/sales-representatives' && isBranchManagerSelf
                   ? 'nav.branchManager'
-                  : isPrintingPress && item.to === '/sales-representatives'
-                    ? 'nav.salesRepresentativesPress'
-                    : isPrintingPress && item.to === '/suppliers'
-                      ? 'nav.importsPress'
-                      : !isPrintingPress && item.to === '/inventory/stock-audit'
-                        ? 'nav.stockAuditAnnual'
-                        : item.label,
+                  : isPrintingPress && item.to === '/suppliers'
+                    ? 'nav.importsPress'
+                    : !isPrintingPress && item.to === '/inventory/stock-audit'
+                      ? 'nav.stockAuditAnnual'
+                      : item.label,
               )}
             </span>
           </NavLink>

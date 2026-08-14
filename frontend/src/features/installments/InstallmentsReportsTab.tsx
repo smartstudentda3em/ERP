@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter';
@@ -25,7 +24,11 @@ function money(n: number) {
   return formatAmount(n);
 }
 
-export function InstallmentsReportsPage() {
+/** Air Conditioning only — embedded as the "تقارير التقسيط" sub-tab of InstallmentsPage.tsx rather
+ * than its own routed page, so it renders no PageHeader of its own (the parent page's single header
+ * covers both sub-tabs), matching this codebase's Tab-vs-Page convention (see
+ * RepresentativesReportsTab.tsx for the same pattern). */
+export function InstallmentsReportsTab() {
   const { t } = useTranslation();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const [range, setRange] = useState<DateRange>({ from: '', to: '' });
@@ -65,8 +68,6 @@ export function InstallmentsReportsPage() {
 
   return (
     <div>
-      <PageHeader title={t('installments.reportsTitle')} />
-
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <div className="text-xs text-[var(--text-muted)]">{t('installments.totalDistributed')}</div>

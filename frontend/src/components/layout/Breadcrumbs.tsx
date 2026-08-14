@@ -77,11 +77,9 @@ export function Breadcrumbs() {
         const labelKey =
           seg === 'sales-representatives' && isBranchManagerSelf
             ? 'nav.branchManager'
-            : isPrintingPress && seg === 'sales-representatives'
-              ? 'nav.salesRepresentativesPress'
-              : isPrintingPress && seg === 'suppliers'
-                ? 'nav.importsPress'
-                : SEGMENT_LABEL_KEYS[seg];
+            : isPrintingPress && seg === 'suppliers'
+              ? 'nav.importsPress'
+              : SEGMENT_LABEL_KEYS[seg];
         const label = labelKey ? t(labelKey) : seg.replace(/-/g, ' ');
         return (
           <span key={path} className="flex items-center gap-1">

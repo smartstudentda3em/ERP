@@ -14,8 +14,7 @@
     "suppliers": "الموردون",
     "imports": "الاستيراد",
     "importsPress": "المشتريات",
-    "salesRepresentatives": "المناديب",
-    "salesRepresentativesPress": "مدراء الفروع",
+    "salesRepresentatives": "مدراء الأفرع والمناديب",
     "branchManager": "مدير الفرع",
     "inventory": "المخزون",
     "products": "المنتجات",
@@ -474,6 +473,7 @@
     "previousMonthPreset": "الشهر السابق",
     "selectManager": "مدير الفرع",
     "selectManagerPlaceholder": "اختر مديرًا لعرض بياناته",
+    "selectRepPlaceholder": "اختر مندوبًا لعرض بياناته",
     "employeeInfoTitle": "البيانات الوظيفية للمدير",
     "branchLabel": "الفرع",
     "absenceDays": "أيام الغياب",
@@ -1046,8 +1046,7 @@
     "deleted": "تم حذف عرض السعر بنجاح"
   },
   "salesRepresentativesReports": {
-    "listTab": "المناديب",
-    "listTabPress": "مدراء الفروع",
+    "listTabPress": "مدراء الأفرع",
     "repsTab": "المناديب",
     "reportsTab": "تقارير المناديب",
     "reportsTabPress": "تقارير مدراء الفروع",

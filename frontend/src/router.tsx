@@ -45,7 +45,6 @@ import { RepTreasuriesPage } from './features/treasury/RepTreasuriesPage';
 import { ExpensesPage } from './features/treasury/ExpensesPage';
 import { InstallmentsPage } from './features/installments/InstallmentsPage';
 import { InstallmentPlanDetailPage } from './features/installments/InstallmentPlanDetailPage';
-import { InstallmentsReportsPage } from './features/installments/InstallmentsReportsPage';
 import { EmployeesPage } from './features/hr/EmployeesPage';
 import { PayrollPage } from './features/hr/PayrollPage';
 import { PayrollRunDetailPage } from './features/hr/PayrollRunDetailPage';
@@ -299,16 +298,6 @@ export const router = createBrowserRouter([
                   <RequirePermission code="sales.installmentPlan.view">
                     <RequireAirConditioning>
                       <InstallmentsPage />
-                    </RequireAirConditioning>
-                  </RequirePermission>
-                ),
-              },
-              {
-                path: '/installments/reports',
-                element: (
-                  <RequirePermission code="sales.installmentPlan.view">
-                    <RequireAirConditioning>
-                      <InstallmentsReportsPage />
                     </RequireAirConditioning>
                   </RequirePermission>
                 ),

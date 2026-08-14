@@ -13,6 +13,9 @@ import { Badge } from '../../components/ui/Badge';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { EmployeeDetailModal } from './EmployeeDetailModal';
+import { PayrollTab } from './PayrollTab';
+
+type Tab = 'employees' | 'payroll';
 
 interface Branch {
   id: string;
@@ -41,6 +44,9 @@ export function EmployeesPage() {
   const confirm = useConfirm();
   const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
+  // Merges what used to be the separate "الرواتب" page into this one as a second tab — see
+  // PayrollTab.tsx's own doc comment.
+  const [tab, setTab] = useState<Tab>('employees');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -183,38 +189,62 @@ export function EmployeesPage() {
           report — that report is rendered as a print-only sibling fragment, not inside the modal
           (see EmployeeDetailModal.tsx), so this is the only thing left that would otherwise show. */}
       <div className="print:hidden">
-        <PageHeader title={t('nav.employees')} actions={<Button onClick={openCreate}>+ {t('common.create')}</Button>} />
+        <PageHeader
+          title={t(tab === 'employees' ? 'nav.employees' : 'nav.payroll')}
+          actions={tab === 'employees' && <Button onClick={openCreate}>+ {t('common.create')}</Button>}
+        />
 
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <div className="flex w-72 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3">
-            <span className="text-sm text-[var(--text-muted)]">🔍</span>
-            <input
-              className="w-full border-0 bg-transparent py-2 text-sm text-[var(--text)] outline-none"
-              placeholder={t('hr.searchByNameOrTitle')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="w-56">
-            <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-              <option value="">{t('hr.allBranches')}</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.nameAr || b.nameEn}
-                </option>
-              ))}
-            </Select>
-          </div>
+        <div className="mb-4 flex gap-2 text-sm">
+          <button
+            className={`rounded-lg px-3 py-1.5 ${tab === 'employees' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+            onClick={() => setTab('employees')}
+          >
+            {t('nav.employees')}
+          </button>
+          <button
+            className={`rounded-lg px-3 py-1.5 ${tab === 'payroll' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+            onClick={() => setTab('payroll')}
+          >
+            {t('nav.payroll')}
+          </button>
         </div>
 
-        <DataTable
-          columns={columns}
-          data={employeesQuery.data ?? []}
-          keyField={(r) => r.id}
-          isLoading={employeesQuery.isLoading}
-          searchable={false}
-          onRowClick={(r) => setViewingId(r.id)}
-        />
+        {tab === 'payroll' && <PayrollTab />}
+
+        {tab === 'employees' && (
+          <>
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <div className="flex w-72 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3">
+                <span className="text-sm text-[var(--text-muted)]">🔍</span>
+                <input
+                  className="w-full border-0 bg-transparent py-2 text-sm text-[var(--text)] outline-none"
+                  placeholder={t('hr.searchByNameOrTitle')}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <div className="w-56">
+                <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+                  <option value="">{t('hr.allBranches')}</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.nameAr || b.nameEn}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            <DataTable
+              columns={columns}
+              data={employeesQuery.data ?? []}
+              keyField={(r) => r.id}
+              isLoading={employeesQuery.isLoading}
+              searchable={false}
+              onRowClick={(r) => setViewingId(r.id)}
+            />
+          </>
+        )}
       </div>
 
       {viewingId && <EmployeeDetailModal employeeId={viewingId} onClose={() => setViewingId(null)} />}

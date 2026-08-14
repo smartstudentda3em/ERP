@@ -64,7 +64,12 @@ function computeDeductions(baseSalary: number, absenceDays: number, lateHours: n
   return { absenceDeduction, lateDeduction, netSalary };
 }
 
-export function PayrollPage() {
+/** Embedded as the "الرواتب" second tab of EmployeesPage.tsx rather than its own routed page (see
+ * that file's own doc comment) — so the plain list view below renders no PageHeader of its own
+ * (the parent's single header already covers both tabs), matching this codebase's Tab-vs-Page
+ * convention. The "new run" full-screen entry view keeps its own PageHeader, since that's a
+ * genuine sub-mode transition worth its own visible title, not a duplicate of the tab's label. */
+export function PayrollTab() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -379,10 +384,11 @@ export function PayrollPage() {
 
   return (
     <div>
-      <PageHeader
-        title={t('nav.payroll')}
-        actions={canCreate ? <Button onClick={openNewRunModal}>+ {t('hr.newPayrollRun')}</Button> : undefined}
-      />
+      {canCreate && (
+        <div className="mb-3 flex justify-end">
+          <Button onClick={openNewRunModal}>+ {t('hr.newPayrollRun')}</Button>
+        </div>
+      )}
       <DataTable
         columns={runColumns}
         data={runsQuery.data ?? []}

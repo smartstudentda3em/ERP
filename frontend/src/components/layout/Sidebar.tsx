@@ -39,13 +39,15 @@ interface NavItem {
 }
 
 // Order below follows the required sequence exactly: لوحة التحكم، المشتريات، المنتجات، المخازن،
-// مدراء الفروع، عروض الأسعار، فواتير البيع، المبيعات، المقبوضات، حركة الخزينة، الموظفين، الرواتب،
-// المصروفات، الشركاء، التقارير المالية، المستخدمون والأدوار، الإعدادات. Items not named in that
-// spec (customers/outstanding balances, stock audit/movement, printing products, installments) are
-// each kept immediately beside the closest listed sibling they belong to, so the relative order of
-// every named item stays exactly as specified regardless of which company is active. This is the
-// default order for every company EXCEPT Stationery, which reorders it via STATIONERY_NAV_ORDER
-// below instead of changing this base array.
+// مدراء الفروع، عروض الأسعار، فواتير البيع، المبيعات، المقبوضات، حركة الخزينة، الموظفين،
+// المصروفات، الشركاء، التقارير المالية، المستخدمون والأدوار، الإعدادات. "الرواتب" no longer has its
+// own entry here — it's the second tab inside "الموظفين" itself (see EmployeesPage.tsx /
+// PayrollTab.tsx), for every company. Items not named in that spec (customers/outstanding balances,
+// stock audit/movement, printing products, installments) are each kept immediately beside the
+// closest listed sibling they belong to, so the relative order of every named item stays exactly as
+// specified regardless of which company is active. This is the default order for every company
+// EXCEPT Stationery/Air Conditioning, which reorder it via STATIONERY_NAV_ORDER /
+// AIR_CONDITIONING_NAV_ORDER below instead of changing this base array.
 const items: NavItem[] = [
   // No `permission` here for every other role (implicitly always visible) — but "مندوب" has no
   // dashboard.view at all, so this now hides for it specifically instead of linking to a route it
@@ -147,8 +149,9 @@ const items: NavItem[] = [
   },
   { to: '/treasury/transactions', label: 'nav.treasury', icon: '🏦', permission: 'treasury.cash-box.view' },
   // "الموظفين" — applies to every company/branch, no requirePrintingPress/requireAirConditioning flag.
+  // "الرواتب" no longer has its own sidebar entry or route — it's now the second tab inside
+  // "الموظفين" itself (see EmployeesPage.tsx / PayrollTab.tsx), applied to every company.
   { to: '/hr/employees', label: 'nav.employees', icon: '🧑‍💼', permission: 'hr.employee.view' },
-  { to: '/hr/payroll', label: 'nav.payroll', icon: '💰', permission: 'hr.payroll.view' },
   { to: '/treasury/expenses', label: 'nav.expenses', icon: '🧾', permission: 'treasury.expense.view' },
   { to: '/partners', label: 'nav.partners', icon: '🤝', permission: 'partners.view' },
   { to: '/accounting/reports', label: 'nav.reports', icon: '📉', permission: 'accounting.reports.view' },
@@ -160,11 +163,11 @@ const items: NavItem[] = [
 // Stationery-only nav order (explicit request, scoped to that one company only — Press and AC keep
 // the default `items` order above unchanged): لوحة التحكم، العملاء، المنتجات، الاستيراد، المشتريات،
 // الأرصدة المستحقة، عروض الأسعار، فواتير البيع، المبيعات، المخازن، الجرد السنوي، حركة المخزون، حركة
-// الخزينة، المقبوضات، مدراء الأفرع والمناديب، الموظفين، الرواتب، الشركاء، المصروفات، التقارير
-// المالية، المستخدمون والأدوار، الإعدادات. Applied by reordering the already-permission-filtered
-// visibleItems list (see sortForStationery below) rather than duplicating item definitions — any
-// path not listed here (none of Stationery's ever are; printing products/installments are Press/AC-
-// only) just keeps its natural position, appended at the end.
+// الخزينة، المقبوضات، مدراء الأفرع والمناديب، الموظفين، الشركاء، المصروفات، التقارير المالية،
+// المستخدمون والأدوار، الإعدادات. Applied by reordering the already-permission-filtered visibleItems
+// list (see sortByOrder below) rather than duplicating item definitions — any path not listed here
+// (none of Stationery's ever are; printing products/installments are Press/AC-only) just keeps its
+// natural position, appended at the end.
 const STATIONERY_NAV_ORDER = [
   '/dashboard',
   '/customers',
@@ -182,7 +185,6 @@ const STATIONERY_NAV_ORDER = [
   '/sales/payments',
   '/sales-representatives',
   '/hr/employees',
-  '/hr/payroll',
   '/partners',
   '/treasury/expenses',
   '/accounting/reports',
@@ -194,8 +196,8 @@ const STATIONERY_NAV_ORDER = [
 // Stationery each keep their own order unaffected): لوحة التحكم، العملاء، المنتجات، الاستيراد،
 // المشتريات، الأرصدة المستحقة، عروض الأسعار، فواتير البيع، المبيعات، التقسيط (مباشرة تحت المبيعات)،
 // المخازن، الجرد السنوي، حركة المخزون، حركة الخزينة، المقبوضات، مدراء الأفرع والمناديب، الموظفين،
-// الرواتب، الشركاء، المصروفات، التقارير المالية، المستخدمون والأدوار، الإعدادات. "تقارير التقسيط" no
-// longer has its own sidebar entry or route — it's now the second tab inside "التقسيط" itself (see
+// الشركاء، المصروفات، التقارير المالية، المستخدمون والأدوار، الإعدادات. "تقارير التقسيط" no longer
+// has its own sidebar entry or route — it's now the second tab inside "التقسيط" itself (see
 // InstallmentsPage.tsx / InstallmentsReportsTab.tsx), so /installments is this list's only
 // installments-related path.
 const AIR_CONDITIONING_NAV_ORDER = [
@@ -216,7 +218,6 @@ const AIR_CONDITIONING_NAV_ORDER = [
   '/sales/payments',
   '/sales-representatives',
   '/hr/employees',
-  '/hr/payroll',
   '/partners',
   '/treasury/expenses',
   '/accounting/reports',

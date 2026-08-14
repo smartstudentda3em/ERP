@@ -46,7 +46,6 @@ import { ExpensesPage } from './features/treasury/ExpensesPage';
 import { InstallmentsPage } from './features/installments/InstallmentsPage';
 import { InstallmentPlanDetailPage } from './features/installments/InstallmentPlanDetailPage';
 import { EmployeesPage } from './features/hr/EmployeesPage';
-import { PayrollPage } from './features/hr/PayrollPage';
 import { PayrollRunDetailPage } from './features/hr/PayrollRunDetailPage';
 
 export const router = createBrowserRouter([
@@ -315,10 +314,6 @@ export const router = createBrowserRouter([
               {
                 path: '/hr/employees',
                 element: <RequirePermission code="hr.employee.view"><EmployeesPage /></RequirePermission>,
-              },
-              {
-                path: '/hr/payroll',
-                element: <RequirePermission code="hr.payroll.view"><PayrollPage /></RequirePermission>,
               },
               {
                 path: '/hr/payroll/:id',

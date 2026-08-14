@@ -8,7 +8,11 @@ import { ApproveStockAuditDto, CreateStockAuditDto, UpdateStockAuditDto } from '
 import { Warehouse } from '../../settings/entities/warehouse.entity';
 import { Product } from '../products/entities/product.entity';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
-import { getConsumedQuantitiesByProductId, monthRange } from './consumed-quantity.util';
+import { getConsumedQuantitiesByProductId, monthRange, yearRange } from './consumed-quantity.util';
+import { Company } from '../../settings/entities/company.entity';
+
+/** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
+const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
 
 @Injectable()
 export class StockAuditsService {
@@ -16,10 +20,19 @@ export class StockAuditsService {
     @InjectRepository(StockAudit) private readonly repo: Repository<StockAudit>,
     @InjectRepository(Warehouse) private readonly warehouseRepo: Repository<Warehouse>,
     @InjectRepository(Product) private readonly productRepo: Repository<Product>,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly stockAdjustmentsService: StockAdjustmentsService,
     private readonly numberingSeriesService: NumberingSeriesService,
   ) {}
+
+  /** "الجرد الشهري" (Printing Press) vs "الجرد السنوي" (Stationery/Air Conditioning) — the only
+   * thing that actually differs between the two is which calendar period getSetupLines()'s
+   * consumedQuantity is scoped to, and the wording of applyApproval()'s stock-adjustment reason. */
+  private async isPress(companyId: string): Promise<boolean> {
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    return company?.code === PRINTING_PRESS_COMPANY_CODE;
+  }
 
   /**
    * Backs the "بدء جرد جديد" setup screen's "المخزون الحالي" and "الكمية المستهلكة" columns.
@@ -59,7 +72,7 @@ export class StockAuditsService {
 
     const products = await this.productRepo.find({ where: { companyId, isActive: true } as any });
     const productIds = products.map((p) => p.id);
-    const { dateFrom, dateTo } = monthRange(auditDate);
+    const { dateFrom, dateTo } = (await this.isPress(companyId)) ? monthRange(auditDate) : yearRange(auditDate);
     const consumedByProductId = await getConsumedQuantitiesByProductId(
       this.dataSource,
       companyId,
@@ -328,11 +341,12 @@ export class StockAuditsService {
     const overrideByProductId = new Map((dto?.lines ?? []).map((l) => [l.productId, l.adjustedQuantity]));
     const countedLines = audit.lines.filter((l) => l.actualQuantity !== null);
     if (countedLines.length > 0) {
+      const reasonLabel = (await this.isPress(companyId)) ? 'جرد شهري' : 'جرد سنوي';
       const adjustment = await this.stockAdjustmentsService.create(
         {
           adjustmentDate: audit.auditDate,
           warehouseId: audit.warehouseId,
-          reason: `جرد شهري ${audit.documentNumber}`,
+          reason: `${reasonLabel} ${audit.documentNumber}`,
           lines: countedLines.map((l) => ({
             productId: l.productId,
             systemQuantity: Number(l.systemQuantity),

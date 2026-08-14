@@ -239,9 +239,11 @@ export function ExpensesPage() {
       ),
     enabled: !!companyId && isPrintingPress,
   });
-  // Stationery only — "صرف العمولات" tab: every مندوب commission payout in the company, unscoped
-  // to one رep (reuses the exact endpoint RepCommissionPayoutPage.tsx's own history table already
-  // calls with a salesRepresentativeId filter — omitting it here returns every رep's rows combined).
+  // Stationery/Air Conditioning — "صرف العمولات" tab: every مندوب commission payout in the
+  // company, unscoped to one رep (reuses the exact endpoint RepCommissionPayoutPage.tsx's own
+  // history table already calls with a salesRepresentativeId filter — omitting it here returns
+  // every رep's rows combined). Air Conditioning reuses this same tab/mechanism rather than a
+  // separate implementation — see RepCommissionPayoutPage.tsx.
   const commissionPayoutsQuery = useQuery({
     queryKey: ['commission-payouts', companyId, dateRange.from, dateRange.to],
     queryFn: () =>
@@ -250,7 +252,7 @@ export function ExpensesPage() {
           params: { dateFrom: dateRange.from || undefined, dateTo: dateRange.to || undefined },
         }),
       ),
-    enabled: !!companyId && isStationery,
+    enabled: !!companyId && (isStationery || isAirConditioning),
   });
 
   // Stationery only — "الأرباح المصروفة" tab's two beneficiary picklists, and its own two
@@ -478,7 +480,7 @@ export function ExpensesPage() {
     secondTabTotal +
     totalSalaries +
     (isPrintingPress ? totalProfitsPaidOut : 0) +
-    (isStationery ? totalCommissionPayouts : 0);
+    (isStationery || isAirConditioning ? totalCommissionPayouts : 0);
 
   const secondTabCount = isPrintingPress ? dateFilteredRawMaterialPurchases.length : (cogsQuery.data ?? []).length;
   // The transaction-count badge next to each tab's name — the whole reason this exists is so a
@@ -496,13 +498,20 @@ export function ExpensesPage() {
     ...(isPrintingPress
       ? [{ key: 'profits' as Tab, label: t('accounting.managerPartnerProfits'), count: filteredProfits.length }]
       : []),
-    ...(isStationery
+    ...(isStationery || isAirConditioning
       ? [
           {
             key: 'commissionPayouts' as Tab,
             label: t('accounting.commissionPayoutsTab'),
             count: (commissionPayoutsQuery.data ?? []).length,
           },
+        ]
+      : []),
+    // Combines commission payouts with partner dividends into one beneficiary-filterable log —
+    // Air Conditioning has no partners/dividends concept wired up, so this stays Stationery-only
+    // (unlike the plain "صرف العمولات" tab above, which Air Conditioning does share).
+    ...(isStationery
+      ? [
           {
             key: 'disbursedProfits' as Tab,
             label: t('accounting.disbursedProfitsTab'),

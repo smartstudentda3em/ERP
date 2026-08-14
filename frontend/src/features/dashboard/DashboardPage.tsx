@@ -63,23 +63,25 @@ export function DashboardPage() {
   // alongside them. Press's own layout (and any other future company's) is untouched.
   const showAssetCards = isStationery || isAirConditioning;
 
-  // Printing Press only — "تصفية حسب الفرع". A non-empty sentinel (never ''), same trick
-  // SalesReportPage's own branch filter uses and for the exact same reason: the shared Select
-  // component auto-fires onChange the moment a dropdown's real option list resolves to exactly
-  // one choice while its value is still '' (see Input.tsx's Select) — meant for data-entry fields
-  // with one obviously-correct choice, not for a view filter. A company with only one branch would
-  // otherwise have this filter silently jump from "كل الفروع" to that one branch on page load,
-  // narrowing every card here (e.g. "مصروفات الشهر") away from unassigned/branch-less records
-  // (branchId IS NULL) without the user ever choosing a branch — exactly what made a real expense
-  // recorded with no branch picked vanish from the Dashboard while still showing in "المصروفات".
+  // Printing Press, Stationery, and Air Conditioning — "تصفية حسب الفرع". A non-empty sentinel
+  // (never ''), same trick SalesReportPage's own branch filter uses and for the exact same reason:
+  // the shared Select component auto-fires onChange the moment a dropdown's real option list
+  // resolves to exactly one choice while its value is still '' (see Input.tsx's Select) — meant for
+  // data-entry fields with one obviously-correct choice, not for a view filter. A company with only
+  // one branch would otherwise have this filter silently jump from "كل الفروع" to that one branch on
+  // page load, narrowing every card here (e.g. "مصروفات الشهر") away from unassigned/branch-less
+  // records (branchId IS NULL) without the user ever choosing a branch — exactly what made a real
+  // expense recorded with no branch picked vanish from the Dashboard while still showing in
+  // "المصروفات".
+  const hasBranchFilter = isPrintingPress || isStationery || isAirConditioning;
   const ALL_BRANCHES = 'all';
   const [branchFilter, setBranchFilter] = useState(ALL_BRANCHES);
-  const effectiveBranchId = isPrintingPress && branchFilter !== ALL_BRANCHES ? branchFilter : undefined;
+  const effectiveBranchId = hasBranchFilter && branchFilter !== ALL_BRANCHES ? branchFilter : undefined;
 
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
-    enabled: isPrintingPress && !!companyId,
+    enabled: hasBranchFilter && !!companyId,
   });
 
   // No branchId param keeps the exact same cache key (and cached data) as every other screen that
@@ -119,19 +121,25 @@ export function DashboardPage() {
   });
 
   const topProductsQuery = useQuery({
-    queryKey: ['dashboard-top-products'],
+    queryKey: effectiveBranchId
+      ? ['dashboard-top-products', companyId, effectiveBranchId]
+      : ['dashboard-top-products', companyId],
     queryFn: () =>
       unwrap<{ productId: string; name: string; totalQuantity: number; totalRevenue: number }[]>(
-        apiClient.get('/dashboard/top-selling-products'),
+        apiClient.get('/dashboard/top-selling-products', { params: { branchId: effectiveBranchId } }),
       ),
+    enabled: !!companyId,
   });
 
   const recentTxQuery = useQuery({
-    queryKey: ['dashboard-recent-tx'],
+    queryKey: effectiveBranchId
+      ? ['dashboard-recent-tx', companyId, effectiveBranchId]
+      : ['dashboard-recent-tx', companyId],
     queryFn: () =>
       unwrap<{ type: string; documentNumber: string; date: string; amount: number }[]>(
-        apiClient.get('/dashboard/recent-transactions'),
+        apiClient.get('/dashboard/recent-transactions', { params: { branchId: effectiveBranchId } }),
       ),
+    enabled: !!companyId,
   });
 
   const whatsappOutboxQuery = useQuery({
@@ -198,7 +206,7 @@ export function DashboardPage() {
 
   return (
     <div>
-      {isPrintingPress ? (
+      {hasBranchFilter ? (
         <div className="mb-5 flex flex-wrap items-center gap-3 print:hidden">
           <h1 className="text-xl font-semibold">{t('nav.dashboard')}</h1>
           <div className="flex items-center gap-2">

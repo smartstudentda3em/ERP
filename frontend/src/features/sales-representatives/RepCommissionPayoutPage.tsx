@@ -39,10 +39,12 @@ function firstDayOfThisMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
-/** Stationery-only detail/payout screen reached by clicking the commission card on "لوحة المندوب"
- * — Admin/Manager only (see MyManagerDashboardTab.tsx's own canViewAll gate on that click), never
- * reachable by a رep viewing their own dashboard. Shows the commission earned in a chosen date
- * range (reusing the same computation already backing that dashboard's own commission card, via
+/** Stationery/Air Conditioning detail/payout screen reached by clicking the commission card on
+ * "لوحة المندوب" — Admin/Manager only (see MyManagerDashboardTab.tsx's own canViewAll gate on that
+ * click), never reachable by a رep viewing their own dashboard. Air Conditioning has no
+ * commission-payout mechanism of its own and reuses this one rather than a separate
+ * implementation. Shows the commission earned in a chosen date range (reusing the same computation
+ * already backing that dashboard's own commission card, via
  * SalesRepresentativesService.getManagerDashboard/-ByRepId) alongside what's already been paid out
  * in that same range, and lets an admin/manager execute a new payout — routed into the exact same
  * "COMMISSION_PAYOUT" cash movement Printing Press branch managers' own "صرف الأرباح" already uses,
@@ -53,7 +55,7 @@ export function RepCommissionPayoutPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { isStationery, isLoading: companyLoading } = useActiveCompany();
+  const { isStationery, isAirConditioning, isLoading: companyLoading } = useActiveCompany();
 
   const [dateRange, setDateRange] = useState<DateRange>({ from: firstDayOfThisMonth(), to: localToday() });
   // getManagerDashboard(ByRepId) requires both dates — DateRangeFilter's own "reset" clears both to
@@ -133,7 +135,7 @@ export function RepCommissionPayoutPage() {
   ];
 
   if (companyLoading) return null;
-  if (!isStationery) return <Navigate to="/sales-representatives" replace />;
+  if (!isStationery && !isAirConditioning) return <Navigate to="/sales-representatives" replace />;
 
   return (
     <div>

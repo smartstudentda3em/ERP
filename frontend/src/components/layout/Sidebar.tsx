@@ -216,7 +216,9 @@ export function Sidebar({ open }: { open: boolean }) {
                     ? 'nav.salesRepresentativesPress'
                     : isPrintingPress && item.to === '/suppliers'
                       ? 'nav.importsPress'
-                      : item.label,
+                      : !isPrintingPress && item.to === '/inventory/stock-audit'
+                        ? 'nav.stockAuditAnnual'
+                        : item.label,
               )}
             </span>
           </NavLink>

@@ -635,54 +635,66 @@ async function main() {
     console.log(`Company seeded: ${company.code} (${company.nameEn}) / ${branch.code} / ${warehouse.code}`);
   }
 
-  // --- Branch Manager role, Printing Press only ("مدير فرع") ---
-  // Seeded here (after the companies loop) rather than alongside Administrator/Manager above,
-  // since it needs the Press company's real id for restrictedCompanyId — a distinct, narrower role
-  // from the generic "Manager" above: Dashboard (view), Quotations (view+create only, no edit),
-  // Products (view only), Sales Invoices (full — view/create/receive payments), Sales (covered by
+  // --- Branch Manager role, one per company ("مدير فرع") ---
+  // Seeded here (after the companies loop) rather than alongside Administrator/Manager above, since
+  // each needs its own company's real id for restrictedCompanyId — a distinct, narrower role from
+  // the generic "Manager" above: Dashboard (view), Quotations (view+create only, no edit), Products
+  // (view only), Sales Invoices (full — view/create/receive payments), Sales (covered by
   // sales.invoice.view), Treasury cash movements (view only, no transaction authority). Every other
-  // module is deliberately excluded. `restrictedCompanyId` hard-locks any user given this role to
-  // the Printing Press company only (see UsersService.create()/update()). The role's own name is
-  // deliberately plain "مدير فرع" (no branch/company suffix baked in) — the *specific* branch is
-  // chosen per-user in the Users & Roles "add user" form's conditional branch select, which also
+  // module is deliberately excluded. `restrictedCompanyId` hard-locks any user given a role here to
+  // that one company (see UsersService.create()/update()). Originally Press-only; now one distinct
+  // role row per company — Role.name is unique system-wide, so a single "مدير فرع" row can never
+  // simultaneously restrict to 3 different companies, hence the company-suffixed names for
+  // Stationery/Air Conditioning below. Press keeps its original unsuffixed name ("مدير فرع") so any
+  // user already assigned it is unaffected. Same permission list for all three, deliberately not
+  // widened per company (no customers.view/settings.warehouse.view/settings.branch.view for
+  // Stationery/AC's own invoice-form pickers — a مدير فرع there is limited to whatever those 9
+  // permissions unlock, matching Press's own scope exactly rather than matching مندوب's broader
+  // one). The *specific* branch is chosen per-user in the Users & Roles "add user" form's
+  // conditional branch select for whichever of these role names is selected, which also
   // auto-provisions a SalesRepresentative row for that user/branch (see
   // UsersService.syncBranchManagerRepresentative()) so they immediately appear under "مدراء
   // الفروع" for an admin to finish their commission/target data.
-  const pressCompany = seededCompanies.find((c) => c.company.code === PRINTING_PRESS_COMPANY_CODE)?.company;
-  if (pressCompany) {
-    const BRANCH_MANAGER_PRESS_PERMISSION_CODES = [
-      'dashboard.view',
-      'sales.quotation.view',
-      'sales.quotation.create',
-      'inventory.product.view',
-      'sales.invoice.view',
-      'sales.invoice.create',
-      'sales.payment.view',
-      'sales.payment.create',
-      'treasury.cash-box.view',
-    ];
-    const branchManagerPressPermissions = allPermissions.filter((p) =>
-      BRANCH_MANAGER_PRESS_PERMISSION_CODES.includes(`${p.module}.${p.action}`),
-    );
-    let branchManagerPressRole =
-      (await roleRepo.findOne({ where: { name: 'مدير فرع' } })) ??
-      (await roleRepo.findOne({ where: { name: 'مدير فرع - المطبعة' } }));
-    if (!branchManagerPressRole) {
-      branchManagerPressRole = roleRepo.create({
-        name: 'مدير فرع',
-        description:
-          'Branch manager restricted exclusively to the Printing Press company — dashboard, quotations (view/create), products (view), sales invoices (full incl. payments), sales, and treasury (view only)',
+  const BRANCH_MANAGER_PERMISSION_CODES = [
+    'dashboard.view',
+    'sales.quotation.view',
+    'sales.quotation.create',
+    'inventory.product.view',
+    'sales.invoice.view',
+    'sales.invoice.create',
+    'sales.payment.view',
+    'sales.payment.create',
+    'treasury.cash-box.view',
+  ];
+  const branchManagerPermissions = allPermissions.filter((p) =>
+    BRANCH_MANAGER_PERMISSION_CODES.includes(`${p.module}.${p.action}`),
+  );
+  const BRANCH_MANAGER_ROLE_DEFS: { companyCode: string; roleName: string; previousName?: string }[] = [
+    { companyCode: PRINTING_PRESS_COMPANY_CODE, roleName: 'مدير فرع', previousName: 'مدير فرع - المطبعة' },
+    { companyCode: 'STAT', roleName: 'مدير فرع - القرطاسية' },
+    { companyCode: 'AC', roleName: 'مدير فرع - التكييفات' },
+  ];
+  for (const def of BRANCH_MANAGER_ROLE_DEFS) {
+    const roleCompany = seededCompanies.find((c) => c.company.code === def.companyCode)?.company;
+    if (!roleCompany) continue;
+    let branchManagerRole =
+      (await roleRepo.findOne({ where: { name: def.roleName } })) ??
+      (def.previousName ? await roleRepo.findOne({ where: { name: def.previousName } }) : null);
+    if (!branchManagerRole) {
+      branchManagerRole = roleRepo.create({
+        name: def.roleName,
+        description: `Branch manager restricted exclusively to ${roleCompany.nameEn} — dashboard, quotations (view/create), products (view), sales invoices (full incl. payments), sales, and treasury (view only)`,
         isSystemRole: false,
-        restrictedCompanyId: pressCompany.id,
-        permissions: branchManagerPressPermissions,
+        restrictedCompanyId: roleCompany.id,
+        permissions: branchManagerPermissions,
       });
     } else {
-      branchManagerPressRole.name = 'مدير فرع';
-      branchManagerPressRole.permissions = branchManagerPressPermissions;
-      branchManagerPressRole.restrictedCompanyId = pressCompany.id;
+      branchManagerRole.name = def.roleName;
+      branchManagerRole.permissions = branchManagerPermissions;
+      branchManagerRole.restrictedCompanyId = roleCompany.id;
     }
-    await roleRepo.save(branchManagerPressRole);
-    console.log('Branch Manager (Printing Press) role seeded');
+    await roleRepo.save(branchManagerRole);
+    console.log(`Branch Manager (${roleCompany.code}) role seeded`);
   }
 
   // --- Sales Representative role ("مندوب") — every company, unrestricted ---

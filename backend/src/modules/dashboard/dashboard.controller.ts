@@ -33,8 +33,12 @@ export class DashboardController {
 
   @Get('top-selling-products')
   @Permissions('dashboard.view')
-  topSellingProducts(@CurrentUser('companyId') companyId: string, @Query('limit') limit?: string) {
-    return this.service.getTopSellingProducts(companyId, limit ? Number(limit) : undefined);
+  topSellingProducts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('limit') limit?: string,
+    @Query('branchId') branchId?: string,
+  ) {
+    return this.service.getTopSellingProducts(user.companyId!, user.userId, limit ? Number(limit) : undefined, branchId);
   }
 
   @Get('expired-products')
@@ -45,8 +49,12 @@ export class DashboardController {
 
   @Get('recent-transactions')
   @Permissions('dashboard.view')
-  recentTransactions(@CurrentUser('companyId') companyId: string, @Query('limit') limit?: string) {
-    return this.service.getRecentTransactions(companyId, limit ? Number(limit) : undefined);
+  recentTransactions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('limit') limit?: string,
+    @Query('branchId') branchId?: string,
+  ) {
+    return this.service.getRecentTransactions(user.companyId!, user.userId, limit ? Number(limit) : undefined, branchId);
   }
 
   @Get('cash-ledger')

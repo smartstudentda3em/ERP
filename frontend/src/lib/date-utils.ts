@@ -24,6 +24,12 @@ export function monthKeyOf(dateStr: string): string {
   return dateStr.slice(0, 7);
 }
 
+/** "2026-10-04" -> "2026" — the grouping key an annual audit's (STAT/AC) year filter/column key
+ * off, mirroring monthKeyOf() above for Press's monthly audits. */
+export function yearKeyOf(dateStr: string): string {
+  return dateStr.slice(0, 4);
+}
+
 /** 8 -> "أغسطس" / "August" — the bare month name, for pickers where the year is a separate field. */
 export function monthNameOnly(month: number, language: string): string {
   const names = language.startsWith('ar') ? AR_MONTH_NAMES : EN_MONTH_NAMES;

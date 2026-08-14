@@ -27,11 +27,13 @@ import { PayrollService } from '../hr/payroll.service';
 /** The one permanent, unmodifiable Administrator account — kept in sync with the seed default in run-seed.ts. */
 const PROTECTED_ADMIN_EMAIL = 'aymanmakroum83@gmail.com';
 
-/** The exact role name the "add user" form treats as a branch manager — see
- * UsersRolesPage.tsx's conditional branch-select field. Kept as a plain name match (not
- * isSystemRole/restrictedCompanyId) since that's literally what was asked for and every other
- * role name in this system is free-text anyway. */
-const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
+/** The exact role names the "add user" form treats as a branch manager — one per company (see
+ * UsersRolesPage.tsx's conditional branch-select field, and run-seed.ts's BRANCH_MANAGER_ROLE_DEFS
+ * for why there are 3 distinct names rather than one shared role: Role.name is unique system-wide,
+ * so a single "مدير فرع" row can never restrict to 3 different companies at once). Kept as plain
+ * name matches (not isSystemRole/restrictedCompanyId) since that's literally what was asked for and
+ * every other role name in this system is free-text anyway. */
+const BRANCH_MANAGER_ROLE_NAMES = ['مدير فرع', 'مدير فرع - القرطاسية', 'مدير فرع - التكييفات'];
 
 /** Applied once, only when auto-provisioning a brand-new SalesRepresentative row (never on repair
  * of an existing one, so it can never clobber a rate an admin already customized). */
@@ -39,7 +41,7 @@ const BRANCH_MANAGER_DEFAULT_COMMISSION_RATE = 5;
 
 /** The exact role name the "add user" form treats as a field sales agent — see
  * UsersRolesPage.tsx's optional branch-select field (shown, not required, for Printing Press).
- * Kept as a plain name match, same convention as BRANCH_MANAGER_ROLE_NAME. */
+ * Kept as a plain name match, same convention as BRANCH_MANAGER_ROLE_NAMES. */
 const SALES_REP_ROLE_NAME = 'مندوب';
 
 @Injectable()
@@ -92,7 +94,7 @@ export class UsersService {
    * does nothing for any other role, or when no branch was chosen.
    */
   private async syncBranchManagerRepresentative(user: User, roles: Role[], branchId: string | null): Promise<void> {
-    const branchManagerRole = roles.find((r) => r.name === BRANCH_MANAGER_ROLE_NAME);
+    const branchManagerRole = roles.find((r) => BRANCH_MANAGER_ROLE_NAMES.includes(r.name));
     if (!branchManagerRole || !branchId) return;
     const companyId = branchManagerRole.restrictedCompanyId ?? user.companyId;
     if (!companyId) return;
@@ -131,7 +133,7 @@ export class UsersService {
    * still edits the real baseSalary afterwards via EmployeesPage; this only guarantees the link exists.
    */
   private async syncBranchManagerEmployee(user: User, roles: Role[], branchId: string | null): Promise<void> {
-    const branchManagerRole = roles.find((r) => r.name === BRANCH_MANAGER_ROLE_NAME);
+    const branchManagerRole = roles.find((r) => BRANCH_MANAGER_ROLE_NAMES.includes(r.name));
     if (!branchManagerRole || !branchId) return;
     const companyId = branchManagerRole.restrictedCompanyId ?? user.companyId;
     if (!companyId) return;
@@ -149,7 +151,7 @@ export class UsersService {
         companyId,
         branchId,
         name: user.fullName,
-        jobTitle: BRANCH_MANAGER_ROLE_NAME,
+        jobTitle: branchManagerRole.name,
         baseSalary: 0,
         userId: user.id,
       }),

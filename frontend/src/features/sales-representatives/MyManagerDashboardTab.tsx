@@ -153,7 +153,11 @@ export interface MyManagerDashboardTabProps {
 export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps = {}) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { isStationery } = useActiveCompany();
+  const { isStationery, isAirConditioning } = useActiveCompany();
+  // Commission payout click-through (see RepCommissionPayoutPage.tsx) is shared by Stationery and
+  // Air Conditioning — Air Conditioning has no commission-payout mechanism of its own, so it reuses
+  // Stationery's existing one rather than a separate Press-style implementation.
+  const hasCommissionPayout = isStationery || isAirConditioning;
   const now = new Date();
   const currentQuarter = (Math.floor(now.getMonth() / 3) + 1) as DashboardQuarter;
   const [internalYear, setInternalYear] = useState(now.getFullYear());
@@ -287,14 +291,15 @@ export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps
               <div className="text-2xl font-bold text-primary-600">{formatAmount(data.sales.totalSales)}</div>
             </Card>
 
-            {/* Stationery only: clickable only for whoever can see this dashboard for a رep other
-                than themselves (canViewAll, i.e. Admin/Manager) — a مندوب viewing their own tab sees
-                the exact same amount but the card stays inert for them, per spec ("خفية عن المندوب
-                العادي"). Navigates to the detailed commission payout screen for this specific manager. */}
+            {/* Stationery/Air Conditioning only: clickable only for whoever can see this dashboard
+                for a رep other than themselves (canViewAll, i.e. Admin/Manager) — a مندوب viewing
+                their own tab sees the exact same amount but the card stays inert for them, per spec
+                ("خفية عن المندوب العادي"). Navigates to the detailed commission payout screen for
+                this specific manager. */}
             <Card
-              className={isStationery && canViewAll ? 'cursor-pointer transition hover:border-primary-400' : undefined}
+              className={hasCommissionPayout && canViewAll ? 'cursor-pointer transition hover:border-primary-400' : undefined}
               onClick={
-                isStationery && canViewAll
+                hasCommissionPayout && canViewAll
                   ? () => navigate(`/sales-representatives/${data.manager.id}/commission-payout`)
                   : undefined
               }
@@ -306,7 +311,7 @@ export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps
               <div className="mt-1 text-xs text-[var(--text-muted)]">
                 {t('fields.commissionRate')}: {data.commission.generalRate}%
               </div>
-              {isStationery && canViewAll && (
+              {hasCommissionPayout && canViewAll && (
                 <div className="mt-1 text-xs text-primary-600">{t('managerDashboard.clickForCommissionDetails')}</div>
               )}
             </Card>

@@ -26,7 +26,7 @@ interface StockLevel {
     unit?: { nameEn: string } | null;
     packageType?: { nameEn: string } | null;
   };
-  warehouse: { id: string; nameEn: string };
+  warehouse: { id: string; nameEn: string; nameAr?: string | null };
 }
 
 interface StockMovement {
@@ -71,6 +71,7 @@ interface Product {
 interface Warehouse {
   id: string;
   nameEn: string;
+  nameAr?: string | null;
 }
 
 interface Unit {
@@ -112,6 +113,10 @@ export function StockPage() {
   const canAdjustStock = useAuthStore((s) => s.hasPermission('inventory.stock.edit'));
   const [tab, setTab] = useState<'levels' | 'movements' | 'transfers'>('levels');
   const [showDepleted, setShowDepleted] = useState(false);
+  // Levels tab's own two-filter bar (product name/SKU search + warehouse dropdown), applied
+  // together rather than through DataTable's generic single search box below.
+  const [productSearch, setProductSearch] = useState('');
+  const [warehouseFilter, setWarehouseFilter] = useState('');
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustForm, setAdjustForm] = useState({
     productId: '',
@@ -130,8 +135,20 @@ export function StockPage() {
     enabled: !!companyId,
   });
 
-  // Depleted (zero-balance) rows are hidden by default — the toggle below opts back in.
-  const visibleLevels = (levelsQuery.data ?? []).filter((l) => showDepleted || Number(l.quantityOnHand) > 0);
+  // Depleted (zero-balance) rows are hidden by default — the toggle below opts back in. The
+  // product search matches name OR sku; the warehouse dropdown narrows to one specific warehouse
+  // (empty = all) — both apply together, on top of the depleted filter.
+  const visibleLevels = (levelsQuery.data ?? []).filter((l) => {
+    if (!showDepleted && Number(l.quantityOnHand) <= 0) return false;
+    if (warehouseFilter && l.warehouse?.id !== warehouseFilter) return false;
+    if (productSearch.trim()) {
+      const q = productSearch.trim().toLowerCase();
+      const matchesName = l.product?.nameEn?.toLowerCase().includes(q) ?? false;
+      const matchesSku = l.product?.sku?.toLowerCase().includes(q) ?? false;
+      if (!matchesName && !matchesSku) return false;
+    }
+    return true;
+  });
 
   const movementsQuery = useQuery({
     queryKey: ['stock-movements', companyId],
@@ -153,7 +170,7 @@ export function StockPage() {
   const warehousesQuery = useQuery({
     queryKey: ['warehouses', companyId],
     queryFn: () => unwrap<Warehouse[]>(apiClient.get('/settings/warehouses', { params: { companyId } })),
-    enabled: (adjustOpen || transferOpen) && !!companyId,
+    enabled: (tab === 'levels' || adjustOpen || transferOpen) && !!companyId,
   });
   const unitsQuery = useQuery({
     queryKey: ['units'],
@@ -329,7 +346,7 @@ export function StockPage() {
   const levelColumns: Column<StockLevel>[] = [
     { header: t('fields.sku'), accessor: (r) => r.product?.sku },
     { header: t('common.name'), accessor: (r) => r.product?.nameEn },
-    { header: t('fields.warehouse'), accessor: (r) => r.warehouse?.nameEn },
+    { header: t('fields.warehouse'), accessor: (r) => r.warehouse?.nameAr || r.warehouse?.nameEn },
     {
       header: t('table.onHand'),
       accessor: (r) => (
@@ -424,16 +441,42 @@ export function StockPage() {
             </button>
           ))}
         </div>
-        {tab === 'levels' && (
-          <label className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
-            <input type="checkbox" checked={showDepleted} onChange={(e) => setShowDepleted(e.target.checked)} />
-            {t('stock.showDepletedProducts')}
-          </label>
-        )}
       </div>
 
       {tab === 'levels' && (
-        <DataTable columns={levelColumns} data={visibleLevels} keyField={(r) => r.id} isLoading={levelsQuery.isLoading} />
+        <>
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <Input
+              placeholder={t('stock.searchProductPlaceholder')}
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              className="max-w-xs"
+            />
+            <Select
+              value={warehouseFilter}
+              onChange={(e) => setWarehouseFilter(e.target.value)}
+              className="max-w-xs"
+            >
+              <option value="">{t('stock.allWarehouses')}</option>
+              {(warehousesQuery.data ?? []).map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.nameAr || w.nameEn}
+                </option>
+              ))}
+            </Select>
+            <label className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+              <input type="checkbox" checked={showDepleted} onChange={(e) => setShowDepleted(e.target.checked)} />
+              {t('stock.showDepletedProducts')}
+            </label>
+          </div>
+          <DataTable
+            columns={levelColumns}
+            data={visibleLevels}
+            keyField={(r) => r.id}
+            isLoading={levelsQuery.isLoading}
+            searchable={false}
+          />
+        </>
       )}
       {tab === 'movements' && (
         <DataTable

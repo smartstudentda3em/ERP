@@ -41,9 +41,9 @@ function isProtectedAdmin(email: string | null | undefined): boolean {
   return !!email && email.toLowerCase() === PROTECTED_ADMIN_EMAIL;
 }
 
-// The exact role name the "add user" form treats as a branch manager — matches
-// BRANCH_MANAGER_ROLE_NAME in backend/src/modules/users/users.service.ts.
-const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
+// The exact role names the "add user" form treats as a branch manager — one per company, matches
+// BRANCH_MANAGER_ROLE_NAMES in backend/src/modules/users/users.service.ts.
+const BRANCH_MANAGER_ROLE_NAMES = ['مدير فرع', 'مدير فرع - القرطاسية', 'مدير فرع - التكييفات'];
 
 // The exact role name the "add user" form treats as a field sales agent — matches
 // SALES_REP_ROLE_NAME in backend/src/modules/users/users.service.ts.
@@ -110,11 +110,15 @@ export function UsersRolesPage() {
     (companiesQuery.data ?? []).find((c) => c.id === editRestrictedCompanyId)?.nameEn ??
     '';
 
-  // "مدير فرع" is the one role whose form shows a conditional branch picker (see
-  // BRANCH_MANAGER_ROLE_NAME in UsersService) — sourced from Settings > Branches for that role's
-  // own restricted company, not necessarily whichever company the current admin has active.
-  const createIsBranchManager = rolesQuery.data?.find((r) => r.id === form.roleId)?.name === BRANCH_MANAGER_ROLE_NAME;
-  const editIsBranchManager = rolesQuery.data?.find((r) => r.id === editForm.roleId)?.name === BRANCH_MANAGER_ROLE_NAME;
+  // A "مدير فرع" role (one per company) is the one whose form shows a conditional branch picker
+  // (see BRANCH_MANAGER_ROLE_NAMES in UsersService) — sourced from Settings > Branches for that
+  // role's own restricted company, not necessarily whichever company the current admin has active.
+  const createIsBranchManager = BRANCH_MANAGER_ROLE_NAMES.includes(
+    rolesQuery.data?.find((r) => r.id === form.roleId)?.name ?? '',
+  );
+  const editIsBranchManager = BRANCH_MANAGER_ROLE_NAMES.includes(
+    rolesQuery.data?.find((r) => r.id === editForm.roleId)?.name ?? '',
+  );
   // "مندوب" isn't company-restricted (no restrictedCompanyId), so — unlike مدير فرع — there's no
   // role-level company to source branches from; this only ever offers a branch when the admin is
   // themselves currently working inside Printing Press, and it's optional (not required) since a
@@ -389,7 +393,7 @@ export function UsersRolesPage() {
                   ...form,
                   roleId: e.target.value,
                   branchId:
-                    nextRole?.name === BRANCH_MANAGER_ROLE_NAME || nextRole?.name === SALES_REP_ROLE_NAME
+                    BRANCH_MANAGER_ROLE_NAMES.includes(nextRole?.name ?? '') || nextRole?.name === SALES_REP_ROLE_NAME
                       ? form.branchId
                       : '',
                 });
@@ -527,7 +531,7 @@ export function UsersRolesPage() {
                   ...editForm,
                   roleId: e.target.value,
                   branchId:
-                    nextRole?.name === BRANCH_MANAGER_ROLE_NAME || nextRole?.name === SALES_REP_ROLE_NAME
+                    BRANCH_MANAGER_ROLE_NAMES.includes(nextRole?.name ?? '') || nextRole?.name === SALES_REP_ROLE_NAME
                       ? editForm.branchId
                       : '',
                 });

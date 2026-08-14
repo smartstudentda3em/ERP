@@ -14,11 +14,12 @@ import { Badge } from '../../components/ui/Badge';
 import { FormField, Input, Select } from '../../components/ui/Input';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
-import { useIsPressManagerRestricted } from '../../lib/use-active-company';
+import { useActiveCompany, useIsPressManagerRestricted } from '../../lib/use-active-company';
 import {
   monthKeyOf as auditMonthKey,
   monthNameOf as auditMonthName,
   monthNameOnly,
+  yearKeyOf as auditYearKey,
 } from '../../lib/date-utils';
 
 interface AuditRow {
@@ -101,13 +102,19 @@ export function StockAuditPage() {
   // only, never pre-filled from system/previous data (even for sellable items, which otherwise
   // pre-fill) — see useIsPressManagerRestricted's own doc comment for the full restriction list.
   const isRestrictedEntry = useIsPressManagerRestricted();
+  // "الجرد الشهري" (Press) vs "الجرد السنوي" (Stationery/Air Conditioning) — every place this page
+  // shows/filters/composes an audit's period branches on this flag; see confirmNewAudit() below
+  // for how the same auditDate column ends up "YYYY-MM-01" vs "YYYY-01-01" either way.
+  const { isPrintingPress } = useActiveCompany();
   const [entryOpen, setEntryOpen] = useState(false);
   const [warehouseId, setWarehouseId] = useState('');
   const [auditDate, setAuditDate] = useState('');
-  const [monthFilter, setMonthFilter] = useState('');
-  // Which branch/department of the (Printing-Press-only) company to filter to — a dropdown of
-  // real branches rather than free-text, so it can only ever match an audit exactly (see
-  // filteredAudits below) instead of a fuzzy name substring.
+  // "YYYY-MM" for Press (monthly), "YYYY" for everyone else (annual) — see periodOptions/
+  // filteredAudits below for how the same state drives either grouping.
+  const [periodFilter, setPeriodFilter] = useState('');
+  // Which branch/department of the company to filter to — a dropdown of real branches rather
+  // than free-text, so it can only ever match an audit exactly (see filteredAudits below) instead
+  // of a fuzzy name substring.
   const [branchFilter, setBranchFilter] = useState('');
   // Only the user's edits live in state, keyed by productId — the rest of each line (system
   // quantity, cost, pre-fill) is derived fresh from the products/stock-levels queries on every
@@ -183,7 +190,11 @@ export function StockAuditPage() {
     if (!matchedWarehouseId) return;
     setError(null);
     setWarehouseId(matchedWarehouseId);
-    setAuditDate(`${newAuditForm.year}-${String(newAuditForm.month).padStart(2, '0')}-01`);
+    setAuditDate(
+      isPrintingPress
+        ? `${newAuditForm.year}-${String(newAuditForm.month).padStart(2, '0')}-01`
+        : `${newAuditForm.year}-01-01`,
+    );
     setActualOverrides({});
     setNewAuditModalOpen(false);
     setEntryOpen(true);
@@ -288,19 +299,23 @@ export function StockAuditPage() {
     if (ok) deleteMutation.mutate(r.id);
   }
 
-  // Every option is a month that actually has an audit, derived from the list itself rather than
-  // a rolling calendar — so the dropdown never offers a month with nothing to show.
-  const monthOptions = useMemo(() => {
-    const keys = new Set((auditsQuery.data ?? []).map((r) => auditMonthKey(r.auditDate)));
+  // Every option is a month/year that actually has an audit, derived from the list itself rather
+  // than a rolling calendar — so the dropdown never offers a period with nothing to show.
+  const periodOptions = useMemo(() => {
+    const keyOf = isPrintingPress ? auditMonthKey : auditYearKey;
+    const keys = new Set((auditsQuery.data ?? []).map((r) => keyOf(r.auditDate)));
     return [...keys].sort((a, b) => (a < b ? 1 : -1));
-  }, [auditsQuery.data]);
+  }, [auditsQuery.data, isPrintingPress]);
 
   const filteredAudits = useMemo(() => {
     let rows = auditsQuery.data ?? [];
-    if (monthFilter) rows = rows.filter((r) => auditMonthKey(r.auditDate) === monthFilter);
+    if (periodFilter) {
+      const keyOf = isPrintingPress ? auditMonthKey : auditYearKey;
+      rows = rows.filter((r) => keyOf(r.auditDate) === periodFilter);
+    }
     if (branchFilter) rows = rows.filter((r) => r.warehouse?.branch?.id === branchFilter);
     return rows;
-  }, [auditsQuery.data, monthFilter, branchFilter]);
+  }, [auditsQuery.data, periodFilter, branchFilter, isPrintingPress]);
 
   // إجمالي المواد المستهلكة: live sum of the "إجمالي المستهلك" column across whatever audits are
   // currently displayed (post month/branch filtering) — recomputes automatically the moment either
@@ -311,10 +326,16 @@ export function StockAuditPage() {
   );
 
   const auditColumns: Column<AuditRow>[] = [
-    {
-      header: t('stockAudit.auditMonth'),
-      accessor: (r) => t('stockAudit.auditMonthLabel', { month: auditMonthName(auditMonthKey(r.auditDate), i18n.language) }),
-    },
+    isPrintingPress
+      ? {
+          header: t('stockAudit.auditMonth'),
+          accessor: (r) =>
+            t('stockAudit.auditMonthLabel', { month: auditMonthName(auditMonthKey(r.auditDate), i18n.language) }),
+        }
+      : {
+          header: t('stockAudit.auditYear'),
+          accessor: (r) => t('stockAudit.auditYearLabel', { year: auditYearKey(r.auditDate) }),
+        },
     { header: t('fields.branch'), accessor: (r) => r.warehouse?.branch?.nameAr || r.warehouse?.branch?.nameEn || '—' },
     { header: t('fields.warehouse'), accessor: (r) => r.warehouse?.nameAr || r.warehouse?.nameEn || '—' },
     { header: t('common.date'), accessor: (r) => r.auditDate },
@@ -481,8 +502,12 @@ export function StockAuditPage() {
             <div className="mt-1 font-semibold">{lockedWarehouse ? warehouseLabel(lockedWarehouse) : '—'}</div>
           </Card>
           <Card>
-            <div className="text-xs text-[var(--text-muted)]">{t('stockAudit.auditMonth')}</div>
-            <div className="mt-1 font-semibold">{auditMonthName(auditMonthKey(auditDate), i18n.language)}</div>
+            <div className="text-xs text-[var(--text-muted)]">
+              {t(isPrintingPress ? 'stockAudit.auditMonth' : 'stockAudit.auditYear')}
+            </div>
+            <div className="mt-1 font-semibold">
+              {isPrintingPress ? auditMonthName(auditMonthKey(auditDate), i18n.language) : auditYearKey(auditDate)}
+            </div>
           </Card>
           {/* حياً أثناء الإدخال — نفس معادلة إجمالي المستهلك المعروضة بعد الحفظ في
               StockAuditDetailPage.tsx، بحيث يرى المستخدم الأثر المالي قبل الضغط على "حفظ واعتماد". */}
@@ -513,16 +538,16 @@ export function StockAuditPage() {
   return (
     <div>
       <PageHeader
-        title={t('nav.stockAudit')}
+        title={t(isPrintingPress ? 'nav.stockAudit' : 'nav.stockAuditAnnual')}
         actions={canCreate ? <Button onClick={openNewAuditModal}>+ {t('stockAudit.newAudit')}</Button> : undefined}
       />
       <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <FormField label={t('stockAudit.auditMonth')}>
-          <Select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}>
-            <option value="">{t('stockAudit.allMonths')}</option>
-            {monthOptions.map((key) => (
+        <FormField label={t(isPrintingPress ? 'stockAudit.auditMonth' : 'stockAudit.auditYear')}>
+          <Select value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value)}>
+            <option value="">{t(isPrintingPress ? 'stockAudit.allMonths' : 'stockAudit.allYears')}</option>
+            {periodOptions.map((key) => (
               <option key={key} value={key}>
-                {auditMonthName(key, i18n.language)}
+                {isPrintingPress ? auditMonthName(key, i18n.language) : key}
               </option>
             ))}
           </Select>
@@ -555,19 +580,21 @@ export function StockAuditPage() {
 
       <Modal open={newAuditModalOpen} onClose={() => setNewAuditModalOpen(false)} title={t('stockAudit.newAudit')}>
         <div className="grid grid-cols-2 gap-3">
-          <FormField label={t('stockAudit.auditMonth')}>
-            <Select
-              value={newAuditForm.month}
-              onChange={(e) => setNewAuditForm({ ...newAuditForm, month: Number(e.target.value) })}
-            >
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <option key={m} value={m}>
-                  {monthNameOnly(m, i18n.language)}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <FormField label={t('common.year')}>
+          {isPrintingPress && (
+            <FormField label={t('stockAudit.auditMonth')}>
+              <Select
+                value={newAuditForm.month}
+                onChange={(e) => setNewAuditForm({ ...newAuditForm, month: Number(e.target.value) })}
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>
+                    {monthNameOnly(m, i18n.language)}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
+          <FormField label={t(isPrintingPress ? 'common.year' : 'stockAudit.auditYear')}>
             <Input
               type="number"
               value={newAuditForm.year}

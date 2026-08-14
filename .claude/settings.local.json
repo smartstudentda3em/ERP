@@ -166,7 +166,8 @@
       "PowerShell(Start-Process -FilePath \"C:\\\\Users\\\\surface\\\\AppData\\\\Local\\\\Programs\\\\DockerDesktop\\\\Docker Desktop.exe\")",
       "Bash(powershell -Command 'Get-Process | Where-Object {$_.ProcessName -like '\\\\''*docker*'\\\\''}')",
       "PowerShell(Start-Process \"C:\\\\Users\\\\surface\\\\AppData\\\\Local\\\\Programs\\\\DockerDesktop\\\\Docker Desktop.exe\")",
-      "Bash(docker port *)"
+      "Bash(docker port *)",
+      "Bash(powershell -Command \"Start-Process 'C:\\\\Users\\\\surface\\\\AppData\\\\Local\\\\Programs\\\\DockerDesktop\\\\Docker Desktop.exe'\")"
     ]
   }
 }

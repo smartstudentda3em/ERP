@@ -79,3 +79,12 @@ export function monthRange(dateStr: string): { dateFrom: string; dateTo: string 
   const lastDay = new Date(y, m, 0).getDate();
   return { dateFrom: `${y}-${pad(m)}-01`, dateTo: `${y}-${pad(m)}-${pad(lastDay)}` };
 }
+
+/** Jan 1 - Dec 31 of the calendar year `dateStr` falls in (e.g. '2026-01-15' ->
+ * '2026-01-01'..'2026-12-31') — the "period" an annual stock audit's own consumedQuantity is
+ * scoped to (Stationery/Air Conditioning only — Printing Press keeps the monthly monthRange()
+ * above). */
+export function yearRange(dateStr: string): { dateFrom: string; dateTo: string } {
+  const [y] = dateStr.split('-').map(Number);
+  return { dateFrom: `${y}-01-01`, dateTo: `${y}-12-31` };
+}

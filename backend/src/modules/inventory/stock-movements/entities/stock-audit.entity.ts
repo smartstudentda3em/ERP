@@ -13,9 +13,12 @@ import { DocumentStatus } from "../../../../entities/enums";
 import { Company } from "../../../settings/entities/company.entity";
 
 /**
- * "الجرد الشهري" (Printing Press only) — a physical stock count for one warehouse. Submitting
- * (CONFIRMED) never touches real stock levels; only a subsequent administrative approval
- * (APPROVED) reconciles them, by delegating to the existing StockAdjustmentsService — see
+ * A physical stock count for one warehouse — "الجرد الشهري" (monthly) for Printing Press,
+ * "الجرد السنوي" (annual) for Stationery/Air Conditioning; both share this same entity and
+ * `auditDate` column, just scoped to a different calendar period by the frontend/service (see
+ * StockAuditsService.getSetupLines()'s monthRange()/yearRange() split). Submitting (CONFIRMED)
+ * never touches real stock levels; only a subsequent administrative approval (APPROVED)
+ * reconciles them, by delegating to the existing StockAdjustmentsService — see
  * StockAuditsService.approve().
  */
 @Entity("stock_audits")

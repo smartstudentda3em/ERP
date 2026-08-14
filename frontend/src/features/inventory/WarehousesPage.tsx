@@ -18,6 +18,7 @@ interface WarehouseOption {
   id: string;
   code: string;
   nameEn: string;
+  nameAr?: string | null;
 }
 
 interface LookupOption {
@@ -330,7 +331,7 @@ export function WarehousesPage() {
               <option value="">—</option>
               {(warehousesQuery.data ?? []).map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.nameEn}
+                  {w.nameAr || w.nameEn}
                 </option>
               ))}
             </Select>

@@ -86,9 +86,9 @@ export function InstallmentsPage() {
     enabled: modalOpen && !!companyId,
   });
   const warehousesQuery = useQuery({
-    queryKey: ['warehouses'],
-    queryFn: () => unwrap<Warehouse[]>(apiClient.get('/settings/warehouses')),
-    enabled: modalOpen,
+    queryKey: ['warehouses', companyId],
+    queryFn: () => unwrap<Warehouse[]>(apiClient.get('/settings/warehouses', { params: { companyId } })),
+    enabled: modalOpen && !!companyId,
   });
   const productsQuery = useQuery({
     queryKey: ['products', companyId],

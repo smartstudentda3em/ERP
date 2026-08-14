@@ -12,7 +12,7 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { FormField, Input, Select } from '../../components/ui/Input';
 import { useToast } from '../../components/ui/Toast';
-import { localToday, monthKeyOf, monthNameOf, monthNameOnly } from '../../lib/date-utils';
+import { localToday, monthKeyOf, monthNameOf, monthNameOnly, yearKeyOf } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdf } from '../../lib/pdf-export';
 import { formatAmount } from '../../lib/number-format';
@@ -54,7 +54,7 @@ export function StockAuditDetailPage() {
   const toast = useToast();
   const canApprove = useAuthStore((s) => s.hasPermission('inventory.stockAudit.approve'));
   const canEdit = useAuthStore((s) => s.hasPermission('inventory.stockAudit.edit'));
-  const { company } = useActiveCompany();
+  const { company, isPrintingPress } = useActiveCompany();
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const now = new Date();
@@ -109,7 +109,9 @@ export function StockAuditDetailPage() {
   const updateMutation = useMutation({
     mutationFn: () =>
       apiClient.patch(`/inventory/stock-audits/${id}`, {
-        auditDate: `${editForm.year}-${String(editForm.month).padStart(2, '0')}-01`,
+        auditDate: isPrintingPress
+          ? `${editForm.year}-${String(editForm.month).padStart(2, '0')}-01`
+          : `${editForm.year}-01-01`,
         notes: editForm.notes || undefined,
         lines: (detailQuery.data?.lines ?? []).map((l) => ({
           productId: l.productId,
@@ -271,11 +273,17 @@ export function StockAuditDetailPage() {
       : []),
   ];
 
-  // Printing Press only (this whole route is gated by RequirePrintingPress): a descriptive
-  // "الجرد الشهري - <month> <year>" heading reads better than the auto-generated AUDIT-000001
+  // A descriptive "الجرد الشهري - <month> <year>" (Press) / "الجرد السنوي - <year>"
+  // (Stationery/Air Conditioning) heading reads better than the auto-generated AUDIT-000001
   // document number, which stays available in the print header via documentNumber if needed.
-  const printTitle = t('stockAudit.auditDetailsTitle', { month: monthNameOf(monthKeyOf(audit.auditDate), i18n.language) });
-  const printFileName = buildPdfFileName(t('nav.stockAudit'), audit.warehouse?.nameEn, audit.documentNumber);
+  const printTitle = isPrintingPress
+    ? t('stockAudit.auditDetailsTitle', { month: monthNameOf(monthKeyOf(audit.auditDate), i18n.language) })
+    : t('stockAudit.auditDetailsTitleAnnual', { year: yearKeyOf(audit.auditDate) });
+  const printFileName = buildPdfFileName(
+    t(isPrintingPress ? 'nav.stockAudit' : 'nav.stockAuditAnnual'),
+    audit.warehouse?.nameEn,
+    audit.documentNumber,
+  );
 
   function handlePrint() {
     const previousTitle = document.title;
@@ -336,19 +344,21 @@ export function StockAuditDetailPage() {
       {editMode && (
         <Card className="mb-4 print:hidden">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <FormField label={t('stockAudit.auditMonth')}>
-              <Select
-                value={editForm.month}
-                onChange={(e) => setEditForm({ ...editForm, month: Number(e.target.value) })}
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <option key={m} value={m}>
-                    {monthNameOnly(m, i18n.language)}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label={t('common.year')}>
+            {isPrintingPress && (
+              <FormField label={t('stockAudit.auditMonth')}>
+                <Select
+                  value={editForm.month}
+                  onChange={(e) => setEditForm({ ...editForm, month: Number(e.target.value) })}
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <option key={m} value={m}>
+                      {monthNameOnly(m, i18n.language)}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            )}
+            <FormField label={t(isPrintingPress ? 'common.year' : 'stockAudit.auditYear')}>
               <Input
                 type="number"
                 value={editForm.year}

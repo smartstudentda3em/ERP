@@ -224,8 +224,9 @@ export class DashboardService {
     return rows.map((r) => ({ date: r.date, total: Number(r.total) }));
   }
 
-  async getTopSellingProducts(companyId: string, limit = 5) {
-    const rows = await this.dataSource
+  async getTopSellingProducts(companyId: string, userId: string, limit = 5, requestedBranchId?: string) {
+    const branchId = (await this.salesRepAccess.resolveBranchId(userId, requestedBranchId, companyId)) ?? undefined;
+    const qb = this.dataSource
       .createQueryBuilder()
       .select('p.id', 'productId')
       .addSelect('p."nameEn"', 'name')
@@ -233,11 +234,10 @@ export class DashboardService {
       .addSelect('SUM(l."lineTotal")', 'totalRevenue')
       .from('sales_invoice_lines', 'l')
       .innerJoin('products', 'p', 'p.id = l."productId"')
-      .where('p."companyId" = :companyId', { companyId })
-      .groupBy('p.id')
-      .orderBy('"totalQuantity"', 'DESC')
-      .limit(limit)
-      .getRawMany();
+      .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+      .where('p."companyId" = :companyId', { companyId });
+    if (branchId) qb.andWhere('i."branchId" = :branchId', { branchId });
+    const rows = await qb.groupBy('p.id').orderBy('"totalQuantity"', 'DESC').limit(limit).getRawMany();
     return rows.map((r) => ({
       productId: r.productId,
       name: r.name,
@@ -271,18 +271,20 @@ export class DashboardService {
     return this.cashMovementsService.getLedger(companyId, dateFrom, dateTo, branchId);
   }
 
-  async getRecentTransactions(companyId: string, limit = 10) {
+  async getRecentTransactions(companyId: string, userId: string, limit = 10, requestedBranchId?: string) {
+    const branchId = (await this.salesRepAccess.resolveBranchId(userId, requestedBranchId, companyId)) ?? undefined;
+    const branchClause = branchId ? 'AND "branchId" = $3' : '';
     const rows = await this.dataSource.query(
       `
       (SELECT 'SALES_INVOICE' as type, "documentNumber", "invoiceDate" as date, "grandTotal" as amount, "createdAt"
-       FROM sales_invoices WHERE "companyId" = $1)
+       FROM sales_invoices WHERE "companyId" = $1 ${branchClause})
       UNION ALL
       (SELECT 'SALES_PAYMENT' as type, "documentNumber", "paymentDate" as date, amount, "createdAt"
-       FROM sales_payments WHERE "companyId" = $1)
+       FROM sales_payments WHERE "companyId" = $1 ${branchClause})
       ORDER BY "createdAt" DESC
       LIMIT $2
       `,
-      [companyId, limit],
+      branchId ? [companyId, limit, branchId] : [companyId, limit],
     );
     return rows;
   }

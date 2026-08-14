@@ -103,7 +103,6 @@ const items: NavItem[] = [
     label: 'nav.stockAudit',
     icon: '📋',
     permission: 'inventory.stockAudit.view',
-    requirePrintingPress: true,
   },
   {
     to: '/inventory/stock',

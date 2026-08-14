@@ -204,9 +204,7 @@ export const router = createBrowserRouter([
                 path: '/inventory/stock-audit',
                 element: (
                   <RequirePermission code="inventory.stockAudit.view">
-                    <RequirePrintingPress>
-                      <StockAuditPage />
-                    </RequirePrintingPress>
+                    <StockAuditPage />
                   </RequirePermission>
                 ),
               },
@@ -214,9 +212,7 @@ export const router = createBrowserRouter([
                 path: '/inventory/stock-audit/:id',
                 element: (
                   <RequirePermission code="inventory.stockAudit.view">
-                    <RequirePrintingPress>
-                      <StockAuditDetailPage />
-                    </RequirePrintingPress>
+                    <StockAuditDetailPage />
                   </RequirePermission>
                 ),
               },

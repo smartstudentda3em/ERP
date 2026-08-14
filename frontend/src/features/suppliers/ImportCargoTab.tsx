@@ -773,8 +773,8 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
           <div className="cargo-print-header-grid">
             <div className="cargo-print-header-side" aria-hidden="true" />
             <div className="cargo-print-header-center">
-              <div style={{ fontSize: 24, fontWeight: 800 }}>{company?.nameAr || company?.nameEn || '—'}</div>
-              <div style={{ fontSize: 16, fontWeight: 700, margin: '4px 0' }}>{printTitle}</div>
+              <div style={{ fontSize: 16, fontWeight: 800 }}>{company?.nameAr || company?.nameEn || '—'}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, margin: '4px 0' }}>{printTitle}</div>
             </div>
             <div className="cargo-print-header-date">
               {t('imports.printDate')}: {localToday()}

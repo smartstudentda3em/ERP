@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne } from "typeorm";
+import { Column, Entity, JoinColumn, ManyToOne, Unique } from "typeorm";
 import { BaseEntity } from "../../../entities/base.entity";
 import {
   CashMovementType,
@@ -18,13 +18,24 @@ import { SalesRepresentative } from "../../parties/entities/sales-representative
  * never creates a row here; only an actual payment does. Party balances (what a customer/supplier
  * owes) are computed separately, straight from sales_invoices/sales_payments and
  * purchase_receipts/supplier_payments — this table only tracks treasury movement.
+ *
+ * documentNumber is unique per company, not globally — matches the same @Unique(["companyId",
+ * "documentNumber"]) pattern already used by PurchaseReceipt/StockAdjustment/StockAudit/
+ * StockTransfer. A bare column-level `unique: true` here (as this entity had before) is a global
+ * constraint across every company sharing this one table; since NumberingSeriesService reserves
+ * numbers independently per company, two companies' counters can legitimately reach the same
+ * number at the same time, and if their configured prefixes ever happen to collide (e.g. both left
+ * at the seed's generic "CM-" instead of being customized per company in Settings), that global
+ * constraint throws a raw "duplicate key" for one of them with no way to self-heal — the retry loop
+ * in CashMovementsService.record() only escapes a same-company collision, not this cross-company
+ * one, since the colliding company's own counter is nowhere near catching up to the other one's.
  */
 @Entity("cash_movements")
+@Unique(["companyId", "documentNumber"])
 export class CashMovement extends BaseEntity {
   @Column({
     type: "varchar",
     length: 50,
-    unique: true,
   })
   documentNumber: string;
 

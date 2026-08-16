@@ -141,6 +141,11 @@ export class UsersService {
     if (existing) {
       existing.branchId = branchId;
       existing.companyId = companyId;
+      // Previously left untouched on an existing row — only ever set once, at first creation. If a
+      // user's role was later changed away from مدير فرع and back (or they'd been مندوب before this
+      // role existed on their account), the HR screen kept showing that stale title forever, since
+      // nothing here ever refreshed it to match the role actually in effect now.
+      existing.jobTitle = branchManagerRole.name;
       await this.employeeRepo.save(existing);
       return;
     }
@@ -206,10 +211,15 @@ export class UsersService {
   }
 
   /** Same auto-provisioning idea as syncBranchManagerEmployee, for a "مندوب" user — see
-   * resolveDefaultBranchId() for why this never skips even when no branch was explicitly picked. */
+   * resolveDefaultBranchId() for why this never skips even when no branch was explicitly picked.
+   * If the same user *also* somehow holds the مدير فرع role (shouldn't normally happen, but a user
+   * can technically be given multiple roles), that title always wins here — this runs after
+   * syncBranchManagerEmployee above, and without this guard it would unconditionally stamp
+   * "مندوب" back over the correct "مدير فرع" title syncBranchManagerEmployee had just set. */
   private async syncRepEmployee(user: User, roles: Role[], branchId: string | null): Promise<void> {
     const repRole = roles.find((r) => r.name === SALES_REP_ROLE_NAME);
     if (!repRole || !user.companyId) return;
+    if (roles.some((r) => r.name === BRANCH_MANAGER_ROLE_NAME)) return;
     const resolvedBranchId = await this.resolveDefaultBranchId(user.companyId, branchId);
     if (!resolvedBranchId) return;
 
@@ -217,6 +227,7 @@ export class UsersService {
     if (existing) {
       existing.branchId = resolvedBranchId;
       existing.companyId = user.companyId;
+      existing.jobTitle = SALES_REP_ROLE_NAME;
       await this.employeeRepo.save(existing);
       return;
     }

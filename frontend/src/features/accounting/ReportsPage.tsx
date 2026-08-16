@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -110,7 +110,8 @@ export function ReportsPage() {
   const { t } = useTranslation();
   const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
-  const { isPrintingPress } = useActiveCompany();
+  const isSystemRole = useAuthStore((s) => s.user?.isSystemRole ?? false);
+  const { isPrintingPress, isAirConditioning, isStationery } = useActiveCompany();
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('profit');
@@ -119,6 +120,20 @@ export function ReportsPage() {
   const [quarter, setQuarter] = useState<Quarter>((Math.floor(now.getMonth() / 3) + 1) as Quarter);
   // Printing Press only — "الفرع" filter; empty string means every branch (جميع الفروع).
   const [branchFilter, setBranchFilter] = useState('');
+  // Administrator-only, AC/STAT only — lets an owner who oversees both companies view either one's
+  // report, or the two combined, from this one screen without switching their active-company
+  // session. Everyone else (non-admin, or Printing Press) never sees this and the request shape is
+  // completely unchanged for them (see profitQuery below).
+  const showScopeSelector = isSystemRole && (isAirConditioning || isStationery);
+  const [reportScope, setReportScope] = useState<'AC' | 'STAT' | 'ALL'>(isAirConditioning ? 'AC' : 'STAT');
+  // useActiveCompany() resolves asynchronously, so the useState initializer above can run before
+  // isAirConditioning/isStationery are known and lock in the wrong default — re-sync once they
+  // settle (and again on an actual active-company switch), without fighting a deliberate mid-session
+  // scope choice since this only re-fires when those two values themselves change.
+  useEffect(() => {
+    if (isAirConditioning) setReportScope('AC');
+    else if (isStationery) setReportScope('STAT');
+  }, [isAirConditioning, isStationery]);
 
   const { dateFrom, dateTo } = useMemo(() => quarterDateRange(year, quarter), [year, quarter]);
 
@@ -132,12 +147,13 @@ export function ReportsPage() {
   // category list (Profit tab) and the COGS/Operating/Dividends breakdown (Expenses tab), so
   // there's no separate "expense report" call left to duplicate it.
   const effectiveBranchId = isPrintingPress && branchFilter ? branchFilter : undefined;
+  const effectiveScope = showScopeSelector ? reportScope : undefined;
   const profitQuery = useQuery({
-    queryKey: ['profit-report', companyId, dateFrom, dateTo, effectiveBranchId],
+    queryKey: ['profit-report', companyId, dateFrom, dateTo, effectiveBranchId, effectiveScope],
     queryFn: () =>
       unwrap<ProfitReport>(
         apiClient.get('/treasury/reports/profit', {
-          params: { companyId, dateFrom, dateTo, branchId: effectiveBranchId },
+          params: { companyId, dateFrom, dateTo, branchId: effectiveBranchId, scope: effectiveScope },
         }),
       ),
     enabled: !!companyId,
@@ -197,8 +213,29 @@ export function ReportsPage() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'profit', label: t('accounting.profitReport') },
     { key: 'expenses', label: t('accounting.expenseReport') },
-    ...(isPrintingPress ? [{ key: 'performance' as Tab, label: t('accounting.performanceReport') }] : []),
+    ...(isPrintingPress
+      ? [{ key: 'performance' as Tab, label: t('accounting.performanceReport') }]
+      : showScopeSelector
+        ? [{ key: 'performance' as Tab, label: t('accounting.performanceReportGeneric') }]
+        : []),
   ];
+
+  // AC/STAT Performance tab only — current-period scorecard (not a historical trend), computed
+  // straight from the already-fetched profit report for whichever scope is selected. Thresholds
+  // confirmed with the client: >=15% safe, 0-15% needs review, <0% deficit — reuses the exact same
+  // 3-tier badge color convention as materialCostHealth/HEALTH_BADGE_STYLES above.
+  const branchRevenue = profitQuery.data?.revenue ?? 0;
+  const branchTotalExpenses = profitQuery.data?.expenseBreakdown?.total ?? 0;
+  const branchNetProfit = branchRevenue - branchTotalExpenses;
+  const netMargin = branchRevenue > 0 ? (branchNetProfit / branchRevenue) * 100 : 0;
+  const coverageRatio = branchTotalExpenses > 0 ? (branchRevenue / branchTotalExpenses) * 100 : 0;
+  const branchStatus: MaterialCostHealth = netMargin >= 15 ? 'excellent' : netMargin >= 0 ? 'acceptable' : 'alert';
+  const branchStatusLabel =
+    branchStatus === 'excellent'
+      ? t('accounting.statusSafe')
+      : branchStatus === 'acceptable'
+        ? t('accounting.statusReview')
+        : t('accounting.statusDeficit');
 
   function handlePrint() {
     const previousTitle = document.title;
@@ -281,6 +318,15 @@ export function ReportsPage() {
               <option value={4}>{t('partners.q4')}</option>
             </Select>
           </FormField>
+          {showScopeSelector && (
+            <FormField label={t('accounting.reportScope')}>
+              <Select value={reportScope} onChange={(e) => setReportScope(e.target.value as 'AC' | 'STAT' | 'ALL')}>
+                <option value="AC">{t('accounting.scopeAc')}</option>
+                <option value="STAT">{t('accounting.scopeStat')}</option>
+                <option value="ALL">{t('accounting.scopeAll')}</option>
+              </Select>
+            </FormField>
+          )}
           {isPrintingPress && (
             <FormField label={t('fields.branch')}>
               <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
@@ -458,6 +504,41 @@ export function ReportsPage() {
                 )}
               </div>
             </Card>
+          </div>
+        )}
+
+        {tab === 'performance' && !isPrintingPress && showScopeSelector && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('accounting.netProfitMargin')}</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(netMargin)}%</div>
+              </Card>
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('accounting.revenueExpenseCoverage')}</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(coverageRatio)}%</div>
+              </Card>
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('accounting.branchStatus')}</div>
+                <div className={`mt-1 inline-block rounded-full px-3 py-1 text-sm font-semibold ${HEALTH_BADGE_STYLES[branchStatus]}`}>
+                  {branchStatusLabel}
+                </div>
+              </Card>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('accounting.revenue')}</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(branchRevenue)}</div>
+              </Card>
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('accounting.totalExpenses')}</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(branchTotalExpenses)}</div>
+              </Card>
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('accounting.netProfit')}</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(branchNetProfit)}</div>
+              </Card>
+            </div>
           </div>
         )}
       </div>

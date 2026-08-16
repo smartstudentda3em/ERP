@@ -138,12 +138,13 @@ export class CashMovementsController {
   @Get('reports/profit')
   @Permissions('accounting.reports.view')
   profitReport(
-    @CurrentUser('companyId') companyId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('dateFrom') dateFrom: string,
     @Query('dateTo') dateTo: string,
     @Query('branchId') branchId?: string,
+    @Query('scope') scope?: 'AC' | 'STAT' | 'ALL',
   ) {
-    return this.service.getProfitReport(companyId, dateFrom, dateTo, branchId);
+    return this.service.getProfitReportScoped(user, dateFrom, dateTo, branchId, scope);
   }
 
   @Get('reports/printing-performance-trend')

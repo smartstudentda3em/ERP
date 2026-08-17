@@ -684,7 +684,14 @@
     "selectCategoryFirst": "اختر الفئة أولاً",
     "stockTooltipMinRequired": "الحد الأدنى",
     "stockTooltipShortage": "النقص",
-    "stockTooltipNone": "لا يوجد"
+    "stockTooltipNone": "لا يوجد",
+    "isKit": "هذا الصنف عبوة مكوّنة (Kit)",
+    "components": "المكونات",
+    "addComponent": "إضافة مكوّن",
+    "componentQuantity": "الكمية لكل عبوة",
+    "kitNoNesting": "لا يمكن اختيار صنف من نوع Kit كمكوّن",
+    "kitCannotAdjust": "لا يمكن تسوية مخزون صنف Kit مباشرة — عدّل المكونات كل منها على حدة",
+    "kitInsufficientComponent": "الكمية غير كافية من المكوّن \"{{name}}\" (المتاح {{available}}، المطلوب {{required}})"
   },
   "settingsCategories": {
     "availablePackages": "العبوات المتاحة",

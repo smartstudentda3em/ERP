@@ -1,4 +1,4 @@
-import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from "typeorm";
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, Unique } from "typeorm";
 import { BaseEntity } from "../../../../entities/base.entity";
 import { ProductCategory } from "../../../settings/entities/product-category.entity";
 import { Brand } from "../../../settings/entities/brand.entity";
@@ -7,6 +7,7 @@ import { PackageType } from "../../../settings/entities/package-type.entity";
 import { Tax } from "../../../settings/entities/tax.entity";
 import { Company } from "../../../settings/entities/company.entity";
 import { ProductType } from "../../../../entities/enums";
+import { ProductComponent } from "./product-component.entity";
 
 // sku/barcode are unique per company, not globally — two different companies (separate
 // businesses sharing this system) may legitimately reuse the same SKU/barcode.
@@ -200,4 +201,17 @@ export class Product extends BaseEntity {
     default: false,
   })
   isSellable: boolean;
+
+  /** Air Conditioning company only — when true, this product is a virtual "kit" (e.g. a split-unit
+   * AC sold as one item but physically composed of an outdoor + indoor unit) with no StockLevel
+   * row of its own. Receiving/selling/transferring it explodes into stock movements on its
+   * `components` instead — see ProductKitsService. */
+  @Column({
+    type: "boolean",
+    default: false,
+  })
+  isKit: boolean;
+
+  @OneToMany(() => ProductComponent, (c) => c.parentProduct)
+  components: ProductComponent[];
 }

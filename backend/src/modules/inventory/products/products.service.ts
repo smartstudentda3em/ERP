@@ -1,14 +1,22 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, DeepPartial, In, QueryFailedError, Repository } from 'typeorm';
 import { BaseCrudService } from '../../../common/services/base-crud.service';
 import { Product } from './entities/product.entity';
-import { CreateProductDto, UpdateProductDto, CreateCatalogProductDto, UpdateCatalogProductDto } from './dto/product.dto';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  CreateCatalogProductDto,
+  UpdateCatalogProductDto,
+  ProductComponentDto,
+} from './dto/product.dto';
 import { StockMovement } from '../stock-movements/entities/stock-movement.entity';
 import { ProductType } from '../../../entities/enums';
 import { Unit } from '../../settings/entities/unit.entity';
 import { PackageType } from '../../settings/entities/package-type.entity';
 import { ProductCategory } from '../../settings/entities/product-category.entity';
+import { Company } from '../../settings/entities/company.entity';
+import { ProductKitsService } from './product-kits.service';
 
 interface PackagingFields {
   packageTypeId?: string | null;
@@ -24,6 +32,9 @@ export class ProductsService extends BaseCrudService<Product> {
     @InjectRepository(Unit) private readonly unitRepo: Repository<Unit>,
     @InjectRepository(PackageType) private readonly packageTypeRepo: Repository<PackageType>,
     @InjectRepository(ProductCategory) private readonly categoryRepo: Repository<ProductCategory>,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly productKitsService: ProductKitsService,
   ) {
     super(repo);
   }
@@ -59,6 +70,44 @@ export class ProductsService extends BaseCrudService<Product> {
     return err instanceof Error ? err : new Error(String(err));
   }
 
+  /** Kit/bundle products are AC (Air Conditioning) only — every other company is rejected here even
+   * if the client somehow sends isKit/components, since a wrongly-set isKit silently redirects real
+   * stock movements on every purchase/sale/transfer touching that product. No-ops when the dto
+   * carries neither field. */
+  private async assertKitFieldsAllowed(
+    companyId: string,
+    dto: { isKit?: boolean; components?: ProductComponentDto[] },
+  ): Promise<void> {
+    if (dto.isKit === undefined && dto.components === undefined) return;
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code !== 'AC') {
+      throw new BadRequestException('Kit/bundle products are only supported for the Air Conditioning company');
+    }
+  }
+
+  /** No self-reference, no duplicates, no nested kits, every id resolves to a real product of the
+   * same company. */
+  private async validateComponents(
+    companyId: string,
+    components: ProductComponentDto[],
+    excludeProductId?: string,
+  ): Promise<void> {
+    if (excludeProductId && components.some((c) => c.componentProductId === excludeProductId)) {
+      throw new BadRequestException('A kit cannot include itself as a component');
+    }
+    const ids = components.map((c) => c.componentProductId);
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException('Duplicate component product in kit');
+    }
+    const rows = await this.repo.find({ where: { id: In(ids), companyId } as any });
+    if (rows.length !== ids.length) {
+      throw new BadRequestException('One or more component products not found');
+    }
+    if (rows.some((r) => r.isKit)) {
+      throw new BadRequestException('A kit product cannot be used as a component (no nested kits)');
+    }
+  }
+
   /** Scoped to the caller's company — an id that belongs to another company 404s exactly like an id that doesn't exist at all, so ids can't be probed cross-company. */
   async findOneScoped(id: string, companyId: string): Promise<Product> {
     const product = await super.findOne(id);
@@ -67,11 +116,17 @@ export class ProductsService extends BaseCrudService<Product> {
   }
 
   /** Raw materials only — the Printing Press "المنتجات" catalog (ProductType.CATALOG_ITEM) has its
-   * own separate list (findCatalogForCompany) and never appears here, for this or any company. */
+   * own separate list (findCatalogForCompany) and never appears here, for this or any company.
+   * Eager-loads `components.componentProduct` — harmless empty array for every non-kit product,
+   * needed by the Products screen to compute a kit's virtual available quantity client-side. */
   findAllForCompany(companyId: string, search?: string): Promise<Product[]> {
     return search?.trim()
       ? this.search(companyId, search)
-      : super.findAll({ companyId, productType: ProductType.RAW_MATERIAL } as any);
+      : this.repo.find({
+          where: { companyId, productType: ProductType.RAW_MATERIAL } as any,
+          relations: ['components', 'components.componentProduct'],
+          order: { createdAt: 'ASC' },
+        });
   }
 
   /** Printing Press "المنتجات" catalog only — every other company never has CATALOG_ITEM rows. */
@@ -101,13 +156,30 @@ export class ProductsService extends BaseCrudService<Product> {
       const existing = await this.repo.findOne({ where: { companyId, barcode: dto.barcode } });
       if (existing) throw new ConflictException('Barcode already exists');
     }
+    await this.assertKitFieldsAllowed(companyId, dto);
+    if (dto.isKit) {
+      if (!dto.components || dto.components.length === 0) {
+        throw new BadRequestException('A kit product requires at least one component');
+      }
+      await this.validateComponents(companyId, dto.components);
+    }
     const derivedPurchasePrice = this.computePackageDerivedPurchasePrice(dto);
-    const finalDto = derivedPurchasePrice !== undefined ? { ...dto, purchasePrice: derivedPurchasePrice } : dto;
+    const { components, ...rest } = dto;
+    const finalDto = derivedPurchasePrice !== undefined ? { ...rest, purchasePrice: derivedPurchasePrice } : rest;
     // No stock movement can exist yet for a brand-new product, so the average cost starts out
     // equal to the entered purchase price (0 only if no purchase price was ever given) rather
     // than the misleading 0 you'd get by leaving it untouched until the first real receipt.
     try {
-      return await super.create({ ...finalDto, companyId, averageCost: derivedPurchasePrice ?? 0 } as any);
+      return await this.dataSource.transaction(async (manager) => {
+        const repo = manager.getRepository(Product);
+        const saved = await repo.save(
+          repo.create({ ...finalDto, companyId, averageCost: derivedPurchasePrice ?? 0 } as DeepPartial<Product>),
+        );
+        if (dto.isKit && components) {
+          await this.productKitsService.replaceComponents(companyId, saved.id, components, manager);
+        }
+        return saved;
+      });
     } catch (err) {
       throw this.toFriendlySaveError(err);
     }
@@ -115,6 +187,24 @@ export class ProductsService extends BaseCrudService<Product> {
 
   async updateScoped(id: string, companyId: string, dto: UpdateProductDto): Promise<Product> {
     const existing = await this.findOneScoped(id, companyId);
+    await this.assertKitFieldsAllowed(companyId, dto);
+
+    const nextIsKit = dto.isKit !== undefined ? dto.isKit : existing.isKit;
+    // Unchecking "Kit" (or, while it stays a kit, submitting a new component list) replaces the
+    // component set; leaving both isKit and components untouched leaves existing components alone.
+    const componentsToApply: ProductComponentDto[] | undefined = !nextIsKit
+      ? dto.isKit === false || dto.components !== undefined
+        ? []
+        : undefined
+      : dto.components;
+
+    if (nextIsKit && componentsToApply !== undefined) {
+      if (componentsToApply.length === 0) {
+        throw new BadRequestException('A kit product requires at least one component');
+      }
+      await this.validateComponents(companyId, componentsToApply, id);
+    }
+
     const merged: PackagingFields = {
       packageTypeId: dto.packageTypeId !== undefined ? dto.packageTypeId : existing.packageTypeId,
       unitsPerPackage: dto.unitsPerPackage !== undefined ? dto.unitsPerPackage : existing.unitsPerPackage,
@@ -122,8 +212,9 @@ export class ProductsService extends BaseCrudService<Product> {
         dto.packagePurchasePrice !== undefined ? dto.packagePurchasePrice : existing.packagePurchasePrice,
     };
     const derivedPurchasePrice = this.computePackageDerivedPurchasePrice(merged);
+    const { components, ...rest } = dto;
     const finalDto: Record<string, unknown> =
-      derivedPurchasePrice !== undefined ? { ...dto, purchasePrice: derivedPurchasePrice } : { ...dto };
+      derivedPurchasePrice !== undefined ? { ...rest, purchasePrice: derivedPurchasePrice } : { ...rest };
 
     // Once a real purchase/sale movement has posted, StockService owns averageCost exclusively
     // (weighted-average costing) — a product edit must never overwrite that. Only while the
@@ -136,7 +227,16 @@ export class ProductsService extends BaseCrudService<Product> {
     }
 
     try {
-      return await super.update(id, finalDto as any);
+      return await this.dataSource.transaction(async (manager) => {
+        const repo = manager.getRepository(Product);
+        const entity = await repo.findOneOrFail({ where: { id } });
+        Object.assign(entity, finalDto);
+        const saved = await repo.save(entity);
+        if (componentsToApply !== undefined) {
+          await this.productKitsService.replaceComponents(companyId, id, componentsToApply, manager);
+        }
+        return saved;
+      });
     } catch (err) {
       throw this.toFriendlySaveError(err);
     }
@@ -164,6 +264,8 @@ export class ProductsService extends BaseCrudService<Product> {
       .createQueryBuilder('p')
       .leftJoin('brands', 'b', 'b.id = p."brandId"')
       .leftJoin('product_categories', 'c', 'c.id = p."categoryId"')
+      .leftJoinAndSelect('p.components', 'components')
+      .leftJoinAndSelect('components.componentProduct', 'componentProduct')
       .where('p."companyId" = :companyId', { companyId })
       .andWhere('p."productType" = :pt', { pt: ProductType.RAW_MATERIAL })
       .andWhere(
@@ -182,6 +284,9 @@ export class ProductsService extends BaseCrudService<Product> {
       .addSelect('COALESCE(SUM(sl."quantityOnHand"), 0)', 'totalOnHand')
       .where('p."isActive" = true')
       .andWhere('p."companyId" = :companyId', { companyId })
+      // Kit products never hold a StockLevel row of their own (see Product.isKit), so they'd
+      // otherwise always satisfy 0 <= reorderLevel and appear permanently "low stock".
+      .andWhere('p."isKit" = false')
       .groupBy('p.id')
       .having('COALESCE(SUM(sl."quantityOnHand"), 0) <= p."reorderLevel"')
       .getRawMany();

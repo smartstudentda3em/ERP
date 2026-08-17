@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { PurchaseReceipt } from './entities/purchase-receipt.entity';
-import { StockService } from './stock.service';
+import { ProductKitsService } from '../products/product-kits.service';
 import { CashMovementSourceType, CashMovementType, StockMovementType } from '../../../entities/enums';
 import { CreatePurchaseReceiptDto, UpdatePurchaseReceiptDto } from './dto/stock.dto';
 import { Product } from '../products/entities/product.entity';
@@ -16,7 +16,7 @@ export class PurchaseReceiptsService {
   constructor(
     @InjectRepository(PurchaseReceipt) private readonly repo: Repository<PurchaseReceipt>,
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly stockService: StockService,
+    private readonly productKitsService: ProductKitsService,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly cashMovementsService: CashMovementsService,
   ) {}
@@ -100,7 +100,7 @@ export class PurchaseReceiptsService {
       const documentNumber =
         (await this.numberingSeriesService.tryGetNextNumber(companyId, 'PURCHASE_RECEIPT')) ?? `REC-${Date.now()}`;
 
-      await this.stockService.receive(
+      await this.productKitsService.receiveSmart(
         {
           companyId,
           productId: dto.productId,
@@ -115,9 +115,12 @@ export class PurchaseReceiptsService {
         manager,
       );
 
+      // A kit's own purchasePrice/averageCost stay meaningless — it's never receive()'d directly
+      // (see ProductKitsService), only its components are. packagePurchasePrice/packageSellingPrice
+      // are still saved purely for display (a reference "suggested combo price").
       await manager.getRepository(Product).update(dto.productId, {
         packagePurchasePrice: dto.packagePurchasePrice,
-        purchasePrice: unitCost,
+        ...(product.isKit ? {} : { purchasePrice: unitCost }),
         ...(dto.packageSellingPrice != null ? { packageSellingPrice: dto.packageSellingPrice } : {}),
         ...(dto.unitSellingPrice != null ? { sellingPrice: dto.unitSellingPrice } : {}),
       });
@@ -240,7 +243,7 @@ export class PurchaseReceiptsService {
         );
       }
 
-      await this.stockService.issue(
+      await this.productKitsService.issueSmart(
         {
           companyId,
           productId: existing.productId,
@@ -254,7 +257,7 @@ export class PurchaseReceiptsService {
         manager,
       );
 
-      await this.stockService.receive(
+      await this.productKitsService.receiveSmart(
         {
           companyId,
           productId: dto.productId,
@@ -271,7 +274,7 @@ export class PurchaseReceiptsService {
 
       await manager.getRepository(Product).update(dto.productId, {
         packagePurchasePrice: dto.packagePurchasePrice,
-        purchasePrice: unitCost,
+        ...(product.isKit ? {} : { purchasePrice: unitCost }),
         ...(dto.packageSellingPrice != null ? { packageSellingPrice: dto.packageSellingPrice } : {}),
         ...(dto.unitSellingPrice != null ? { sellingPrice: dto.unitSellingPrice } : {}),
       });
@@ -330,7 +333,7 @@ export class PurchaseReceiptsService {
       const receipt = await manager.getRepository(PurchaseReceipt).findOne({ where: { id, companyId } });
       if (!receipt) throw new NotFoundException('Purchase receipt not found');
 
-      await this.stockService.issue(
+      await this.productKitsService.issueSmart(
         {
           companyId,
           productId: receipt.productId,

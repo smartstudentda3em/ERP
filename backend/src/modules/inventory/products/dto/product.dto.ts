@@ -1,5 +1,12 @@
 import { PartialType } from '@nestjs/swagger';
-import { IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+
+/** One BOM line for a Kit product — AC company only, see Product.isKit. */
+export class ProductComponentDto {
+  @IsUUID() componentProductId: string;
+  @IsNumber() @Min(0.0001) quantity: number;
+}
 
 export class CreateProductDto {
   @IsOptional() @IsString() sku?: string;
@@ -30,6 +37,13 @@ export class CreateProductDto {
   @IsOptional() @IsString() notes?: string;
   /** Printing Press only — see Product.isSellable. */
   @IsOptional() @IsBoolean() isSellable?: boolean;
+  /** AC (Air Conditioning) company only — see Product.isKit. */
+  @IsOptional() @IsBoolean() isKit?: boolean;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductComponentDto)
+  components?: ProductComponentDto[];
 }
 
 export class UpdateProductDto extends PartialType(CreateProductDto) {}

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { StockTransfer, StockTransferLine } from './entities/stock-transfer.entity';
-import { StockService } from './stock.service';
+import { ProductKitsService } from '../products/product-kits.service';
 import { StockMovementType, DocumentStatus } from '../../../entities/enums';
 import { CreateStockTransferDto } from './dto/stock.dto';
 import { Warehouse } from '../../settings/entities/warehouse.entity';
@@ -13,7 +13,7 @@ export class StockTransfersService {
   constructor(
     @InjectRepository(StockTransfer) private readonly repo: Repository<StockTransfer>,
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly stockService: StockService,
+    private readonly productKitsService: ProductKitsService,
     private readonly numberingSeriesService: NumberingSeriesService,
   ) {}
 
@@ -50,7 +50,7 @@ export class StockTransfersService {
         (await this.numberingSeriesService.tryGetNextNumber(companyId, 'STOCK_TRANSFER')) ?? `TRF-${Date.now()}`;
 
       for (const line of dto.lines) {
-        const { unitCost } = await this.stockService.issue(
+        const { unitCost } = await this.productKitsService.issueSmart(
           {
             companyId,
             productId: line.productId,
@@ -64,7 +64,7 @@ export class StockTransfersService {
           manager,
         );
 
-        await this.stockService.receive(
+        await this.productKitsService.receiveSmart(
           {
             companyId,
             productId: line.productId,

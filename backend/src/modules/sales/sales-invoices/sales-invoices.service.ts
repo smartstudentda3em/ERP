@@ -16,7 +16,7 @@ import {
   ProductType,
 } from '../../../entities/enums';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
-import { StockService } from '../../inventory/stock-movements/stock.service';
+import { ProductKitsService } from '../../inventory/products/product-kits.service';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
 import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 import { Product } from '../../inventory/products/entities/product.entity';
@@ -41,7 +41,7 @@ export class SalesInvoicesService {
     @InjectRepository(CommissionException) private readonly commissionExceptionsRepo: Repository<CommissionException>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
-    private readonly stockService: StockService,
+    private readonly productKitsService: ProductKitsService,
     private readonly cashMovementsService: CashMovementsService,
     private readonly salesRepAccess: SalesRepAccessService,
   ) {}
@@ -208,7 +208,7 @@ export class SalesInvoicesService {
         let unitCost = 0;
         let totalCost = 0;
         if (product?.productType !== ProductType.CATALOG_ITEM) {
-          const issued = await this.stockService.issue(
+          const issued = await this.productKitsService.issueSmart(
             {
               companyId,
               productId: line.productId,
@@ -226,14 +226,39 @@ export class SalesInvoicesService {
         }
         costOfGoodsSold += totalCost;
 
-        const purchasePrice =
-          unitKind === SaleUnitKind.PACKAGE
-            ? Number(product?.packagePurchasePrice ?? Number(product?.purchasePrice ?? 0) * (unitsPerPackage ?? 1))
-            : Number(product?.purchasePrice ?? 0);
-        const suggestedPrice =
-          unitKind === SaleUnitKind.PACKAGE
-            ? Number(product?.packageSellingPrice ?? Number(product?.sellingPrice ?? 0) * (unitsPerPackage ?? 1))
-            : Number(product?.sellingPrice ?? 0);
+        let purchasePrice: number;
+        let suggestedPrice: number;
+        if (product && product.isKit) {
+          // A kit's own purchasePrice/packagePurchasePrice is never populated (it's never
+          // receive()'d directly, see ProductKitsService) — derive it from its components' own
+          // cost instead, so the below-cost check below still works correctly. A component's
+          // `purchasePrice` only ever updates when it's purchased directly (not through a kit
+          // receipt) — AC's real workflow buys kits as a whole, so this falls back to
+          // `averageCost`, which receiveSmart's per-component receive() always keeps current,
+          // matching the same fallback receiveSmart itself uses for cost-weighting.
+          const components = await this.productKitsService.getComponents(product.id, manager);
+          const perKitCost = components.reduce(
+            (sum, c) =>
+              sum +
+              (Number(c.componentProduct.purchasePrice) || Number(c.componentProduct.averageCost) || 0) *
+                Number(c.quantity),
+            0,
+          );
+          purchasePrice = unitKind === SaleUnitKind.PACKAGE ? perKitCost * (unitsPerPackage ?? 1) : perKitCost;
+          suggestedPrice =
+            unitKind === SaleUnitKind.PACKAGE
+              ? Number(product.packageSellingPrice ?? Number(product.sellingPrice ?? 0) * (unitsPerPackage ?? 1))
+              : Number(product.sellingPrice ?? 0);
+        } else {
+          purchasePrice =
+            unitKind === SaleUnitKind.PACKAGE
+              ? Number(product?.packagePurchasePrice ?? Number(product?.purchasePrice ?? 0) * (unitsPerPackage ?? 1))
+              : Number(product?.purchasePrice ?? 0);
+          suggestedPrice =
+            unitKind === SaleUnitKind.PACKAGE
+              ? Number(product?.packageSellingPrice ?? Number(product?.sellingPrice ?? 0) * (unitsPerPackage ?? 1))
+              : Number(product?.sellingPrice ?? 0);
+        }
         const profitPerUnit = Number(line.unitPrice) - purchasePrice;
         const lineTotalProfit = profitPerUnit * Number(line.quantity);
 
@@ -385,7 +410,7 @@ export class SalesInvoicesService {
         // Mirrors create()'s skip: catalog items never had stock issued in the first place, so
         // there is nothing to receive back for them.
         if (productTypeById.get(line.productId) === ProductType.CATALOG_ITEM) continue;
-        await this.stockService.receive(
+        await this.productKitsService.receiveSmart(
           {
             companyId,
             productId: line.productId,

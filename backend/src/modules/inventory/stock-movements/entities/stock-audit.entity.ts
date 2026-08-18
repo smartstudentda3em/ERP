@@ -48,7 +48,7 @@ export class StockAudit extends BaseEntity {
   warehouse: Warehouse;
 
   @Column({ type: "text", nullable: true })
-  notes: string;
+  notes: string | null;
 
   /** CONFIRMED = submitted by the Press user and locked (no stock movement yet). APPROVED =
    * an admin reviewed it and the counted variances were applied to stock. */
@@ -63,15 +63,15 @@ export class StockAudit extends BaseEntity {
   createdById: string;
 
   @Column("uuid", { nullable: true })
-  approvedById: string;
+  approvedById: string | null;
 
   @Column({ type: "timestamptz", nullable: true })
-  approvedAt: Date;
+  approvedAt: Date | null;
 
   /** The StockAdjustment created at approval time, for traceability back to the actual stock
    * movements this audit produced. Null until approved. */
   @Column("uuid", { nullable: true })
-  stockAdjustmentId: string;
+  stockAdjustmentId: string | null;
 
   @OneToMany(() => StockAuditLine, (line) => line.audit, { cascade: true })
   lines: StockAuditLine[];
@@ -99,13 +99,13 @@ export class StockAuditLine extends BaseEntity {
 
   /** Null means this material was left uncounted ("بانتظار الجرد") — never reconciled at approval. */
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  actualQuantity: number;
+  actualQuantity: number | null;
 
   /** The final quantity actually written to stock at approval time — defaults to actualQuantity
    * unless the approving admin overrides it while reviewing the pending audit (see
    * StockAuditsService.approve()). Null until approved. */
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  adjustedQuantity: number;
+  adjustedQuantity: number | null;
 
   @Column({ type: "numeric", precision: 18, scale: 4 })
   unitCost: number;

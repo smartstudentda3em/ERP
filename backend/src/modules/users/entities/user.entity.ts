@@ -16,7 +16,7 @@ export class User extends BaseEntity {
   // Optional secondary contact field now that phone is the required login identifier — unique
   // only applies to non-null values (Postgres never treats two NULLs as a duplicate).
   @Column({ type: "varchar", length: 150, unique: true, nullable: true })
-  email: string;
+  email: string | null;
 
   @Column({
     type: "varchar",
@@ -60,14 +60,14 @@ export class User extends BaseEntity {
   lockedUntil: Date;
 
   @Column("uuid", { nullable: true })
-  companyId: string;
+  companyId: string | null;
 
   @ManyToOne(() => Company, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "companyId" })
   company: Company | null;
 
   @Column("uuid", { nullable: true })
-  branchId: string;
+  branchId: string | null;
 
   @ManyToOne(() => Branch, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "branchId" })

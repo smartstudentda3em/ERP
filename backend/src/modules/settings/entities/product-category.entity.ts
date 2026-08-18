@@ -31,7 +31,7 @@ export class ProductCategory extends BaseEntity {
   nameAr: string;
 
   @Column("uuid", { nullable: true })
-  parentId: string;
+  parentId: string | null;
 
   @ManyToOne(() => ProductCategory, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "parentId" })

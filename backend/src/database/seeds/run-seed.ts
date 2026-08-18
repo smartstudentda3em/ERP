@@ -778,14 +778,16 @@ async function main() {
       .getOne();
 
     if (existingSystemAdmin) {
+      existingSystemAdmin.email = adminEmail;
+      existingSystemAdmin.fullName = adminFullName;
+      existingSystemAdmin.phone = adminPhone;
+      existingSystemAdmin.passwordHash = await argon2.hash(adminPassword);
       if (!existingSystemAdmin.companyId) {
         existingSystemAdmin.companyId = defaultCompany.company.id;
         existingSystemAdmin.branchId = defaultCompany.branch.id;
-        await userRepo.save(existingSystemAdmin);
-        console.log(`Admin user company/branch updated.`);
-      } else {
-        console.log(`Admin user already exists, skipping credential overwrite.`);
       }
+      await userRepo.save(existingSystemAdmin);
+      console.log(`Admin user migrated to new identity: ${adminEmail}`);
     } else {
       isFreshDatabase = true;
       adminUser = userRepo.create({

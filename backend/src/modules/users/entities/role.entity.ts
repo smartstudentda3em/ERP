@@ -13,7 +13,7 @@ export class Role extends BaseEntity {
   name: string;
 
   @Column({ type: "text", nullable: true })
-  description: string;
+  description: string | null;
 
   @Column({
     type: "boolean",
@@ -27,7 +27,7 @@ export class Role extends BaseEntity {
    * role like "مدير فرع - المطبعة" be hard-locked to a single company without a whole separate
    * role-to-company subsystem. */
   @Column("uuid", { nullable: true })
-  restrictedCompanyId: string;
+  restrictedCompanyId: string | null;
 
   @ManyToMany(() => Permission, (permission) => permission.roles, {
     cascade: false,

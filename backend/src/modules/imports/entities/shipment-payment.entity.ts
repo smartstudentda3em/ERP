@@ -42,7 +42,7 @@ export class ShipmentPayment extends BaseEntity {
   account: CashMovementAccount | null;
 
   @Column({ type: "text", nullable: true })
-  notes: string;
+  notes: string | null;
 
   @Column("uuid")
   createdById: string;

@@ -26,7 +26,7 @@ export class SalesInvoice extends BaseEntity {
   invoiceDate: string;
 
   @Column({ type: "date", nullable: true })
-  dueDate: string;
+  dueDate: string | null;
 
   @Column("uuid")
   customerId: string;
@@ -36,7 +36,7 @@ export class SalesInvoice extends BaseEntity {
   customer: Customer;
 
   @Column("uuid", { nullable: true })
-  salesOrderId: string;
+  salesOrderId: string | null;
 
   @ManyToOne(() => SalesOrder, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "salesOrderId" })
@@ -57,14 +57,14 @@ export class SalesInvoice extends BaseEntity {
   company: Company;
 
   @Column("uuid", { nullable: true })
-  branchId: string;
+  branchId: string | null;
 
   @ManyToOne(() => Branch, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "branchId" })
   branch: Branch | null;
 
   @Column("uuid", { nullable: true })
-  salesRepresentativeId: string;
+  salesRepresentativeId: string | null;
 
   @ManyToOne(() => SalesRepresentative, {
     nullable: true,
@@ -77,10 +77,10 @@ export class SalesInvoice extends BaseEntity {
    * Press invoices are always attributed to the single seeded WALKIN customer rather than a real
    * customer record (see customerId above). Not linked to the Customer table. */
   @Column({ type: "varchar", length: 200, nullable: true })
-  customerName: string;
+  customerName: string | null;
 
   @Column({ type: "varchar", length: 30, nullable: true })
-  customerPhone: string;
+  customerPhone: string | null;
 
   /** Printing Press only — which treasury account (cash/bank) an upfront payment settles into.
    * Persisted here (not just used transiently to build the CashMovement) so it can be shown as an
@@ -121,10 +121,10 @@ export class SalesInvoice extends BaseEntity {
   totalProfit: number;
 
   @Column("uuid", { nullable: true })
-  journalEntryId: string;
+  journalEntryId: string | null;
 
   @Column({ type: "text", nullable: true })
-  notes: string;
+  notes: string | null;
 
   @Column("uuid")
   createdById: string;
@@ -210,7 +210,7 @@ export class SalesReturn extends BaseEntity {
   grandTotal: number;
 
   @Column("uuid", { nullable: true })
-  journalEntryId: string;
+  journalEntryId: string | null;
 
   @Column("uuid")
   createdById: string;

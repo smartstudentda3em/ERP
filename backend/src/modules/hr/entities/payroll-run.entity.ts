@@ -41,7 +41,7 @@ export class PayrollRun extends BaseEntity {
   month: number;
 
   @Column({ type: "text", nullable: true })
-  notes: string;
+  notes: string | null;
 
   /** CONFIRMED = saved, lines locked, nothing posted yet. APPROVED = net salaries posted as one
    * CashMovement per branch (see PayrollService.approve()). */
@@ -56,10 +56,10 @@ export class PayrollRun extends BaseEntity {
   createdById: string;
 
   @Column("uuid", { nullable: true })
-  approvedById: string;
+  approvedById: string | null;
 
   @Column({ type: "timestamptz", nullable: true })
-  approvedAt: Date;
+  approvedAt: Date | null;
 
   /** The Printing Press's chosen disbursement source (الكاش/البنك) — null for every other company,
    * which never posts payroll through a balance-checked account. Set once at create() time (Press

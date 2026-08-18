@@ -76,7 +76,7 @@ export class Customer extends BaseEntity {
   company: Company;
 
   @Column("uuid", { nullable: true })
-  salesRepresentativeId: string;
+  salesRepresentativeId: string | null;
 
   @ManyToOne(() => SalesRepresentative, {
     nullable: true,
@@ -86,7 +86,7 @@ export class Customer extends BaseEntity {
   salesRepresentative: SalesRepresentative | null;
 
   @Column("uuid", { nullable: true })
-  glAccountId: string;
+  glAccountId: string | null;
 
   /** Eligibility to be sold to on installment — checked only by InstallmentPlansService.create(),
    * never by regular sales-invoice creation. */
@@ -98,5 +98,5 @@ export class Customer extends BaseEntity {
   creditStatus: CustomerCreditStatus;
 
   @Column({ type: "text", nullable: true })
-  blockedReason: string;
+  blockedReason: string | null;
 }

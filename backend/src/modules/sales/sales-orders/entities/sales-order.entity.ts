@@ -28,7 +28,7 @@ export class SalesOrder extends BaseEntity {
   customer: Customer;
 
   @Column("uuid", { nullable: true })
-  quotationId: string;
+  quotationId: string | null;
 
   @ManyToOne(() => Quotation, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "quotationId" })
@@ -49,7 +49,7 @@ export class SalesOrder extends BaseEntity {
   company: Company;
 
   @Column("uuid", { nullable: true })
-  branchId: string;
+  branchId: string | null;
 
   @ManyToOne(() => Branch, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "branchId" })
@@ -75,7 +75,7 @@ export class SalesOrder extends BaseEntity {
   grandTotal: number;
 
   @Column({ type: "text", nullable: true })
-  notes: string;
+  notes: string | null;
 
   @Column("uuid")
   createdById: string;

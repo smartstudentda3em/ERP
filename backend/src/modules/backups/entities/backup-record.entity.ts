@@ -40,11 +40,11 @@ export class BackupRecord extends BaseEntity {
   uploadedToS3: boolean;
 
   @Column({ type: 'text', nullable: true })
-  errorMessage: string;
+  errorMessage: string | null;
 
   @Column('uuid', { nullable: true })
-  triggeredById: string;
+  triggeredById: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
-  completedAt: Date;
+  completedAt: Date | null;
 }

@@ -34,10 +34,10 @@ export class ProductBatch extends BaseEntity {
   batchNumber: string;
 
   @Column({ type: "varchar", length: 100, nullable: true })
-  serialNumber: string;
+  serialNumber: string | null;
 
   @Column({ type: "date", nullable: true })
-  expirationDate: string;
+  expirationDate: string | null;
 
   @Column({ type: "numeric", precision: 18, scale: 4, default: 0 })
   quantity: number;

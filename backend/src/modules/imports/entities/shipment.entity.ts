@@ -13,7 +13,7 @@ export class Shipment extends BaseEntity {
   shipmentName: string;
 
   @Column({ type: "date", nullable: true })
-  shipmentDate: string;
+  shipmentDate: string | null;
 
   @Column({
     type: "varchar",

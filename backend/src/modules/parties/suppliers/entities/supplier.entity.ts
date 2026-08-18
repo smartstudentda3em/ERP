@@ -79,12 +79,12 @@ export class Supplier extends BaseEntity {
   company: Company;
 
   @Column("uuid", { nullable: true })
-  glAccountId: string;
+  glAccountId: string | null;
 
   /** The currency this supplier is billed/quoted in — read by the Cargo/Goods import form so a
    * selected supplier's currency auto-fills there instead of being re-entered per purchase. */
   @Column("uuid", { nullable: true })
-  currencyId: string;
+  currencyId: string | null;
 
   @ManyToOne(() => Currency, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "currencyId" })

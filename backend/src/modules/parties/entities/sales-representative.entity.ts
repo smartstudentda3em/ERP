@@ -44,7 +44,7 @@ export class SalesRepresentative extends BaseEntity {
   /** Links this salesperson to one of the company's configured branches (Settings > Branches) —
    * optional, matching the legacy territory field's own nullability. */
   @Column("uuid", { nullable: true })
-  branchId: string;
+  branchId: string | null;
 
   @ManyToOne(() => Branch, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "branchId" })
@@ -71,7 +71,7 @@ export class SalesRepresentative extends BaseEntity {
 
   /** Links this rep to their login account, so quotations/invoices/payments they're assigned to can be scoped by permissions. */
   @Column("uuid", { nullable: true })
-  userId: string;
+  userId: string | null;
 
   @ManyToOne(() => User, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "userId" })

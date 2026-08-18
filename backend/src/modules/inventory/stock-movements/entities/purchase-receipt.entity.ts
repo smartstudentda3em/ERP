@@ -54,7 +54,7 @@ export class PurchaseReceipt extends BaseEntity {
 
   /** Printing Press only — which branch this purchase was made for; other companies leave it null. */
   @Column("uuid", { nullable: true })
-  branchId: string;
+  branchId: string | null;
 
   @ManyToOne(() => Branch, { onDelete: "SET NULL", nullable: true })
   @JoinColumn({ name: "branchId" })
@@ -89,11 +89,11 @@ export class PurchaseReceipt extends BaseEntity {
 
   /** Optional — when given, refreshes the product's suggested package selling price. */
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  packageSellingPrice: number;
+  packageSellingPrice: number | null;
 
   /** Optional — when given, refreshes the product's suggested unit selling price. */
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  unitSellingPrice: number;
+  unitSellingPrice: number | null;
 
   @Column("uuid")
   createdById: string;

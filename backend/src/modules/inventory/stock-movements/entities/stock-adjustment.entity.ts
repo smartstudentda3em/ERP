@@ -39,7 +39,7 @@ export class StockAdjustment extends BaseEntity {
   warehouse: Warehouse;
 
   @Column({ type: "text", nullable: true })
-  reason: string;
+  reason: string | null;
 
   @Column({ type: "enum", enum: DocumentStatus, default: DocumentStatus.DRAFT })
   status: DocumentStatus;

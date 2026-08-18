@@ -94,7 +94,7 @@ export class CashTransaction extends BaseEntity {
   direction: "IN" | "OUT";
 
   @Column("uuid", { nullable: true })
-  cashBoxId: string;
+  cashBoxId: string | null;
 
   @ManyToOne(() => CashBox, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "cashBoxId" })
@@ -111,7 +111,7 @@ export class CashTransaction extends BaseEntity {
   description: string;
 
   @Column("uuid", { nullable: true })
-  journalEntryId: string;
+  journalEntryId: string | null;
 
   @Column("uuid")
   createdById: string;
@@ -145,7 +145,7 @@ export class Transfer extends BaseEntity {
   amount: number;
 
   @Column("uuid", { nullable: true })
-  journalEntryId: string;
+  journalEntryId: string | null;
 
   @Column("uuid")
   createdById: string;

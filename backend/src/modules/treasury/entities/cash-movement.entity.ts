@@ -62,21 +62,21 @@ export class CashMovement extends BaseEntity {
   sourceType: CashMovementSourceType;
 
   @Column("uuid", { nullable: true })
-  sourceId: string;
+  sourceId: string | null;
 
   /** Free-text classification for manual entries — rent, salaries, electricity, etc. */
   @Column({ type: "varchar", length: 100, nullable: true })
-  category: string;
+  category: string | null;
 
   @Column("uuid", { nullable: true })
-  partyCustomerId: string;
+  partyCustomerId: string | null;
 
   @ManyToOne(() => Customer, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "partyCustomerId" })
   partyCustomer: Customer | null;
 
   @Column("uuid", { nullable: true })
-  partySupplierId: string;
+  partySupplierId: string | null;
 
   @ManyToOne(() => Supplier, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "partySupplierId" })
@@ -84,7 +84,7 @@ export class CashMovement extends BaseEntity {
 
   /** Which partner this movement is attributed to — set on capital-injection movements, split per partner by their sharePercentage at the moment of injection. */
   @Column("uuid", { nullable: true })
-  partnerId: string;
+  partnerId: string | null;
 
   @ManyToOne(() => Partner, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "partnerId" })
@@ -93,7 +93,7 @@ export class CashMovement extends BaseEntity {
   /** Which branch manager this movement is attributed to — set on commission-payout movements
    * ("صرف الأرباح"), the same role partnerId plays for capital injections/dividends. */
   @Column("uuid", { nullable: true })
-  salesRepresentativeId: string;
+  salesRepresentativeId: string | null;
 
   @ManyToOne(() => SalesRepresentative, {
     nullable: true,
@@ -103,7 +103,7 @@ export class CashMovement extends BaseEntity {
   salesRepresentative: SalesRepresentative | null;
 
   @Column({ type: "varchar", length: 300, nullable: true })
-  description: string;
+  description: string | null;
 
   @Column("uuid")
   companyId: string;
@@ -113,7 +113,7 @@ export class CashMovement extends BaseEntity {
   company: Company;
 
   @Column("uuid", { nullable: true })
-  branchId: string;
+  branchId: string | null;
 
   @ManyToOne(() => Branch, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "branchId" })

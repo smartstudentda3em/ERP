@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 import { CashMovement } from './entities/cash-movement.entity';
 import { CashMovementAccount, CashMovementSourceType, CashMovementType } from '../../entities/enums';
 import { NumberingSeriesService } from '../settings/numbering-series.controller';
 import { Company } from '../settings/entities/company.entity';
+import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
@@ -1036,6 +1037,70 @@ export class CashMovementsService {
         cogs,
         operatingExpenses: totalExpenses,
         total: cogs + totalExpenses,
+      },
+    };
+  }
+
+  /**
+   * Financial Reports' "الفرع" scope selector (AC / STAT / الكل) — Administrator-only, so an owner
+   * who oversees both companies can view either one's profit report, or the two combined, from a
+   * single screen without switching their active-company session. `scope` is optional and defaults
+   * to exactly today's behavior (report for the caller's own active company) when omitted, so every
+   * existing caller — including Printing Press, which never sends this param — is unaffected.
+   * Authorization happens here, not in the controller: even a client that crafts the query param by
+   * hand can never reach another company's figures unless `user.allCompanies` (i.e. they're a true
+   * Administrator) is actually true.
+   */
+  async getProfitReportScoped(
+    user: AuthenticatedUser,
+    dateFrom: string,
+    dateTo: string,
+    branchId?: string,
+    scope?: 'AC' | 'STAT' | 'ALL',
+  ) {
+    if (!scope) return this.getProfitReport(user.companyId!, dateFrom, dateTo, branchId);
+    if (!user.allCompanies) {
+      throw new ForbiddenException('Only an Administrator may view another company\'s financial report');
+    }
+
+    const companies = await this.companiesRepo.find({ where: { code: In(['AC', 'STAT']) } });
+    const acId = companies.find((c) => c.code === 'AC')?.id;
+    const statId = companies.find((c) => c.code === 'STAT')?.id;
+    if (!acId || !statId) throw new NotFoundException('AC/STAT company not found');
+
+    if (scope === 'AC') return this.getProfitReport(acId, dateFrom, dateTo, branchId);
+    if (scope === 'STAT') return this.getProfitReport(statId, dateFrom, dateTo, branchId);
+
+    const [acReport, statReport] = await Promise.all([
+      this.getProfitReport(acId, dateFrom, dateTo, branchId),
+      this.getProfitReport(statId, dateFrom, dateTo, branchId),
+    ]);
+    return this.mergeProfitReports(acReport, statReport);
+  }
+
+  private mergeProfitReports(
+    a: Awaited<ReturnType<CashMovementsService['getProfitReport']>>,
+    b: Awaited<ReturnType<CashMovementsService['getProfitReport']>>,
+  ): Awaited<ReturnType<CashMovementsService['getProfitReport']>> {
+    const expenseByLabel = new Map<string, number>();
+    for (const row of [...a.expenses, ...b.expenses]) {
+      expenseByLabel.set(row.label, (expenseByLabel.get(row.label) ?? 0) + row.total);
+    }
+    return {
+      dateFrom: a.dateFrom,
+      dateTo: a.dateTo,
+      revenue: a.revenue + b.revenue,
+      cogs: a.cogs + b.cogs,
+      consumedMaterials: a.consumedMaterials + b.consumedMaterials,
+      grossProfit: a.grossProfit + b.grossProfit,
+      expenses: Array.from(expenseByLabel, ([label, total]) => ({ label, total })),
+      totalExpenses: a.totalExpenses + b.totalExpenses,
+      netProfit: a.netProfit + b.netProfit,
+      distributedDividends: a.distributedDividends + b.distributedDividends,
+      expenseBreakdown: {
+        cogs: a.expenseBreakdown.cogs + b.expenseBreakdown.cogs,
+        operatingExpenses: a.expenseBreakdown.operatingExpenses + b.expenseBreakdown.operatingExpenses,
+        total: a.expenseBreakdown.total + b.expenseBreakdown.total,
       },
     };
   }

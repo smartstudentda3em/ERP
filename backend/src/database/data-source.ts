@@ -40,6 +40,7 @@ import { CommissionException } from '../modules/parties/entities/commission-exce
 // Inventory
 import { Product } from '../modules/inventory/products/entities/product.entity';
 import { ProductBatch } from '../modules/inventory/products/entities/product-batch.entity';
+import { ProductComponent } from '../modules/inventory/products/entities/product-component.entity';
 import { StockLevel } from '../modules/inventory/stock-movements/entities/stock-level.entity';
 import { StockMovement } from '../modules/inventory/stock-movements/entities/stock-movement.entity';
 import {
@@ -52,13 +53,6 @@ import {
   StockTransferLine,
 } from '../modules/inventory/stock-movements/entities/stock-transfer.entity';
 import { PurchaseReceipt } from '../modules/inventory/stock-movements/entities/purchase-receipt.entity';
-
-// Accounting (cost centers only — double-entry bookkeeping was removed in favor of CashMovement)
-import {
-  CostCenter,
-  Project,
-  Budget,
-} from '../modules/accounting/cost-centers/entities/cost-center.entity';
 
 // Sales
 import { Quotation, QuotationLine } from '../modules/sales/quotations/entities/quotation.entity';
@@ -81,26 +75,6 @@ import { Employee } from '../modules/hr/entities/employee.entity';
 import { EmployeeLeave } from '../modules/hr/entities/employee-leave.entity';
 import { PayrollRun, PayrollRunLine } from '../modules/hr/entities/payroll-run.entity';
 
-// Purchasing (scaffold)
-import {
-  PurchaseRequest,
-  PurchaseRequestLine,
-  PurchaseOrder,
-  PurchaseOrderLine,
-  GoodsReceipt,
-  PurchaseInvoice,
-  PurchaseInvoiceLine,
-  PurchasePayment,
-  SupplierReturn,
-} from '../modules/purchasing/entities/purchasing.entity';
-
-// Treasury (scaffold)
-import {
-  CashBox,
-  BankAccount,
-  CashTransaction,
-  Transfer,
-} from '../modules/treasury/entities/treasury.entity';
 import { CashMovement } from '../modules/treasury/entities/cash-movement.entity';
 import { RecurringExpense } from '../modules/treasury/entities/recurring-expense.entity';
 import { ImportCargoItem } from '../modules/imports/entities/import-cargo-item.entity';
@@ -139,6 +113,7 @@ export const allEntities = [
   CommissionException,
   Product,
   ProductBatch,
+  ProductComponent,
   StockLevel,
   StockMovement,
   StockAdjustment,
@@ -148,9 +123,6 @@ export const allEntities = [
   StockTransfer,
   StockTransferLine,
   PurchaseReceipt,
-  CostCenter,
-  Project,
-  Budget,
   Quotation,
   QuotationLine,
   SalesOrder,
@@ -169,19 +141,6 @@ export const allEntities = [
   EmployeeLeave,
   PayrollRun,
   PayrollRunLine,
-  PurchaseRequest,
-  PurchaseRequestLine,
-  PurchaseOrder,
-  PurchaseOrderLine,
-  GoodsReceipt,
-  PurchaseInvoice,
-  PurchaseInvoiceLine,
-  PurchasePayment,
-  SupplierReturn,
-  CashBox,
-  BankAccount,
-  CashTransaction,
-  Transfer,
   CashMovement,
   RecurringExpense,
   ImportCargoItem,

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Product } from './products/entities/product.entity';
 import { ProductBatch } from './products/entities/product-batch.entity';
+import { ProductComponent } from './products/entities/product-component.entity';
 import { StockLevel } from './stock-movements/entities/stock-level.entity';
 import { StockMovement } from './stock-movements/entities/stock-movement.entity';
 import {
@@ -11,7 +12,6 @@ import {
 import { StockAudit, StockAuditLine } from './stock-movements/entities/stock-audit.entity';
 import { StockTransfer, StockTransferLine } from './stock-movements/entities/stock-transfer.entity';
 import { PurchaseReceipt } from './stock-movements/entities/purchase-receipt.entity';
-import { PurchaseInvoiceLine } from '../purchasing/entities/purchasing.entity';
 import { SalesInvoiceLine } from '../sales/sales-invoices/entities/sales-invoice.entity';
 import { Unit } from '../settings/entities/unit.entity';
 import { PackageType } from '../settings/entities/package-type.entity';
@@ -30,17 +30,21 @@ import { WarehouseViewController } from './stock-movements/warehouse-view.contro
 import { WarehouseViewService } from './stock-movements/warehouse-view.service';
 import { PurchaseReceiptsController } from './stock-movements/purchase-receipts.controller';
 import { PurchaseReceiptsService } from './stock-movements/purchase-receipts.service';
+import { ProductKitsService } from './products/product-kits.service';
 import { SupplierPayment } from '../parties/suppliers/entities/supplier-payment.entity';
+import { Supplier } from '../parties/suppliers/entities/supplier.entity';
 import { SupplierPaymentsController } from './supplier-payments/supplier-payments.controller';
 import { SupplierPaymentsService } from './supplier-payments/supplier-payments.service';
 import { SettingsModule } from '../settings/settings.module';
 import { TreasuryModule } from '../treasury/treasury.module';
+import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       Product,
       ProductBatch,
+      ProductComponent,
       StockLevel,
       StockMovement,
       StockAdjustment,
@@ -50,9 +54,9 @@ import { TreasuryModule } from '../treasury/treasury.module';
       StockTransfer,
       StockTransferLine,
       PurchaseReceipt,
-      PurchaseInvoiceLine,
       SalesInvoiceLine,
       SupplierPayment,
+      Supplier,
       Unit,
       PackageType,
       ProductCategory,
@@ -60,6 +64,7 @@ import { TreasuryModule } from '../treasury/treasury.module';
     ]),
     SettingsModule,
     TreasuryModule,
+    SalesRepAccessModule,
   ],
   controllers: [
     ProductsController,
@@ -72,6 +77,7 @@ import { TreasuryModule } from '../treasury/treasury.module';
   providers: [
     ProductsService,
     StockService,
+    ProductKitsService,
     StockAdjustmentsService,
     StockAuditsService,
     StockTransfersService,
@@ -79,6 +85,6 @@ import { TreasuryModule } from '../treasury/treasury.module';
     PurchaseReceiptsService,
     SupplierPaymentsService,
   ],
-  exports: [StockService, TypeOrmModule, PurchaseReceiptsService, StockAuditsService],
+  exports: [StockService, ProductKitsService, TypeOrmModule, PurchaseReceiptsService, StockAuditsService],
 })
 export class InventoryModule {}

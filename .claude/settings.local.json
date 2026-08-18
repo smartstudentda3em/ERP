@@ -167,7 +167,21 @@
       "Bash(powershell -Command 'Get-Process | Where-Object {$_.ProcessName -like '\\\\''*docker*'\\\\''}')",
       "PowerShell(Start-Process \"C:\\\\Users\\\\surface\\\\AppData\\\\Local\\\\Programs\\\\DockerDesktop\\\\Docker Desktop.exe\")",
       "Bash(docker port *)",
-      "Bash(powershell -Command \"Start-Process 'C:\\\\Users\\\\surface\\\\AppData\\\\Local\\\\Programs\\\\DockerDesktop\\\\Docker Desktop.exe'\")"
+      "Bash(powershell -Command \"Start-Process 'C:\\\\Users\\\\surface\\\\AppData\\\\Local\\\\Programs\\\\DockerDesktop\\\\Docker Desktop.exe'\")",
+      "Bash(xargs -I{} basename {})",
+      "Bash(node \"C:\\\\Users\\\\surface\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\E--ERP\\\\64c070fe-5c10-46a9-81f3-c9be8d1e25e5\\\\scratchpad\\\\kit-verify.js\")",
+      "Bash(node \"C:\\\\Users\\\\surface\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\E--ERP\\\\64c070fe-5c10-46a9-81f3-c9be8d1e25e5\\\\scratchpad\\\\kit-cleanup-and-gate.js\")",
+      "Bash(xargs grep -lE \"createQueryBuilder\")",
+      "Bash(grep -vE \"^\\\\s*//\")",
+      "Read(//c/Users/surface/AppData/Local/Temp/claude/E--ERP/64c070fe-5c10-46a9-81f3-c9be8d1e25e5/scratchpad/**)",
+      "Bash(xargs grep -l \"BaseCrudService\\\\|CompanyScopedCrudService\")",
+      "Bash(xargs cat)",
+      "Bash(NODE_PATH=\"$\\(pwd\\)/node_modules\" npx ts-node --compiler-options '{\"experimentalDecorators\":true,\"emitDecoratorMetadata\":true,\"strict\":false,\"module\":\"commonjs\"}' /c/Users/surface/AppData/Local/Temp/claude/E--ERP/64c070fe-5c10-46a9-81f3-c9be8d1e25e5/scratchpad/meta-test.ts)",
+      "Bash(rm -f /c/Users/surface/AppData/Local/Temp/claude/E--ERP/64c070fe-5c10-46a9-81f3-c9be8d1e25e5/scratchpad/meta-test.ts /c/Users/surface/AppData/Local/Temp/claude/E--ERP/64c070fe-5c10-46a9-81f3-c9be8d1e25e5/scratchpad/interp_hits.txt)",
+      "Bash(rm -f /tmp/verify*.mjs /tmp/cleanup*.mjs /tmp/final_check.mjs)",
+      "Bash(node /tmp/verify_cleanup.mjs)",
+      "Bash(grep -rn \"INTERVAL '\\\\${\" src/)",
+      "Bash(git rev-list *)"
     ]
   }
 }

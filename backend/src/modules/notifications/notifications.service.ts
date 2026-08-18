@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 export interface NotificationItem {
   type: 'LOW_STOCK' | 'EXPIRED_PRODUCT' | 'DUE_RECEIVABLE' | 'FAILED_LOGIN';
@@ -17,7 +18,9 @@ export interface NotificationItem {
 export class NotificationsService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
-  async list(): Promise<NotificationItem[]> {
+  async list(user: AuthenticatedUser): Promise<NotificationItem[]> {
+    const scopeToCompany = !user.allCompanies;
+
     const [lowStock, expired, overdue, failedLogins] = await Promise.all([
       this.dataSource
         .createQueryBuilder()
@@ -26,6 +29,7 @@ export class NotificationsService {
         .from('products', 'p')
         .leftJoin('stock_levels', 'sl', 'sl."productId" = p.id')
         .where('p."isActive" = true')
+        .andWhere(scopeToCompany ? 'p."companyId" = :companyId' : '1=1', { companyId: user.companyId })
         .groupBy('p.id')
         .having('COALESCE(SUM(sl."quantityOnHand"), 0) <= p."reorderLevel"')
         .getRawMany(),
@@ -37,6 +41,7 @@ export class NotificationsService {
         .innerJoin('products', 'p', 'p.id = b."productId"')
         .where('b."expirationDate" < CURRENT_DATE')
         .andWhere('b.quantity > 0')
+        .andWhere(scopeToCompany ? 'b."companyId" = :companyId' : '1=1', { companyId: user.companyId })
         .getRawMany(),
       this.dataSource
         .createQueryBuilder()
@@ -45,6 +50,7 @@ export class NotificationsService {
         .from('sales_invoices', 'i')
         .where('i."dueDate" < CURRENT_DATE')
         .andWhere("i.status NOT IN ('PAID', 'CANCELLED')")
+        .andWhere(scopeToCompany ? 'i."companyId" = :companyId' : '1=1', { companyId: user.companyId })
         .getRawMany(),
       this.dataSource
         .createQueryBuilder()
@@ -52,6 +58,7 @@ export class NotificationsService {
         .addSelect('u.email', 'email')
         .from('users', 'u')
         .where('u."failedLoginAttempts" >= 3')
+        .andWhere(scopeToCompany ? 'u."companyId" = :companyId' : '1=1', { companyId: user.companyId })
         .getRawMany(),
     ]);
 

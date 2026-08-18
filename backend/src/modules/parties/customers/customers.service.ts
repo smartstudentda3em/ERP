@@ -3,7 +3,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, FindOptionsWhere, Repository } from 'typeorm';
 import { BaseCrudService } from '../../../common/services/base-crud.service';
 import { Customer } from './entities/customer.entity';
-import { CreateCustomerDto } from './dto/customer.dto';
+import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
 import { SalesInvoice } from '../../sales/sales-invoices/entities/sales-invoice.entity';
 
@@ -44,7 +44,7 @@ export class CustomersService extends BaseCrudService<Customer> {
     return super.create({ ...dto, companyId, code } as any);
   }
 
-  async updateScoped(id: string, companyId: string, dto: Partial<Customer>): Promise<Customer> {
+  async updateScoped(id: string, companyId: string, dto: UpdateCustomerDto): Promise<Customer> {
     const customer = await this.findOneScoped(id, companyId);
     Object.assign(customer, dto);
     return this.repo.save(customer);

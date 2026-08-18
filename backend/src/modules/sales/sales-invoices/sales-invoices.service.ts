@@ -16,11 +16,12 @@ import {
   ProductType,
 } from '../../../entities/enums';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
-import { StockService } from '../../inventory/stock-movements/stock.service';
+import { ProductKitsService } from '../../inventory/products/product-kits.service';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
 import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 import { Product } from '../../inventory/products/entities/product.entity';
 import { Company } from '../../settings/entities/company.entity';
+import { Customer } from '../../parties/customers/entities/customer.entity';
 import { SalesRepAccessService } from '../../../common/services/sales-rep-access.service';
 import { User } from '../../users/entities/user.entity';
 import { UserCompany } from '../../users/entities/user-company.entity';
@@ -35,13 +36,14 @@ export class SalesInvoicesService {
     @InjectRepository(SalesInvoice) private readonly repo: Repository<SalesInvoice>,
     @InjectRepository(SalesPayment) private readonly paymentRepo: Repository<SalesPayment>,
     @InjectRepository(Company) private readonly companyRepo: Repository<Company>,
+    @InjectRepository(Customer) private readonly customerRepo: Repository<Customer>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(UserCompany) private readonly userCompanyRepo: Repository<UserCompany>,
     @InjectRepository(SalesRepresentative) private readonly salesRepRepo: Repository<SalesRepresentative>,
     @InjectRepository(CommissionException) private readonly commissionExceptionsRepo: Repository<CommissionException>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
-    private readonly stockService: StockService,
+    private readonly productKitsService: ProductKitsService,
     private readonly cashMovementsService: CashMovementsService,
     private readonly salesRepAccess: SalesRepAccessService,
   ) {}
@@ -155,6 +157,13 @@ export class SalesInvoicesService {
     companyId: string,
     userPermissions: string[] = [],
   ): Promise<SalesInvoice> {
+    // A customerId belonging to another company must never be accepted — otherwise this invoice's
+    // balance/statement would silently pollute a customer record the caller has no business
+    // touching. 404s (not 400s) so a client can't distinguish "doesn't exist" from "exists in
+    // another company", matching the findOneScoped convention used everywhere else in this codebase.
+    const customer = await this.customerRepo.findOne({ where: { id: dto.customerId, companyId } });
+    if (!customer) throw new NotFoundException('Customer not found');
+
     // Non-admins can never attribute an invoice to anyone but themselves — the client-submitted
     // salesRepresentativeId/createdById is ignored outright for them. See SalesRepAccessService.
     const { salesRepresentativeId, createdById } = await this.salesRepAccess.resolveInvoiceOwner(
@@ -208,7 +217,7 @@ export class SalesInvoicesService {
         let unitCost = 0;
         let totalCost = 0;
         if (product?.productType !== ProductType.CATALOG_ITEM) {
-          const issued = await this.stockService.issue(
+          const issued = await this.productKitsService.issueSmart(
             {
               companyId,
               productId: line.productId,
@@ -226,14 +235,39 @@ export class SalesInvoicesService {
         }
         costOfGoodsSold += totalCost;
 
-        const purchasePrice =
-          unitKind === SaleUnitKind.PACKAGE
-            ? Number(product?.packagePurchasePrice ?? Number(product?.purchasePrice ?? 0) * (unitsPerPackage ?? 1))
-            : Number(product?.purchasePrice ?? 0);
-        const suggestedPrice =
-          unitKind === SaleUnitKind.PACKAGE
-            ? Number(product?.packageSellingPrice ?? Number(product?.sellingPrice ?? 0) * (unitsPerPackage ?? 1))
-            : Number(product?.sellingPrice ?? 0);
+        let purchasePrice: number;
+        let suggestedPrice: number;
+        if (product && product.isKit) {
+          // A kit's own purchasePrice/packagePurchasePrice is never populated (it's never
+          // receive()'d directly, see ProductKitsService) — derive it from its components' own
+          // cost instead, so the below-cost check below still works correctly. A component's
+          // `purchasePrice` only ever updates when it's purchased directly (not through a kit
+          // receipt) — AC's real workflow buys kits as a whole, so this falls back to
+          // `averageCost`, which receiveSmart's per-component receive() always keeps current,
+          // matching the same fallback receiveSmart itself uses for cost-weighting.
+          const components = await this.productKitsService.getComponents(product.id, manager);
+          const perKitCost = components.reduce(
+            (sum, c) =>
+              sum +
+              (Number(c.componentProduct.purchasePrice) || Number(c.componentProduct.averageCost) || 0) *
+                Number(c.quantity),
+            0,
+          );
+          purchasePrice = unitKind === SaleUnitKind.PACKAGE ? perKitCost * (unitsPerPackage ?? 1) : perKitCost;
+          suggestedPrice =
+            unitKind === SaleUnitKind.PACKAGE
+              ? Number(product.packageSellingPrice ?? Number(product.sellingPrice ?? 0) * (unitsPerPackage ?? 1))
+              : Number(product.sellingPrice ?? 0);
+        } else {
+          purchasePrice =
+            unitKind === SaleUnitKind.PACKAGE
+              ? Number(product?.packagePurchasePrice ?? Number(product?.purchasePrice ?? 0) * (unitsPerPackage ?? 1))
+              : Number(product?.purchasePrice ?? 0);
+          suggestedPrice =
+            unitKind === SaleUnitKind.PACKAGE
+              ? Number(product?.packageSellingPrice ?? Number(product?.sellingPrice ?? 0) * (unitsPerPackage ?? 1))
+              : Number(product?.sellingPrice ?? 0);
+        }
         const profitPerUnit = Number(line.unitPrice) - purchasePrice;
         const lineTotalProfit = profitPerUnit * Number(line.quantity);
 
@@ -350,6 +384,12 @@ export class SalesInvoicesService {
   async update(id: string, dto: UpdateSalesInvoiceDto, callerId: string, companyId: string): Promise<SalesInvoice> {
     const invoice = await this.repo.findOne({ where: { id, companyId } });
     if (!invoice) throw new NotFoundException('Sales invoice not found');
+
+    // Same cross-company guard as create() — an edit must never be able to re-point an existing
+    // invoice at another company's customer.
+    const customer = await this.customerRepo.findOne({ where: { id: dto.customerId, companyId } });
+    if (!customer) throw new NotFoundException('Customer not found');
+
     const { salesRepresentativeId, createdById } = await this.salesRepAccess.resolveInvoiceOwner(
       callerId,
       { salesRepresentativeId: dto.salesRepresentativeId, createdById: dto.createdById },
@@ -385,7 +425,7 @@ export class SalesInvoicesService {
         // Mirrors create()'s skip: catalog items never had stock issued in the first place, so
         // there is nothing to receive back for them.
         if (productTypeById.get(line.productId) === ProductType.CATALOG_ITEM) continue;
-        await this.stockService.receive(
+        await this.productKitsService.receiveSmart(
           {
             companyId,
             productId: line.productId,

@@ -198,29 +198,9 @@ export class DashboardService {
       .addSelect('COALESCE(SUM(i."grandTotal"),0)', 'total')
       .from('sales_invoices', 'i')
       .where('i."companyId" = :companyId', { companyId })
-      .andWhere(`i."invoiceDate" >= (CURRENT_DATE - INTERVAL '${days} days')`);
+      .andWhere(`i."invoiceDate" >= (CURRENT_DATE - (:days || ' days')::interval)`, { days });
     if (branchId) qb.andWhere('i."branchId" = :branchId', { branchId });
     const rows = await qb.groupBy('i."invoiceDate"').orderBy('i."invoiceDate"', 'ASC').getRawMany();
-    return rows.map((r) => ({ date: r.date, total: Number(r.total) }));
-  }
-
-  /**
-   * `purchase_invoices` has no `companyId` column of its own (the whole purchasing module predates
-   * this multi-tenant retrofit and is out of scope here) — scoped indirectly via the supplier,
-   * which IS company-scoped, since every purchase invoice's supplier belongs to exactly one company.
-   */
-  async getPurchaseChart(companyId: string, days = 30) {
-    const rows = await this.dataSource
-      .createQueryBuilder()
-      .select('i."invoiceDate"', 'date')
-      .addSelect('COALESCE(SUM(i."grandTotal"),0)', 'total')
-      .from('purchase_invoices', 'i')
-      .innerJoin('suppliers', 's', 's.id = i."supplierId"')
-      .where('s."companyId" = :companyId', { companyId })
-      .andWhere(`i."invoiceDate" >= (CURRENT_DATE - INTERVAL '${days} days')`)
-      .groupBy('i."invoiceDate"')
-      .orderBy('i."invoiceDate"', 'ASC')
-      .getRawMany();
     return rows.map((r) => ({ date: r.date, total: Number(r.total) }));
   }
 

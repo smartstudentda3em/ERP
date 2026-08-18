@@ -196,10 +196,12 @@ export class AuthService {
       .where('user.phone = :phone', { phone: trimmedPhone })
       .getOne();
 
-    // Diagnostic only — logs the trimmed phone and two booleans (was a user found, did the
-    // password match), never the password or its hash, so this is safe to leave in as a
-    // permanent audit trail of login attempts, not just a temporary debugging aid.
-    console.log(`[login] phone="${trimmedPhone}" userFound=${!!user}`);
+    // Diagnostic only — logs only the last 3 digits of the phone (enough to correlate repeated
+    // attempts against the same account without printing a full, directly-identifying phone
+    // number into container logs) plus two booleans (was a user found, did the password match).
+    // Never logs the password or its hash.
+    const phoneSuffix = trimmedPhone.slice(-3);
+    console.log(`[login] phone="***${phoneSuffix}" userFound=${!!user}`);
 
     if (!user) throw new UnauthorizedException('Invalid phone number or password');
 
@@ -210,7 +212,7 @@ export class AuthService {
     if (!user.isActive) throw new ForbiddenException('Account is inactive');
 
     const valid = await argon2.verify(user.passwordHash, trimmedPassword);
-    console.log(`[login] phone="${trimmedPhone}" passwordValid=${valid}`);
+    console.log(`[login] phone="***${phoneSuffix}" passwordValid=${valid}`);
     if (!valid) {
       user.failedLoginAttempts += 1;
       if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {

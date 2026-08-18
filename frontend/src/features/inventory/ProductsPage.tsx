@@ -43,6 +43,14 @@ interface Product {
   notes?: string;
   isActive: boolean;
   isSellable?: boolean;
+  isKit?: boolean;
+  components?: ProductComponent[];
+}
+
+interface ProductComponent {
+  componentProductId: string;
+  quantity: number;
+  componentProduct?: { id: string; nameEn: string; nameAr?: string };
 }
 
 interface Unit {
@@ -113,7 +121,13 @@ const emptyForm = {
   categoryId: '',
   isSellable: false,
   sellingPrice: '',
+  isKit: false,
 };
+
+interface ComponentRow {
+  componentProductId: string;
+  quantity: string;
+}
 
 type StockStatus = 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
 
@@ -227,7 +241,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   ref,
 ) {
   const { t } = useTranslation();
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isAirConditioning } = useActiveCompany();
   const isManagerRestricted = useIsPressManagerRestricted();
   const isSalesRep = useIsSalesRep();
   const queryClient = useQueryClient();
@@ -240,6 +254,8 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  // Air Conditioning company only — see Product.isKit.
+  const [components, setComponents] = useState<ComponentRow[]>([]);
   const [breakdownProduct, setBreakdownProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState('');
   // Printing Press only — everything below drives its "من تاريخ/إلى تاريخ" filter, summary cards,
@@ -389,6 +405,27 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     return (quantityByProduct.get(productId) ?? []).reduce((sum, r) => sum + r.quantity, 0);
   }
 
+  // Air Conditioning company only — a kit product (see Product.isKit) never holds its own
+  // StockLevel row, so "how many full kits are available" is a computed minimum across its
+  // components' own real stock, reusing the same quantityByProduct map (components are normal
+  // products already present in it).
+  function availableKitQuantity(product: Product): number {
+    if (!product.components || product.components.length === 0) return 0;
+    return Math.min(
+      ...product.components.map((c) => Math.floor(totalQuantity(c.componentProductId) / (Number(c.quantity) || 1))),
+    );
+  }
+
+  // Air Conditioning company only — component picker excludes other kits (no nesting) and the
+  // product currently being edited (only relevant on edit, a new kit has no id yet).
+  const componentOptions = useMemo(
+    () =>
+      (productsQuery.data ?? [])
+        .filter((p) => !p.isKit && p.id !== editingId)
+        .map((p) => ({ value: p.id, label: p.nameEn })),
+    [productsQuery.data, editingId],
+  );
+
   // Printing Press only — narrows the table (and everything derived from it below) to just
   // item name / category / brand matches, deliberately excluding SKU/barcode which this tenant's
   // raw-materials table doesn't even display as columns. Every other company keeps relying on the
@@ -429,6 +466,20 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     [visibleDateFilteredReceipts],
   );
 
+  // Air Conditioning company only — omitted entirely for every other company, matching the
+  // backend's own AC-only rejection in ProductsService.
+  function kitPayloadFields() {
+    if (!isAirConditioning) return {};
+    return {
+      isKit: form.isKit,
+      components: form.isKit
+        ? components
+            .filter((c) => c.componentProductId && c.quantity)
+            .map((c) => ({ componentProductId: c.componentProductId, quantity: Number(c.quantity) }))
+        : [],
+    };
+  }
+
   const createMutation = useMutation({
     mutationFn: () =>
       apiClient.post('/inventory/products', {
@@ -445,11 +496,13 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
         categoryId: form.categoryId,
         isSellable: form.isSellable,
         sellingPrice: form.isSellable && form.sellingPrice ? Number(form.sellingPrice) : undefined,
+        ...kitPayloadFields(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setModalOpen(false);
       setForm(emptyForm);
+      setComponents([]);
       toast.success(t('common.addedSuccessfully'));
     },
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
@@ -471,12 +524,14 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
         categoryId: form.categoryId,
         isSellable: form.isSellable,
         sellingPrice: form.isSellable && form.sellingPrice ? Number(form.sellingPrice) : null,
+        ...kitPayloadFields(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setModalOpen(false);
       setEditingId(null);
       setForm(emptyForm);
+      setComponents([]);
       toast.success(t('common.savedSuccessfully'));
     },
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
@@ -499,6 +554,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   function openCreateModal() {
     setEditingId(null);
     setForm(emptyForm);
+    setComponents([]);
     setModalOpen(true);
   }
 
@@ -517,7 +573,14 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       categoryId: product.categoryId ?? '',
       isSellable: product.isSellable ?? false,
       sellingPrice: product.sellingPrice != null ? String(product.sellingPrice) : '',
+      isKit: product.isKit ?? false,
     });
+    setComponents(
+      (product.components ?? []).map((c) => ({
+        componentProductId: c.componentProductId,
+        quantity: String(c.quantity),
+      })),
+    );
     setModalOpen(true);
   }
 
@@ -559,7 +622,18 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
           {
             header: t('fields.availableQuantity'),
             accessor: (r: Product) => {
-              const total = totalQuantity(r.id);
+              // A kit product (AC only, see Product.isKit) has no StockLevel row of its own — its
+              // quantity is computed from its components, which have no per-warehouse breakdown of
+              // their own to show for the kit itself, so it isn't clickable like a normal product.
+              const total = r.isKit ? availableKitQuantity(r) : totalQuantity(r.id);
+              const display = (
+                <PackageQuantity
+                  baseQuantity={total}
+                  unitsPerPackage={r.unitsPerPackage}
+                  packageUnitName={packageTypesQuery.data?.find((p) => p.id === r.packageTypeId)?.nameEn}
+                />
+              );
+              if (r.isKit) return display;
               return (
                 <button
                   type="button"
@@ -569,11 +643,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
                     setBreakdownProduct(r);
                   }}
                 >
-                  <PackageQuantity
-                    baseQuantity={total}
-                    unitsPerPackage={r.unitsPerPackage}
-                    packageUnitName={packageTypesQuery.data?.find((p) => p.id === r.packageTypeId)?.nameEn}
-                  />
+                  {display}
                 </button>
               );
             },
@@ -996,6 +1066,64 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
                   onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
                 />
               </FormField>
+            </div>
+          )}
+          {isAirConditioning && (
+            <label className="col-span-2 flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.isKit}
+                onChange={(e) => setForm({ ...form, isKit: e.target.checked })}
+              />
+              {t('products.isKit')}
+            </label>
+          )}
+          {isAirConditioning && form.isKit && (
+            <div className="col-span-2 space-y-2 rounded-lg border border-[var(--border)] p-3">
+              <div className="text-sm font-medium">{t('products.components')}</div>
+              {components.map((c, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <SearchableSelect
+                      value={c.componentProductId}
+                      options={componentOptions}
+                      onChange={(v) => {
+                        const next = [...components];
+                        next[idx] = { ...next[idx], componentProductId: v };
+                        setComponents(next);
+                      }}
+                    />
+                  </div>
+                  <div className="w-28">
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      min="0.0001"
+                      placeholder={t('products.componentQuantity') ?? ''}
+                      value={c.quantity}
+                      onChange={(e) => {
+                        const next = [...components];
+                        next[idx] = { ...next[idx], quantity: e.target.value };
+                        setComponents(next);
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="text-red-600 hover:underline"
+                    onClick={() => setComponents(components.filter((_, i) => i !== idx))}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setComponents([...components, { componentProductId: '', quantity: '1' }])}
+              >
+                + {t('products.addComponent')}
+              </Button>
             </div>
           )}
           <p className="col-span-2 text-xs text-[var(--text-muted)]">{t('fields.pricingViaReceiptHint')}</p>

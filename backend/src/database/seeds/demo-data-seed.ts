@@ -352,18 +352,28 @@ async function main() {
     const managerPhone = '010' + (plan.code === 'STAT' ? '1' : plan.code === 'AC' ? '2' : '3') + '0000001';
     const existingManagerUser = await userRepo.findOne({ where: { phone: managerPhone } });
     if (!existingManagerUser) {
+      // No hardcoded fallback, deliberately — a demo Manager password shipped fixed in source is
+      // still a real, guessable credential once this script has ever been run against a database
+      // (this script is manual-only, never auto-run by docker-compose, but the account it creates
+      // persists once seeded).
+      const demoManagerPassword = process.env.SEED_DEMO_MANAGER_PASSWORD;
+      if (!demoManagerPassword) {
+        throw new Error(
+          'SEED_DEMO_MANAGER_PASSWORD must be set to seed the demo Manager accounts — no default password is provided.',
+        );
+      }
       const managerUser = await userRepo.save(
         userRepo.create({
           fullName: `مدير ${company.nameAr}`,
           phone: managerPhone,
-          passwordHash: await argon2.hash('Manager@123'),
+          passwordHash: await argon2.hash(demoManagerPassword),
           companyId: company.id,
           branchId: branch.id,
           roles: [managerRole],
         }),
       );
       await userCompanyRepo.save(userCompanyRepo.create({ userId: managerUser.id, companyId: company.id }));
-      console.log(`Manager login seeded for ${plan.code}: ${managerPhone} / Manager@123`);
+      console.log(`Manager login seeded for ${plan.code}: ${managerPhone}`);
     }
 
     // --- Customers ---

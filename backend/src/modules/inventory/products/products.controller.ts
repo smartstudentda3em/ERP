@@ -18,8 +18,8 @@ export class ProductsController {
   // Declared before the generic ':id' routes below so 'catalog' is never swallowed as an id param.
   @Get('catalog')
   @Permissions('inventory.product.view')
-  findAllCatalog(@CurrentUser('companyId') companyId: string) {
-    return this.service.findCatalogForCompany(companyId);
+  findAllCatalog(@CurrentUser('companyId') companyId: string, @CurrentUser('userId') userId: string) {
+    return this.service.findCatalogForCompany(companyId, userId);
   }
 
   @Post('catalog')
@@ -40,8 +40,12 @@ export class ProductsController {
 
   @Get()
   @Permissions('inventory.product.view')
-  findAll(@CurrentUser('companyId') companyId: string, @Query('search') search?: string) {
-    return this.service.findAllForCompany(companyId, search);
+  findAll(
+    @CurrentUser('companyId') companyId: string,
+    @CurrentUser('userId') userId: string,
+    @Query('search') search?: string,
+  ) {
+    return this.service.findAllForCompany(companyId, search, userId);
   }
 
   @Get('low-stock')
@@ -63,8 +67,8 @@ export class ProductsController {
   // Declared before ':id' for the same reason as 'catalog' above.
   @Get('sellable-raw-materials')
   @Permissions('inventory.product.view')
-  findSellableRawMaterials(@CurrentUser('companyId') companyId: string) {
-    return this.service.findSellableRawMaterialsForCompany(companyId);
+  findSellableRawMaterials(@CurrentUser('companyId') companyId: string, @CurrentUser('userId') userId: string) {
+    return this.service.findSellableRawMaterialsForCompany(companyId, userId);
   }
 
   @Get('barcode/:barcode')

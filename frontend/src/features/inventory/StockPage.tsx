@@ -66,6 +66,7 @@ interface Product {
   unitsPerPackage?: number | null;
   packagePurchasePrice?: number | null;
   packageSellingPrice?: number | null;
+  isKit?: boolean;
 }
 
 interface Warehouse {
@@ -510,11 +511,15 @@ export function StockPage() {
               onChange={(e) => resetSelection(e.target.value, adjustForm.warehouseId)}
             >
               <option value="">{t('actions.selectProduct')}</option>
-              {(productsQuery.data ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.sku} — {p.nameEn}
-                </option>
-              ))}
+              {/* A kit product (AC only, see Product.isKit) has no StockLevel row of its own — there
+                  is nothing to "count" for it directly, only for its real components. */}
+              {(productsQuery.data ?? [])
+                .filter((p) => !p.isKit)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.sku} — {p.nameEn}
+                  </option>
+                ))}
             </Select>
           </FormField>
           <FormField label={t('fields.warehouse')}>

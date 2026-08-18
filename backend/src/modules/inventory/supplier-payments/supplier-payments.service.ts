@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { SupplierPayment } from '../../parties/suppliers/entities/supplier-payment.entity';
+import { Supplier } from '../../parties/suppliers/entities/supplier.entity';
 import { PurchaseReceipt } from '../stock-movements/entities/purchase-receipt.entity';
 import { CreateSupplierPaymentDto, UpdateSupplierPaymentDto } from './dto/supplier-payment.dto';
 import { CashMovementAccount, CashMovementSourceType, CashMovementType, PaymentMethod } from '../../../entities/enums';
@@ -21,6 +22,7 @@ import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 export class SupplierPaymentsService {
   constructor(
     @InjectRepository(SupplierPayment) private readonly repo: Repository<SupplierPayment>,
+    @InjectRepository(Supplier) private readonly supplierRepo: Repository<Supplier>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly cashMovementsService: CashMovementsService,
@@ -52,6 +54,12 @@ export class SupplierPaymentsService {
   }
 
   async create(dto: CreateSupplierPaymentDto, createdById: string, companyId: string): Promise<SupplierPayment> {
+    // A supplierId belonging to another company must never be accepted — same reasoning as the
+    // customerId guard on SalesInvoicesService.create(). 404 so a client can't distinguish
+    // "doesn't exist" from "exists in another company".
+    const supplier = await this.supplierRepo.findOne({ where: { id: dto.supplierId, companyId } });
+    if (!supplier) throw new NotFoundException('Supplier not found');
+
     const documentNumber = await this.numberingSeriesService.getNextNumber(companyId, 'SUPPLIER_PAYMENT');
     const account = this.resolveAccount(dto.method);
 
@@ -136,6 +144,11 @@ export class SupplierPaymentsService {
     updatedById: string,
     companyId: string,
   ): Promise<SupplierPayment> {
+    // Same cross-company guard as create() — an edit must never be able to re-point an existing
+    // payment at another company's supplier.
+    const supplier = await this.supplierRepo.findOne({ where: { id: dto.supplierId, companyId } });
+    if (!supplier) throw new NotFoundException('Supplier not found');
+
     return this.dataSource.transaction(async (manager) => {
       const existing = await manager.getRepository(SupplierPayment).findOne({ where: { id, companyId } });
       if (!existing) throw new NotFoundException('Supplier payment not found');

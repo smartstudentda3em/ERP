@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { AcPartRole } from '../../../../entities/enums';
 
 /** One BOM line for a Kit product — AC company only, see Product.isKit. */
 export class ProductComponentDto {
@@ -39,6 +40,10 @@ export class CreateProductDto {
   @IsOptional() @IsBoolean() isSellable?: boolean;
   /** AC (Air Conditioning) company only — see Product.isKit. */
   @IsOptional() @IsBoolean() isKit?: boolean;
+  /** AC (Air Conditioning) company only — see Product.capacity. */
+  @IsOptional() @IsString() capacity?: string;
+  /** AC (Air Conditioning) company only — see Product.acPartRole. */
+  @IsOptional() @IsEnum(AcPartRole) acPartRole?: AcPartRole;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

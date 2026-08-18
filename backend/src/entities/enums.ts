@@ -166,3 +166,11 @@ export enum ProductType {
   RAW_MATERIAL = 'RAW_MATERIAL',
   CATALOG_ITEM = 'CATALOG_ITEM',
 }
+
+/** Air Conditioning company only — classifies a real (non-kit) product as one of a split unit's
+ * two physical parts, so a Kit's component picker can be restricted to exactly the right part
+ * type instead of offering every product in the catalog. See Product.acPartRole. */
+export enum AcPartRole {
+  INDOOR_UNIT = 'INDOOR_UNIT',
+  OUTDOOR_UNIT = 'OUTDOOR_UNIT',
+}

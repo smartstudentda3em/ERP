@@ -11,7 +11,7 @@ import {
   ProductComponentDto,
 } from './dto/product.dto';
 import { StockMovement } from '../stock-movements/entities/stock-movement.entity';
-import { ProductType } from '../../../entities/enums';
+import { AcPartRole, ProductType } from '../../../entities/enums';
 import { Unit } from '../../settings/entities/unit.entity';
 import { PackageType } from '../../settings/entities/package-type.entity';
 import { ProductCategory } from '../../settings/entities/product-category.entity';
@@ -72,26 +72,38 @@ export class ProductsService extends BaseCrudService<Product> {
     return err instanceof Error ? err : new Error(String(err));
   }
 
-  /** Kit/bundle products are AC (Air Conditioning) only — every other company is rejected here even
-   * if the client somehow sends isKit/components, since a wrongly-set isKit silently redirects real
-   * stock movements on every purchase/sale/transfer touching that product. No-ops when the dto
-   * carries neither field. */
+  /** Kit/bundle and split-unit-part fields are AC (Air Conditioning) only — every other company is
+   * rejected here even if the client somehow sends isKit/components/capacity/acPartRole, since a
+   * wrongly-set isKit silently redirects real stock movements on every purchase/sale/transfer
+   * touching that product. No-ops when the dto carries none of these fields. */
   private async assertKitFieldsAllowed(
     companyId: string,
-    dto: { isKit?: boolean; components?: ProductComponentDto[] },
+    dto: { isKit?: boolean; components?: ProductComponentDto[]; capacity?: string; acPartRole?: AcPartRole },
   ): Promise<void> {
-    if (dto.isKit === undefined && dto.components === undefined) return;
+    if (
+      dto.isKit === undefined &&
+      dto.components === undefined &&
+      dto.capacity === undefined &&
+      dto.acPartRole === undefined
+    ) {
+      return;
+    }
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
     if (company?.code !== 'AC') {
       throw new BadRequestException('Kit/bundle products are only supported for the Air Conditioning company');
     }
   }
 
-  /** No self-reference, no duplicates, no nested kits, every id resolves to a real product of the
+  /** A split-unit kit's components must be exactly one indoor unit and one outdoor unit
+   * (Product.acPartRole), and both must carry the exact same Product.capacity as the kit itself —
+   * this is what stops a "Fresh Turbo 1.5hp" kit from being wired to a different model/capacity's
+   * parts, or to a product that was never tagged as a real indoor/outdoor unit at all. Also checks
+   * no self-reference, no duplicates, no nested kits, every id resolves to a real product of the
    * same company. */
   private async validateComponents(
     companyId: string,
     components: ProductComponentDto[],
+    kitCapacity: string,
     excludeProductId?: string,
   ): Promise<void> {
     if (excludeProductId && components.some((c) => c.componentProductId === excludeProductId)) {
@@ -107,6 +119,19 @@ export class ProductsService extends BaseCrudService<Product> {
     }
     if (rows.some((r) => r.isKit)) {
       throw new BadRequestException('A kit product cannot be used as a component (no nested kits)');
+    }
+    const indoor = rows.filter((r) => r.acPartRole === AcPartRole.INDOOR_UNIT);
+    const outdoor = rows.filter((r) => r.acPartRole === AcPartRole.OUTDOOR_UNIT);
+    if (rows.length !== 2 || indoor.length !== 1 || outdoor.length !== 1) {
+      throw new BadRequestException(
+        'A split-unit kit requires exactly one indoor unit and one outdoor unit, each tagged with its part role',
+      );
+    }
+    const mismatched = rows.find((r) => r.capacity !== kitCapacity);
+    if (mismatched) {
+      throw new BadRequestException(
+        `Component "${mismatched.nameAr || mismatched.nameEn}" does not match the kit's capacity (${kitCapacity})`,
+      );
     }
   }
 
@@ -180,11 +205,17 @@ export class ProductsService extends BaseCrudService<Product> {
       if (existing) throw new ConflictException('Barcode already exists');
     }
     await this.assertKitFieldsAllowed(companyId, dto);
+    if (dto.isKit && dto.acPartRole) {
+      throw new BadRequestException('A kit product cannot also be tagged as an indoor/outdoor part');
+    }
     if (dto.isKit) {
+      if (!dto.capacity) {
+        throw new BadRequestException('A kit product requires a capacity (e.g. "1.5 حصان") to match its components');
+      }
       if (!dto.components || dto.components.length === 0) {
         throw new BadRequestException('A kit product requires at least one component');
       }
-      await this.validateComponents(companyId, dto.components);
+      await this.validateComponents(companyId, dto.components, dto.capacity);
     }
     const derivedPurchasePrice = this.computePackageDerivedPurchasePrice(dto);
     const { components, ...rest } = dto;
@@ -213,6 +244,11 @@ export class ProductsService extends BaseCrudService<Product> {
     await this.assertKitFieldsAllowed(companyId, dto);
 
     const nextIsKit = dto.isKit !== undefined ? dto.isKit : existing.isKit;
+    const nextAcPartRole = dto.acPartRole !== undefined ? dto.acPartRole : existing.acPartRole;
+    if (nextIsKit && nextAcPartRole) {
+      throw new BadRequestException('A kit product cannot also be tagged as an indoor/outdoor part');
+    }
+    const nextCapacity = dto.capacity !== undefined ? dto.capacity : existing.capacity;
     // Unchecking "Kit" (or, while it stays a kit, submitting a new component list) replaces the
     // component set; leaving both isKit and components untouched leaves existing components alone.
     const componentsToApply: ProductComponentDto[] | undefined = !nextIsKit
@@ -225,7 +261,10 @@ export class ProductsService extends BaseCrudService<Product> {
       if (componentsToApply.length === 0) {
         throw new BadRequestException('A kit product requires at least one component');
       }
-      await this.validateComponents(companyId, componentsToApply, id);
+      if (!nextCapacity) {
+        throw new BadRequestException('A kit product requires a capacity (e.g. "1.5 حصان") to match its components');
+      }
+      await this.validateComponents(companyId, componentsToApply, nextCapacity, id);
     }
 
     const merged: PackagingFields = {

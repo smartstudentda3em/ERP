@@ -6,7 +6,7 @@ import { Unit } from "../../../settings/entities/unit.entity";
 import { PackageType } from "../../../settings/entities/package-type.entity";
 import { Tax } from "../../../settings/entities/tax.entity";
 import { Company } from "../../../settings/entities/company.entity";
-import { ProductType } from "../../../../entities/enums";
+import { AcPartRole, ProductType } from "../../../../entities/enums";
 import { ProductComponent } from "./product-component.entity";
 
 // sku/barcode are unique per company, not globally — two different companies (separate
@@ -211,6 +211,19 @@ export class Product extends BaseEntity {
     default: false,
   })
   isKit: boolean;
+
+  /** Air Conditioning company only — the cooling capacity tag (e.g. "1.5 حصان") shared by a kit
+   * and its own indoor/outdoor components. A kit's component picker only offers parts whose
+   * `capacity` matches the kit's own, which is what stops a "1.5hp" kit from accidentally being
+   * wired to a "2hp" model's parts. */
+  @Column({ type: "varchar", length: 50, nullable: true })
+  capacity: string | null;
+
+  /** Air Conditioning company only — set on a real (non-kit) product to mark it as one of a split
+   * unit's two physical parts. Null for a kit itself and for any other AC product (spare parts,
+   * refrigerant, ...) that never plugs into a kit's components. */
+  @Column({ type: "enum", enum: AcPartRole, nullable: true })
+  acPartRole: AcPartRole | null;
 
   @OneToMany(() => ProductComponent, (c) => c.parentProduct)
   components: ProductComponent[];

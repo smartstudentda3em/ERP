@@ -44,6 +44,8 @@ interface Product {
   isActive: boolean;
   isSellable?: boolean;
   isKit?: boolean;
+  capacity?: string | null;
+  acPartRole?: 'INDOOR_UNIT' | 'OUTDOOR_UNIT' | null;
   components?: ProductComponent[];
 }
 
@@ -122,12 +124,9 @@ const emptyForm = {
   isSellable: false,
   sellingPrice: '',
   isKit: false,
+  capacity: '',
+  acPartRole: '',
 };
-
-interface ComponentRow {
-  componentProductId: string;
-  quantity: string;
-}
 
 type StockStatus = 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
 
@@ -254,8 +253,10 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
-  // Air Conditioning company only — see Product.isKit.
-  const [components, setComponents] = useState<ComponentRow[]>([]);
+  // Air Conditioning company only — see Product.isKit. A kit is always exactly one indoor +
+  // one outdoor unit, so these are two fixed slots rather than a free-form list.
+  const [indoorComponentId, setIndoorComponentId] = useState('');
+  const [outdoorComponentId, setOutdoorComponentId] = useState('');
   const [breakdownProduct, setBreakdownProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState('');
   // Printing Press only — everything below drives its "من تاريخ/إلى تاريخ" filter, summary cards,
@@ -416,14 +417,23 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     );
   }
 
-  // Air Conditioning company only — component picker excludes other kits (no nesting) and the
-  // product currently being edited (only relevant on edit, a new kit has no id yet).
-  const componentOptions = useMemo(
+  // Air Conditioning company only — the indoor/outdoor pickers only ever offer real parts tagged
+  // with the matching acPartRole AND the exact same capacity as the kit being edited, so a
+  // "1.5hp" kit can never accidentally be wired to a "2hp" (or unrelated model's) part. Until a
+  // capacity is typed in, both lists stay empty rather than showing every part in the catalog.
+  const indoorOptions = useMemo(
     () =>
       (productsQuery.data ?? [])
-        .filter((p) => !p.isKit && p.id !== editingId)
+        .filter((p) => p.acPartRole === 'INDOOR_UNIT' && p.id !== editingId && !!form.capacity && p.capacity === form.capacity)
         .map((p) => ({ value: p.id, label: p.nameEn })),
-    [productsQuery.data, editingId],
+    [productsQuery.data, editingId, form.capacity],
+  );
+  const outdoorOptions = useMemo(
+    () =>
+      (productsQuery.data ?? [])
+        .filter((p) => p.acPartRole === 'OUTDOOR_UNIT' && p.id !== editingId && !!form.capacity && p.capacity === form.capacity)
+        .map((p) => ({ value: p.id, label: p.nameEn })),
+    [productsQuery.data, editingId, form.capacity],
   );
 
   // Printing Press only — narrows the table (and everything derived from it below) to just
@@ -467,16 +477,21 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   );
 
   // Air Conditioning company only — omitted entirely for every other company, matching the
-  // backend's own AC-only rejection in ProductsService.
+  // backend's own AC-only rejection in ProductsService. A kit is always exactly 1 indoor + 1
+  // outdoor unit (see indoorComponentId/outdoorComponentId), never an arbitrary list.
   function kitPayloadFields() {
     if (!isAirConditioning) return {};
     return {
       isKit: form.isKit,
-      components: form.isKit
-        ? components
-            .filter((c) => c.componentProductId && c.quantity)
-            .map((c) => ({ componentProductId: c.componentProductId, quantity: Number(c.quantity) }))
-        : [],
+      capacity: form.capacity || null,
+      acPartRole: form.isKit ? null : form.acPartRole || null,
+      components:
+        form.isKit && indoorComponentId && outdoorComponentId
+          ? [
+              { componentProductId: indoorComponentId, quantity: 1 },
+              { componentProductId: outdoorComponentId, quantity: 1 },
+            ]
+          : [],
     };
   }
 
@@ -502,7 +517,8 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setModalOpen(false);
       setForm(emptyForm);
-      setComponents([]);
+      setIndoorComponentId('');
+      setOutdoorComponentId('');
       toast.success(t('common.addedSuccessfully'));
     },
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
@@ -531,7 +547,8 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       setModalOpen(false);
       setEditingId(null);
       setForm(emptyForm);
-      setComponents([]);
+      setIndoorComponentId('');
+      setOutdoorComponentId('');
       toast.success(t('common.savedSuccessfully'));
     },
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
@@ -554,7 +571,8 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   function openCreateModal() {
     setEditingId(null);
     setForm(emptyForm);
-    setComponents([]);
+    setIndoorComponentId('');
+    setOutdoorComponentId('');
     setModalOpen(true);
   }
 
@@ -574,13 +592,21 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       isSellable: product.isSellable ?? false,
       sellingPrice: product.sellingPrice != null ? String(product.sellingPrice) : '',
       isKit: product.isKit ?? false,
+      capacity: product.capacity ?? '',
+      acPartRole: product.acPartRole ?? '',
     });
-    setComponents(
-      (product.components ?? []).map((c) => ({
-        componentProductId: c.componentProductId,
-        quantity: String(c.quantity),
-      })),
+    // Match each saved component back to its indoor/outdoor slot by the underlying product's own
+    // acPartRole (looked up in the already-loaded product list, not the component sub-object,
+    // which doesn't carry it) rather than assuming array order.
+    const allProducts = productsQuery.data ?? [];
+    const savedIndoor = (product.components ?? []).find(
+      (c) => allProducts.find((p) => p.id === c.componentProductId)?.acPartRole === 'INDOOR_UNIT',
     );
+    const savedOutdoor = (product.components ?? []).find(
+      (c) => allProducts.find((p) => p.id === c.componentProductId)?.acPartRole === 'OUTDOOR_UNIT',
+    );
+    setIndoorComponentId(savedIndoor?.componentProductId ?? '');
+    setOutdoorComponentId(savedOutdoor?.componentProductId ?? '');
     setModalOpen(true);
   }
 
@@ -1069,61 +1095,60 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
             </div>
           )}
           {isAirConditioning && (
+            <div className="col-span-2">
+              <FormField label={t('products.capacity')}>
+                <Input
+                  placeholder={t('products.capacityPlaceholder') ?? ''}
+                  value={form.capacity}
+                  onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                />
+              </FormField>
+            </div>
+          )}
+          {isAirConditioning && (
             <label className="col-span-2 flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={form.isKit}
-                onChange={(e) => setForm({ ...form, isKit: e.target.checked })}
+                onChange={(e) => setForm({ ...form, isKit: e.target.checked, acPartRole: '' })}
               />
               {t('products.isKit')}
             </label>
           )}
+          {isAirConditioning && !form.isKit && (
+            <div className="col-span-2">
+              <FormField label={t('products.acPartRole')}>
+                <Select
+                  value={form.acPartRole}
+                  onChange={(e) => setForm({ ...form, acPartRole: e.target.value })}
+                >
+                  <option value="">{t('products.acPartRoleNone')}</option>
+                  <option value="INDOOR_UNIT">{t('products.indoorUnit')}</option>
+                  <option value="OUTDOOR_UNIT">{t('products.outdoorUnit')}</option>
+                </Select>
+              </FormField>
+            </div>
+          )}
           {isAirConditioning && form.isKit && (
             <div className="col-span-2 space-y-2 rounded-lg border border-[var(--border)] p-3">
               <div className="text-sm font-medium">{t('products.components')}</div>
-              {components.map((c, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <SearchableSelect
-                      value={c.componentProductId}
-                      options={componentOptions}
-                      onChange={(v) => {
-                        const next = [...components];
-                        next[idx] = { ...next[idx], componentProductId: v };
-                        setComponents(next);
-                      }}
-                    />
-                  </div>
-                  <div className="w-28">
-                    <Input
-                      type="number"
-                      step="0.0001"
-                      min="0.0001"
-                      placeholder={t('products.componentQuantity') ?? ''}
-                      value={c.quantity}
-                      onChange={(e) => {
-                        const next = [...components];
-                        next[idx] = { ...next[idx], quantity: e.target.value };
-                        setComponents(next);
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="text-red-600 hover:underline"
-                    onClick={() => setComponents(components.filter((_, i) => i !== idx))}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setComponents([...components, { componentProductId: '', quantity: '1' }])}
-              >
-                + {t('products.addComponent')}
-              </Button>
+              {!form.capacity && (
+                <p className="text-xs text-[var(--text-muted)]">{t('products.capacityRequiredForKit')}</p>
+              )}
+              <FormField label={t('products.indoorUnit')}>
+                <SearchableSelect
+                  value={indoorComponentId}
+                  options={indoorOptions}
+                  onChange={setIndoorComponentId}
+                />
+              </FormField>
+              <FormField label={t('products.outdoorUnit')}>
+                <SearchableSelect
+                  value={outdoorComponentId}
+                  options={outdoorOptions}
+                  onChange={setOutdoorComponentId}
+                />
+              </FormField>
             </div>
           )}
           <p className="col-span-2 text-xs text-[var(--text-muted)]">{t('fields.pricingViaReceiptHint')}</p>

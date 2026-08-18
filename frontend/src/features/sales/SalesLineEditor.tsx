@@ -6,7 +6,7 @@ import { formatAmount, roundTo } from '../../lib/number-format';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { SearchableSelect } from '../../components/ui/SearchableSelect';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep } from '../../lib/use-active-company';
 
 export type UnitKind = 'UNIT' | 'PACKAGE';
 
@@ -30,7 +30,9 @@ interface Product {
   nameEn: string;
   unitId: string;
   sellingPrice: number | null;
-  purchasePrice: number | null;
+  // Absent entirely (not just null) in the API response for a "مندوب" caller — see
+  // ProductsService.maybeStripCostFields. Must never be assumed present.
+  purchasePrice?: number | null;
   packageTypeId?: string | null;
   unitsPerPackage?: number | null;
   packagePurchasePrice?: number | null;
@@ -67,16 +69,23 @@ export function computeGrandTotal(lines: SalesLineForm[]): number {
   return linesToPayload(lines).reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
 }
 
-/** Suggested price and purchase cost for whichever unit (package or base unit) is selected. */
+/**
+ * Suggested price and purchase cost for whichever unit (package or base unit) is selected.
+ * `purchasePrice` deliberately resolves to `null` (never a number) whenever the cost fields are
+ * absent from the product object — which is always true for a "مندوب" caller, since the backend
+ * omits them entirely rather than sending null (see ProductsService.maybeStripCostFields). Callers
+ * must not render anything derived from a null purchasePrice for that role — see isSalesRep below,
+ * which additionally skips this whole cost/profit UI outright as a second, independent layer.
+ */
 function pricingFor(product: Product, unitKind: UnitKind): { suggestedPrice: number | null; purchasePrice: number | null } {
   if (unitKind === 'PACKAGE') {
     const unitsPerPackage = product.unitsPerPackage ?? 1;
     return {
-      suggestedPrice: product.packageSellingPrice ?? (product.sellingPrice !== null ? product.sellingPrice * unitsPerPackage : null),
-      purchasePrice: product.packagePurchasePrice ?? (product.purchasePrice !== null ? product.purchasePrice * unitsPerPackage : null),
+      suggestedPrice: product.packageSellingPrice ?? (product.sellingPrice != null ? product.sellingPrice * unitsPerPackage : null),
+      purchasePrice: product.packagePurchasePrice ?? (product.purchasePrice != null ? product.purchasePrice * unitsPerPackage : null),
     };
   }
-  return { suggestedPrice: product.sellingPrice, purchasePrice: product.purchasePrice };
+  return { suggestedPrice: product.sellingPrice, purchasePrice: product.purchasePrice ?? null };
 }
 
 export function SalesLineEditor({
@@ -101,6 +110,11 @@ export function SalesLineEditor({
   // ProductsService.findAllForCompany/findCatalogForCompany for how the two never mix. Every
   // other company keeps fetching the unfiltered raw-materials endpoint exactly as before.
   const { isPrintingPress } = useActiveCompany();
+  // A "مندوب" must never see purchase cost, margin, or a below-cost warning — the backend already
+  // omits the underlying fields from the API response (see ProductsService.maybeStripCostFields),
+  // this is the second, independent layer: even if pricing somehow resolved to a number, the UI
+  // itself never attempts to render it for this role.
+  const isSalesRep = useIsSalesRep();
   const productsQuery = useQuery({
     queryKey: isPrintingPress ? ['printing-products-catalog'] : ['products'],
     queryFn: () =>
@@ -227,7 +241,9 @@ export function SalesLineEditor({
                 const unitPrice = Number(line.unitPrice || 0);
                 const quantity = Number(line.quantity || 0);
                 const pricing = product ? pricingFor(product, line.unitKind) : null;
-                const profitPerUnit = pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
+                // Computed as null outright for a مندوب — never derived from pricing.purchasePrice
+                // for this role, regardless of what the API happened to send.
+                const profitPerUnit = !isSalesRep && pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
                 const belowCost = profitPerUnit !== null && profitPerUnit < 0;
 
                 return (
@@ -339,7 +355,9 @@ export function SalesLineEditor({
                 const unitPrice = Number(line.unitPrice || 0);
                 const quantity = Number(line.quantity || 0);
                 const pricing = product ? pricingFor(product, line.unitKind) : null;
-                const profitPerUnit = pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
+                // Computed as null outright for a مندوب — never derived from pricing.purchasePrice
+                // for this role, regardless of what the API happened to send.
+                const profitPerUnit = !isSalesRep && pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
                 const belowCost = profitPerUnit !== null && profitPerUnit < 0;
 
                 return (
@@ -458,7 +476,9 @@ export function SalesLineEditor({
         const unitPrice = Number(line.unitPrice || 0);
         const quantity = Number(line.quantity || 0);
         const pricing = product ? pricingFor(product, line.unitKind) : null;
-        const profitPerUnit = pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
+        // Computed as null outright for a مندوب — never derived from pricing.purchasePrice for
+        // this role, regardless of what the API happened to send.
+        const profitPerUnit = !isSalesRep && pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
         const belowCost = profitPerUnit !== null && profitPerUnit < 0;
 
         return (

@@ -17,6 +17,7 @@ import { PackageType } from '../../settings/entities/package-type.entity';
 import { ProductCategory } from '../../settings/entities/product-category.entity';
 import { Company } from '../../settings/entities/company.entity';
 import { ProductKitsService } from './product-kits.service';
+import { SalesRepAccessService } from '../../../common/services/sales-rep-access.service';
 
 interface PackagingFields {
   packageTypeId?: string | null;
@@ -35,6 +36,7 @@ export class ProductsService extends BaseCrudService<Product> {
     @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly productKitsService: ProductKitsService,
+    private readonly salesRepAccess: SalesRepAccessService,
   ) {
     super(repo);
   }
@@ -115,36 +117,57 @@ export class ProductsService extends BaseCrudService<Product> {
     return product;
   }
 
+  /** Strips purchase-cost/margin fields entirely from the response (not merely nulled — genuinely
+   * absent from the JSON) for a caller holding the "مندوب" role. Applied by every product-list
+   * method a مندوب can reach, directly or indirectly (e.g. via SalesLineEditor.tsx, the Sales
+   * Invoice line editor, which fetches full product records purely to price a sale) — a مندوب must
+   * never receive purchasePrice/packagePurchasePrice/averageCost/wholesalePrice, even in a raw API
+   * response they'd never render, matching the restriction findRepViewForCompany already enforces
+   * for the dedicated Products browsing screen. No-ops (skipping the extra DB lookup) when
+   * `userId` isn't supplied — every caller of these methods should pass it. */
+  private async maybeStripCostFields(products: Product[], userId?: string): Promise<Product[]> {
+    if (!userId) return products;
+    const isRep = await this.salesRepAccess.isCallerSalesRep(userId);
+    if (!isRep) return products;
+    return products.map((p) => {
+      const { purchasePrice, packagePurchasePrice, averageCost, wholesalePrice, ...rest } = p;
+      return rest as Product;
+    });
+  }
+
   /** Raw materials only — the Printing Press "المنتجات" catalog (ProductType.CATALOG_ITEM) has its
    * own separate list (findCatalogForCompany) and never appears here, for this or any company.
    * Eager-loads `components.componentProduct` — harmless empty array for every non-kit product,
    * needed by the Products screen to compute a kit's virtual available quantity client-side. */
-  findAllForCompany(companyId: string, search?: string): Promise<Product[]> {
-    return search?.trim()
+  async findAllForCompany(companyId: string, search?: string, userId?: string): Promise<Product[]> {
+    const products = await (search?.trim()
       ? this.search(companyId, search)
       : this.repo.find({
           where: { companyId, productType: ProductType.RAW_MATERIAL } as any,
           relations: ['components', 'components.componentProduct'],
           order: { createdAt: 'ASC' },
-        });
+        }));
+    return this.maybeStripCostFields(products, userId);
   }
 
   /** Printing Press "المنتجات" catalog only — every other company never has CATALOG_ITEM rows. */
-  findCatalogForCompany(companyId: string): Promise<Product[]> {
-    return this.repo.find({
+  async findCatalogForCompany(companyId: string, userId?: string): Promise<Product[]> {
+    const products = await this.repo.find({
       where: { companyId, productType: ProductType.CATALOG_ITEM } as any,
       order: { createdAt: 'ASC' },
     });
+    return this.maybeStripCostFields(products, userId);
   }
 
   /** Raw materials explicitly flagged "قابلة للبيع المباشر" — merged into the Printing Press sales
    * invoice/quotation item picker alongside catalog items (see SalesLineEditor). Every other
    * company simply never sets isSellable, so this always returns empty for them. */
-  findSellableRawMaterialsForCompany(companyId: string): Promise<Product[]> {
-    return this.repo.find({
+  async findSellableRawMaterialsForCompany(companyId: string, userId?: string): Promise<Product[]> {
+    const products = await this.repo.find({
       where: { companyId, productType: ProductType.RAW_MATERIAL, isSellable: true } as any,
       order: { createdAt: 'ASC' },
     });
+    return this.maybeStripCostFields(products, userId);
   }
 
   async createForCompany(dto: CreateProductDto, companyId: string): Promise<Product> {

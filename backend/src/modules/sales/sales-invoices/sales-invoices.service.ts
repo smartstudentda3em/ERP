@@ -21,6 +21,7 @@ import { CashMovementsService } from '../../treasury/cash-movements.service';
 import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 import { Product } from '../../inventory/products/entities/product.entity';
 import { Company } from '../../settings/entities/company.entity';
+import { Customer } from '../../parties/customers/entities/customer.entity';
 import { SalesRepAccessService } from '../../../common/services/sales-rep-access.service';
 import { User } from '../../users/entities/user.entity';
 import { UserCompany } from '../../users/entities/user-company.entity';
@@ -35,6 +36,7 @@ export class SalesInvoicesService {
     @InjectRepository(SalesInvoice) private readonly repo: Repository<SalesInvoice>,
     @InjectRepository(SalesPayment) private readonly paymentRepo: Repository<SalesPayment>,
     @InjectRepository(Company) private readonly companyRepo: Repository<Company>,
+    @InjectRepository(Customer) private readonly customerRepo: Repository<Customer>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(UserCompany) private readonly userCompanyRepo: Repository<UserCompany>,
     @InjectRepository(SalesRepresentative) private readonly salesRepRepo: Repository<SalesRepresentative>,
@@ -155,6 +157,13 @@ export class SalesInvoicesService {
     companyId: string,
     userPermissions: string[] = [],
   ): Promise<SalesInvoice> {
+    // A customerId belonging to another company must never be accepted — otherwise this invoice's
+    // balance/statement would silently pollute a customer record the caller has no business
+    // touching. 404s (not 400s) so a client can't distinguish "doesn't exist" from "exists in
+    // another company", matching the findOneScoped convention used everywhere else in this codebase.
+    const customer = await this.customerRepo.findOne({ where: { id: dto.customerId, companyId } });
+    if (!customer) throw new NotFoundException('Customer not found');
+
     // Non-admins can never attribute an invoice to anyone but themselves — the client-submitted
     // salesRepresentativeId/createdById is ignored outright for them. See SalesRepAccessService.
     const { salesRepresentativeId, createdById } = await this.salesRepAccess.resolveInvoiceOwner(
@@ -375,6 +384,12 @@ export class SalesInvoicesService {
   async update(id: string, dto: UpdateSalesInvoiceDto, callerId: string, companyId: string): Promise<SalesInvoice> {
     const invoice = await this.repo.findOne({ where: { id, companyId } });
     if (!invoice) throw new NotFoundException('Sales invoice not found');
+
+    // Same cross-company guard as create() — an edit must never be able to re-point an existing
+    // invoice at another company's customer.
+    const customer = await this.customerRepo.findOne({ where: { id: dto.customerId, companyId } });
+    if (!customer) throw new NotFoundException('Customer not found');
+
     const { salesRepresentativeId, createdById } = await this.salesRepAccess.resolveInvoiceOwner(
       callerId,
       { salesRepresentativeId: dto.salesRepresentativeId, createdById: dto.createdById },

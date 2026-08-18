@@ -50,19 +50,14 @@ export class UsersController {
 
   @Post()
   @Permissions('users.create')
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  create(@Body() dto: CreateUserDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.create(dto, user);
   }
 
   @Patch(':id')
   @Permissions('users.edit')
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateUserDto,
-    @CurrentUser('companyId') companyId: string,
-    @CurrentUser('userId') callerId: string,
-  ) {
-    return this.usersService.update(id, dto, companyId, callerId);
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.update(id, dto, user);
   }
 
   @Delete(':id')

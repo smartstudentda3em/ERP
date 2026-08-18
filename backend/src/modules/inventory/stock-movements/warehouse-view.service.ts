@@ -5,7 +5,7 @@ import { StockLevel } from './entities/stock-level.entity';
 import { StockMovement } from './entities/stock-movement.entity';
 import { Product } from '../products/entities/product.entity';
 import { Warehouse } from '../../settings/entities/warehouse.entity';
-import { PurchaseInvoiceLine } from '../../purchasing/entities/purchasing.entity';
+import { PurchaseReceipt } from './entities/purchase-receipt.entity';
 import { SalesInvoiceLine } from '../../sales/sales-invoices/entities/sales-invoice.entity';
 import { PaginatedResult } from '../../../common/dto/pagination-query.dto';
 import { WarehouseProductsQueryDto } from './dto/warehouse-view.dto';
@@ -45,8 +45,8 @@ export class WarehouseViewService {
     @InjectRepository(Product) private readonly productRepo: Repository<Product>,
     @InjectRepository(StockMovement) private readonly stockMovementRepo: Repository<StockMovement>,
     @InjectRepository(Warehouse) private readonly warehouseRepo: Repository<Warehouse>,
-    @InjectRepository(PurchaseInvoiceLine)
-    private readonly purchaseInvoiceLineRepo: Repository<PurchaseInvoiceLine>,
+    @InjectRepository(PurchaseReceipt)
+    private readonly purchaseReceiptRepo: Repository<PurchaseReceipt>,
     @InjectRepository(SalesInvoiceLine) private readonly salesInvoiceLineRepo: Repository<SalesInvoiceLine>,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
@@ -239,31 +239,27 @@ export class WarehouseViewService {
       take: 100,
     });
 
-    const purchaseLines = await this.purchaseInvoiceLineRepo
-      .createQueryBuilder('l')
-      .innerJoinAndSelect('l.invoice', 'inv')
-      .innerJoinAndSelect('inv.supplier', 'supplier')
-      .where('l."productId" = :productId', { productId })
-      .orderBy('inv."invoiceDate"', 'DESC')
-      .take(100)
-      .getMany();
+    const purchaseReceipts = await this.purchaseReceiptRepo.find({
+      where: { productId },
+      relations: ['supplier'],
+      order: { receiptDate: 'DESC' },
+      take: 100,
+    });
 
-    const salesLines = await this.salesInvoiceLineRepo
-      .createQueryBuilder('l')
-      .innerJoinAndSelect('l.invoice', 'inv')
-      .innerJoinAndSelect('inv.customer', 'customer')
-      .where('l."productId" = :productId', { productId })
-      .orderBy('inv."invoiceDate"', 'DESC')
-      .take(100)
-      .getMany();
+    const salesLines = await this.salesInvoiceLineRepo.find({
+      where: { productId },
+      relations: ['invoice', 'invoice.customer'],
+      order: { invoice: { invoiceDate: 'DESC' } },
+      take: 100,
+    });
 
-    const purchaseHistory = purchaseLines.map((l) => ({
-      documentNumber: l.invoice.documentNumber,
-      date: l.invoice.invoiceDate,
-      supplierName: l.invoice.supplier.companyName,
-      quantity: Number(l.quantity),
-      unitCost: Number(l.unitCost),
-      lineTotal: Number(l.lineTotal),
+    const purchaseHistory = purchaseReceipts.map((r) => ({
+      documentNumber: r.documentNumber,
+      date: r.receiptDate,
+      supplierName: r.supplier.companyName,
+      quantity: Number(r.totalUnits),
+      unitCost: Number(r.unitCost),
+      lineTotal: Number(r.totalAmount),
     }));
 
     const salesHistory = salesLines.map((l) => ({

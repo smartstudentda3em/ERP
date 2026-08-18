@@ -40,24 +40,6 @@ const PERMISSION_MATRIX: Record<string, PermissionAction[]> = {
     PermissionAction.EDIT,
     PermissionAction.DELETE,
   ],
-  'accounting.cost-center': [
-    PermissionAction.VIEW,
-    PermissionAction.CREATE,
-    PermissionAction.EDIT,
-    PermissionAction.DELETE,
-  ],
-  'accounting.project': [
-    PermissionAction.VIEW,
-    PermissionAction.CREATE,
-    PermissionAction.EDIT,
-    PermissionAction.DELETE,
-  ],
-  'accounting.budget': [
-    PermissionAction.VIEW,
-    PermissionAction.CREATE,
-    PermissionAction.EDIT,
-    PermissionAction.DELETE,
-  ],
   'security.audit-log': [PermissionAction.VIEW],
   dashboard: [PermissionAction.VIEW],
   // Split out from dashboard.view (which the Reports nav item/routes used to share) so a role can
@@ -89,15 +71,6 @@ const PERMISSION_MATRIX: Record<string, PermissionAction[]> = {
     PermissionAction.EDIT,
     PermissionAction.DELETE,
   ],
-  'purchasing.request': [PermissionAction.VIEW, PermissionAction.CREATE],
-  'purchasing.order': [
-    PermissionAction.VIEW,
-    PermissionAction.CREATE,
-    PermissionAction.EDIT,
-    PermissionAction.DELETE,
-  ],
-  'purchasing.invoice': [PermissionAction.VIEW, PermissionAction.CREATE],
-  'purchasing.payment': [PermissionAction.VIEW, PermissionAction.CREATE],
   'sales.quotation': [
     PermissionAction.VIEW,
     PermissionAction.CREATE,
@@ -201,13 +174,10 @@ const PERMISSION_MATRIX: Record<string, PermissionAction[]> = {
     PermissionAction.EDIT,
     PermissionAction.DELETE,
   ],
+  // Only VIEW/CREATE are ever checked (by the live cash-movements.controller.ts — treasury
+  // transfers and rep-treasury settlement), but EDIT/DELETE stay so the underlying permission
+  // rows exist if a future screen needs finer control; nothing currently gates on them.
   'treasury.cash-box': [
-    PermissionAction.VIEW,
-    PermissionAction.CREATE,
-    PermissionAction.EDIT,
-    PermissionAction.DELETE,
-  ],
-  'treasury.bank-account': [
     PermissionAction.VIEW,
     PermissionAction.CREATE,
     PermissionAction.EDIT,
@@ -800,7 +770,9 @@ async function main() {
         roles: [adminRole],
       });
       await userRepo.save(adminUser);
-      console.log(`Admin user created: ${adminEmail} / ${adminPassword}`);
+      // Never log a real password in plaintext — this script runs on every container start
+      // (docker-compose.yml), so it would otherwise re-print it into `docker logs` every restart.
+      console.log(`Admin user created: ${adminEmail}`);
     }
   } else {
     // Backfills the phone number on a browser/DB that already had the admin row seeded before this
@@ -817,10 +789,19 @@ async function main() {
   const statCompany = seededCompanies.find((c) => c.company.code === 'STAT') ?? defaultCompany;
   const userCompanyRepo = AppDataSource.getRepository(UserCompany);
   const extraManagerEmail = 'makroom204@gmail.com';
-  const extraManagerPassword = 'makroom204';
   const extraManagerPhone = process.env.SEED_MANAGER_PHONE || '99970704';
   let extraManagerUser = await userRepo.findOne({ where: { email: extraManagerEmail } });
   if (!extraManagerUser && isFreshDatabase) {
+    // No hardcoded fallback, deliberately — this account previously shipped with a fixed,
+    // publicly-known password in source. Only reached on a genuinely fresh database (never on an
+    // existing deployment, including this one), so requiring the env var here cannot break any
+    // already-seeded environment; it only forces a real password to be chosen on first-ever setup.
+    const extraManagerPassword = process.env.SEED_MANAGER204_PASSWORD;
+    if (!extraManagerPassword) {
+      throw new Error(
+        'SEED_MANAGER204_PASSWORD must be set to seed the extra Manager (makroom204@gmail.com) account on a fresh database — no default password is provided.',
+      );
+    }
     extraManagerUser = userRepo.create({
       email: extraManagerEmail,
       phone: extraManagerPhone,
@@ -831,7 +812,7 @@ async function main() {
       roles: [managerRole],
     });
     await userRepo.save(extraManagerUser);
-    console.log(`Manager user created: ${extraManagerEmail} / ${extraManagerPassword}`);
+    console.log(`Manager user created: ${extraManagerEmail}`);
   } else if (extraManagerUser) {
     // Already exists — only (re)apply the STAT-only restriction below, never touch their
     // email/password/name here (unlike the protected primary admin, this is a regular account

@@ -25,12 +25,6 @@ export class DashboardController {
     return this.service.getSalesChart(user.companyId!, user.userId, branchId, days ? Number(days) : undefined);
   }
 
-  @Get('charts/purchases')
-  @Permissions('dashboard.view')
-  purchaseChart(@CurrentUser('companyId') companyId: string, @Query('days') days?: string) {
-    return this.service.getPurchaseChart(companyId, days ? Number(days) : undefined);
-  }
-
   @Get('top-selling-products')
   @Permissions('dashboard.view')
   topSellingProducts(

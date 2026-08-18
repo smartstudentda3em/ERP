@@ -17,6 +17,7 @@ import { User } from '../users/entities/user.entity';
 import { UserCompany } from '../users/entities/user-company.entity';
 import { SalesRepresentative } from '../parties/entities/sales-representative.entity';
 import { CommissionException } from '../parties/entities/commission-exception.entity';
+import { Customer } from '../parties/customers/entities/customer.entity';
 
 import { QuotationsController } from './quotations/quotations.controller';
 import { QuotationsService } from './quotations/quotations.service';
@@ -49,6 +50,7 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
       UserCompany,
       SalesRepresentative,
       CommissionException,
+      Customer,
     ]),
     SettingsModule,
     TreasuryModule,

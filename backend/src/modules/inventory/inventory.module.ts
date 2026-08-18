@@ -12,7 +12,6 @@ import {
 import { StockAudit, StockAuditLine } from './stock-movements/entities/stock-audit.entity';
 import { StockTransfer, StockTransferLine } from './stock-movements/entities/stock-transfer.entity';
 import { PurchaseReceipt } from './stock-movements/entities/purchase-receipt.entity';
-import { PurchaseInvoiceLine } from '../purchasing/entities/purchasing.entity';
 import { SalesInvoiceLine } from '../sales/sales-invoices/entities/sales-invoice.entity';
 import { Unit } from '../settings/entities/unit.entity';
 import { PackageType } from '../settings/entities/package-type.entity';
@@ -33,10 +32,12 @@ import { PurchaseReceiptsController } from './stock-movements/purchase-receipts.
 import { PurchaseReceiptsService } from './stock-movements/purchase-receipts.service';
 import { ProductKitsService } from './products/product-kits.service';
 import { SupplierPayment } from '../parties/suppliers/entities/supplier-payment.entity';
+import { Supplier } from '../parties/suppliers/entities/supplier.entity';
 import { SupplierPaymentsController } from './supplier-payments/supplier-payments.controller';
 import { SupplierPaymentsService } from './supplier-payments/supplier-payments.service';
 import { SettingsModule } from '../settings/settings.module';
 import { TreasuryModule } from '../treasury/treasury.module';
+import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
 
 @Module({
   imports: [
@@ -53,9 +54,9 @@ import { TreasuryModule } from '../treasury/treasury.module';
       StockTransfer,
       StockTransferLine,
       PurchaseReceipt,
-      PurchaseInvoiceLine,
       SalesInvoiceLine,
       SupplierPayment,
+      Supplier,
       Unit,
       PackageType,
       ProductCategory,
@@ -63,6 +64,7 @@ import { TreasuryModule } from '../treasury/treasury.module';
     ]),
     SettingsModule,
     TreasuryModule,
+    SalesRepAccessModule,
   ],
   controllers: [
     ProductsController,

@@ -26,6 +26,16 @@ export class SalesRepAccessService {
     return user?.roles?.some((role) => role.isSystemRole) ?? false;
   }
 
+  /** True when the CALLER themselves (not some other rep's id) holds the "مندوب" role — used to
+   * decide whether purchase-cost/margin fields must be omitted from a product list response, since
+   * a مندوب must never receive that data at all, even in a raw API response they'd never render
+   * (see ProductsService.findAllForCompany/findCatalogForCompany/findSellableRawMaterialsForCompany,
+   * consumed directly by the Sales Invoice line editor). */
+  async isCallerSalesRep(userId: string): Promise<boolean> {
+    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['roles'] });
+    return user?.roles?.some((r) => r.name === SALES_REP_ROLE_NAME) ?? false;
+  }
+
   /** True when `salesRepresentativeId` is linked to a "مندوب" (field sales agent) login account —
    * shared by SalesInvoicesService (an invoice's own paid amount) and SalesPaymentsService (a
    * follow-up receipt) to decide whether a payment routes into that rep's own

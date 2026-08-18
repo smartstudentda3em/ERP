@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import * as argon2 from 'argon2';
 import { DataSource, In, Repository } from 'typeorm';
@@ -23,6 +23,7 @@ import { SalesInvoicesService } from '../sales/sales-invoices/sales-invoices.ser
 import { PurchaseReceiptsService } from '../inventory/stock-movements/purchase-receipts.service';
 import { StockAuditsService } from '../inventory/stock-movements/stock-audits.service';
 import { PayrollService } from '../hr/payroll.service';
+import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 /** The one permanent, unmodifiable Administrator account — kept in sync with the seed default in run-seed.ts. */
 const PROTECTED_ADMIN_EMAIL = 'aymanmakroum83@gmail.com';
@@ -83,6 +84,19 @@ export class UsersService {
     const restricted = roles.find((r) => r.restrictedCompanyId);
     if (!restricted) return companyIds;
     return [restricted.restrictedCompanyId!];
+  }
+
+  /** A non-Administrator caller (`allCompanies === false`) may only ever grant a new/edited user
+   * access to companies the caller themselves can already reach — otherwise a Manager-scoped role
+   * that is one day handed `users.create`/`users.edit` could hand out access to a company it has
+   * no business touching, just by typing an arbitrary UUID into the request body. A true
+   * Administrator is exempt since they can already reach every company by definition. */
+  private assertCompanyGrantAllowed(caller: AuthenticatedUser, requested: string[] | undefined | null): void {
+    if (caller.allCompanies || !requested?.length) return;
+    const disallowed = requested.filter((id) => !caller.companyIds.includes(id));
+    if (disallowed.length) {
+      throw new ForbiddenException('Cannot grant access to a company outside your own');
+    }
   }
 
   /**
@@ -317,7 +331,7 @@ export class UsersService {
     return this.stripPasswordHash(savedUser);
   }
 
-  async create(dto: CreateUserDto): Promise<User> {
+  async create(dto: CreateUserDto, caller: AuthenticatedUser): Promise<User> {
     // Trimmed at the point of writing so a stored phone/password is always the canonical value
     // login() (which trims the same way) will actually be looking/verifying for — an accidental
     // leading/trailing space typed into either field here must never make the account unloginable.
@@ -331,6 +345,9 @@ export class UsersService {
       const existingEmail = await this.userRepo.findOne({ where: { email: dto.email.toLowerCase() } });
       if (existingEmail) throw new ConflictException('Email already in use');
     }
+
+    this.assertCompanyGrantAllowed(caller, dto.companyId ? [dto.companyId] : undefined);
+    this.assertCompanyGrantAllowed(caller, dto.companyIds);
 
     const roles = dto.roleIds?.length
       ? await this.roleRepo.find({ where: { id: In(dto.roleIds) } })
@@ -369,11 +386,17 @@ export class UsersService {
     return this.stripPasswordHash(savedUser);
   }
 
-  async update(id: string, dto: UpdateUserDto, companyId: string, callerId: string): Promise<User> {
-    const user = await this.findOneScoped(id, companyId, callerId);
+  async update(id: string, dto: UpdateUserDto, caller: AuthenticatedUser): Promise<User> {
+    // Every caller reaching this admin-only route is already authenticated with a real company on
+    // their token (login itself requires one) — the `| null` on AuthenticatedUser.companyId only
+    // covers a theoretical pre-company state, not a real case here.
+    const user = await this.findOneScoped(id, caller.companyId!, caller.userId);
     if (user.email?.toLowerCase() === PROTECTED_ADMIN_EMAIL) {
       throw new BadRequestException('The primary system administrator account cannot be edited');
     }
+
+    this.assertCompanyGrantAllowed(caller, dto.companyId ? [dto.companyId] : undefined);
+    this.assertCompanyGrantAllowed(caller, dto.companyIds);
 
     if (dto.email && dto.email.toLowerCase() !== user.email?.toLowerCase()) {
       const existing = await this.userRepo.findOne({ where: { email: dto.email.toLowerCase() } });

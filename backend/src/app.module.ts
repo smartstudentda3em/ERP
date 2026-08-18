@@ -18,11 +18,9 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { SettingsModule } from './modules/settings/settings.module';
-import { AccountingModule } from './modules/accounting/accounting.module';
 import { PartiesModule } from './modules/parties/parties.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { SalesModule } from './modules/sales/sales.module';
-import { PurchasingModule } from './modules/purchasing/purchasing.module';
 import { TreasuryModule } from './modules/treasury/treasury.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -56,11 +54,9 @@ import { BackupsModule } from './modules/backups/backups.module';
     UsersModule,
     AuditLogModule,
     SettingsModule,
-    AccountingModule,
     PartiesModule,
     InventoryModule,
     SalesModule,
-    PurchasingModule,
     TreasuryModule,
     DashboardModule,
     NotificationsModule,

@@ -1,14 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CashBox, BankAccount, CashTransaction, Transfer } from './entities/treasury.entity';
 import { CashMovement } from './entities/cash-movement.entity';
 import { RecurringExpense } from './entities/recurring-expense.entity';
-import {
-  CashBoxesController,
-  CashBoxesService,
-  BankAccountsController,
-  BankAccountsService,
-} from './treasury.controller';
 import { CashMovementsService } from './cash-movements.service';
 import { CashMovementsController } from './cash-movements.controller';
 import { RecurringExpensesController, RecurringExpensesService } from './recurring-expenses.controller';
@@ -21,10 +14,6 @@ import { SalesRepresentative } from '../parties/entities/sales-representative.en
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      CashBox,
-      BankAccount,
-      CashTransaction,
-      Transfer,
       CashMovement,
       RecurringExpense,
       Partner,
@@ -34,13 +23,11 @@ import { SalesRepresentative } from '../parties/entities/sales-representative.en
     SettingsModule,
   ],
   controllers: [
-    CashBoxesController,
-    BankAccountsController,
     CashMovementsController,
     RecurringExpensesController,
     PartnersTreasuryController,
   ],
-  providers: [CashBoxesService, BankAccountsService, CashMovementsService, RecurringExpensesService],
+  providers: [CashMovementsService, RecurringExpensesService],
   exports: [TypeOrmModule, CashMovementsService],
 })
 export class TreasuryModule {}

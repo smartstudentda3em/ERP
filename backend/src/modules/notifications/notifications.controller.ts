@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('Notifications')
@@ -10,7 +11,7 @@ export class NotificationsController {
 
   @Get()
   @Permissions('notifications.view')
-  list() {
-    return this.service.list();
+  list(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.list(user);
   }
 }

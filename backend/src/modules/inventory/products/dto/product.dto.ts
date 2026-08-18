@@ -40,8 +40,6 @@ export class CreateProductDto {
   @IsOptional() @IsBoolean() isSellable?: boolean;
   /** AC (Air Conditioning) company only — see Product.isKit. */
   @IsOptional() @IsBoolean() isKit?: boolean;
-  /** AC (Air Conditioning) company only — see Product.capacity. */
-  @IsOptional() @IsString() capacity?: string;
   /** AC (Air Conditioning) company only — see Product.acPartRole. */
   @IsOptional() @IsEnum(AcPartRole) acPartRole?: AcPartRole;
   @IsOptional()

@@ -44,7 +44,6 @@ interface Product {
   isActive: boolean;
   isSellable?: boolean;
   isKit?: boolean;
-  capacity?: string | null;
   acPartRole?: 'INDOOR_UNIT' | 'OUTDOOR_UNIT' | null;
   components?: ProductComponent[];
 }
@@ -124,7 +123,6 @@ const emptyForm = {
   isSellable: false,
   sellingPrice: '',
   isKit: false,
-  capacity: '',
   acPartRole: '',
 };
 
@@ -417,24 +415,31 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     );
   }
 
-  // Air Conditioning company only — the indoor/outdoor pickers only ever offer real parts tagged
-  // with the matching acPartRole AND the exact same capacity as the kit being edited, so a
-  // "1.5hp" kit can never accidentally be wired to a "2hp" (or unrelated model's) part. Until a
-  // capacity is typed in, both lists stay empty rather than showing every part in the catalog.
+  // Air Conditioning company only — the indoor/outdoor pickers offer every real part tagged with
+  // the matching acPartRole; matching a kit to the right model/capacity relies on clear naming
+  // (e.g. "1.5 حصان" in the name/SKU) rather than a separate machine-checked field.
   const indoorOptions = useMemo(
     () =>
       (productsQuery.data ?? [])
-        .filter((p) => p.acPartRole === 'INDOOR_UNIT' && p.id !== editingId && !!form.capacity && p.capacity === form.capacity)
+        .filter((p) => p.acPartRole === 'INDOOR_UNIT' && p.id !== editingId)
         .map((p) => ({ value: p.id, label: p.nameEn })),
-    [productsQuery.data, editingId, form.capacity],
+    [productsQuery.data, editingId],
   );
   const outdoorOptions = useMemo(
     () =>
       (productsQuery.data ?? [])
-        .filter((p) => p.acPartRole === 'OUTDOOR_UNIT' && p.id !== editingId && !!form.capacity && p.capacity === form.capacity)
+        .filter((p) => p.acPartRole === 'OUTDOOR_UNIT' && p.id !== editingId)
         .map((p) => ({ value: p.id, label: p.nameEn })),
-    [productsQuery.data, editingId, form.capacity],
+    [productsQuery.data, editingId],
   );
+
+  // Drives the single unified "نوع صنف التكييف" selector from the underlying isKit/acPartRole
+  // state, so the form only shows one control instead of a checkbox plus a second dropdown.
+  function acUnitTypeValue(isKit: boolean, acPartRole: string): string {
+    if (isKit) return 'KIT';
+    if (acPartRole === 'INDOOR_UNIT' || acPartRole === 'OUTDOOR_UNIT') return acPartRole;
+    return '';
+  }
 
   // Printing Press only — narrows the table (and everything derived from it below) to just
   // item name / category / brand matches, deliberately excluding SKU/barcode which this tenant's
@@ -483,7 +488,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     if (!isAirConditioning) return {};
     return {
       isKit: form.isKit,
-      capacity: form.capacity || null,
       acPartRole: form.isKit ? null : form.acPartRole || null,
       components:
         form.isKit && indoorComponentId && outdoorComponentId
@@ -592,7 +596,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       isSellable: product.isSellable ?? false,
       sellingPrice: product.sellingPrice != null ? String(product.sellingPrice) : '',
       isKit: product.isKit ?? false,
-      capacity: product.capacity ?? '',
       acPartRole: product.acPartRole ?? '',
     });
     // Match each saved component back to its indoor/outdoor slot by the underlying product's own
@@ -1096,33 +1099,18 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
           )}
           {isAirConditioning && (
             <div className="col-span-2">
-              <FormField label={t('products.capacity')}>
-                <Input
-                  placeholder={t('products.capacityPlaceholder') ?? ''}
-                  value={form.capacity}
-                  onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-                />
-              </FormField>
-            </div>
-          )}
-          {isAirConditioning && (
-            <label className="col-span-2 flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.isKit}
-                onChange={(e) => setForm({ ...form, isKit: e.target.checked, acPartRole: '' })}
-              />
-              {t('products.isKit')}
-            </label>
-          )}
-          {isAirConditioning && !form.isKit && (
-            <div className="col-span-2">
-              <FormField label={t('products.acPartRole')}>
+              <FormField label={t('products.acUnitType')}>
                 <Select
-                  value={form.acPartRole}
-                  onChange={(e) => setForm({ ...form, acPartRole: e.target.value })}
+                  value={acUnitTypeValue(form.isKit, form.acPartRole)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === 'KIT') setForm({ ...form, isKit: true, acPartRole: '' });
+                    else if (v === 'INDOOR_UNIT' || v === 'OUTDOOR_UNIT') setForm({ ...form, isKit: false, acPartRole: v });
+                    else setForm({ ...form, isKit: false, acPartRole: '' });
+                  }}
                 >
                   <option value="">{t('products.acPartRoleNone')}</option>
+                  <option value="KIT">{t('products.isKit')}</option>
                   <option value="INDOOR_UNIT">{t('products.indoorUnit')}</option>
                   <option value="OUTDOOR_UNIT">{t('products.outdoorUnit')}</option>
                 </Select>
@@ -1132,9 +1120,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
           {isAirConditioning && form.isKit && (
             <div className="col-span-2 space-y-2 rounded-lg border border-[var(--border)] p-3">
               <div className="text-sm font-medium">{t('products.components')}</div>
-              {!form.capacity && (
-                <p className="text-xs text-[var(--text-muted)]">{t('products.capacityRequiredForKit')}</p>
-              )}
               <FormField label={t('products.indoorUnit')}>
                 <SearchableSelect
                   value={indoorComponentId}

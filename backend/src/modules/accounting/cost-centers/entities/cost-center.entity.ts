@@ -37,10 +37,10 @@ export class Project extends BaseEntity {
   name: string;
 
   @Column({ type: "date", nullable: true })
-  startDate: string | null;
+  startDate: string;
 
   @Column({ type: "date", nullable: true })
-  endDate: string | null;
+  endDate: string;
 
   @Column({ type: "numeric", precision: 18, scale: 4, default: 0 })
   budgetAmount: number;
@@ -58,7 +58,7 @@ export class Budget extends BaseEntity {
   accountId: string;
 
   @Column("uuid", { nullable: true })
-  costCenterId: string | null;
+  costCenterId: string;
 
   @Column({
     type: "varchar",

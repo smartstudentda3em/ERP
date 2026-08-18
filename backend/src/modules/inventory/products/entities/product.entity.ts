@@ -22,7 +22,7 @@ export class Product extends BaseEntity {
   company: Company;
 
   @Column({ type: "varchar", length: 100, nullable: true })
-  sku: string | null;
+  sku: string;
 
   @Column({
     type: "varchar",
@@ -49,7 +49,7 @@ export class Product extends BaseEntity {
   /** Indexed — Postgres doesn't auto-index FK columns, and the search bar joins through this to match by category name. */
   @Index()
   @Column("uuid", { nullable: true })
-  categoryId: string | null;
+  categoryId: string;
 
   @ManyToOne(() => ProductCategory, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "categoryId" })
@@ -58,7 +58,7 @@ export class Product extends BaseEntity {
   /** Indexed — same reasoning as categoryId, for the search bar's brand-name join. */
   @Index()
   @Column("uuid", { nullable: true })
-  brandId: string | null;
+  brandId: string;
 
   @ManyToOne(() => Brand, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "brandId" })
@@ -89,11 +89,11 @@ export class Product extends BaseEntity {
    * product's first receipt.
    */
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  packagePurchasePrice: number | null;
+  packagePurchasePrice: number;
 
   /** Suggested selling price for the whole package — set/refreshed by Purchase Receipts, editable independently of the unit selling price. */
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  packageSellingPrice: number | null;
+  packageSellingPrice: number;
 
   /**
    * Purchase price per base unit — always auto-derived (packagePurchasePrice / unitsPerPackage)
@@ -104,13 +104,13 @@ export class Product extends BaseEntity {
 
   /** Suggested selling price per base unit — set/refreshed by Purchase Receipts, editable independently of the package selling price. */
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  sellingPrice: number | null;
+  sellingPrice: number;
 
   @Column({ type: "numeric", precision: 18, scale: 4, default: 0 })
   wholesalePrice: number;
 
   @Column("uuid", { nullable: true })
-  taxId: string | null;
+  taxId: string;
 
   @ManyToOne(() => Tax, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "taxId" })
@@ -126,7 +126,7 @@ export class Product extends BaseEntity {
   minimumQuantity: number;
 
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  maximumQuantity: number | null;
+  maximumQuantity: number;
 
   @Column({
     type: "varchar",
@@ -154,7 +154,7 @@ export class Product extends BaseEntity {
   tracksSerial: boolean;
 
   @Column({ type: "numeric", precision: 10, scale: 3, nullable: true })
-  weight: number | null;
+  weight: number;
 
   @Column({
     type: "varchar",

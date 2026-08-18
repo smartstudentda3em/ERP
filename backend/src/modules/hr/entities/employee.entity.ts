@@ -43,14 +43,14 @@ export class Employee extends BaseEntity {
     length: 30,
     nullable: true,
   })
-  phone: string | null;
+  phone: string;
 
   @Column({
     type: "varchar",
     length: 150,
     nullable: true,
   })
-  email: string | null;
+  email: string;
 
   @Column({ type: "numeric", precision: 18, scale: 4 })
   baseSalary: number;
@@ -66,7 +66,7 @@ export class Employee extends BaseEntity {
    * same way SalesRepresentative.userId is auto-linked. Lets a logged-in branch manager's own
    * payroll data be resolved server-side from their JWT instead of a client-supplied id. */
   @Column("uuid", { nullable: true })
-  userId: string | null;
+  userId: string;
 
   @ManyToOne(() => User, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "userId" })
@@ -79,7 +79,7 @@ export class Employee extends BaseEntity {
    * out this employee's own payroll/leave history, just detach the link (syncEmployeeForRep also
    * deactivates the row explicitly before the rep is removed, for the same reason). */
   @Column("uuid", { nullable: true })
-  salesRepresentativeId: string | null;
+  salesRepresentativeId: string;
 
   @ManyToOne(() => SalesRepresentative, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "salesRepresentativeId" })

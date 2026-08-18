@@ -32,10 +32,10 @@ export class PackageType extends BaseEntity {
 
   /** Optional short abbreviation (e.g. CTN, PKT). */
   @Column({ type: "varchar", length: 20, nullable: true })
-  code: string | null;
+  code: string;
 
   @Column({ type: "text", nullable: true })
-  notes: string | null;
+  notes: string;
 
   // Every package type belongs to exactly one product category — drives the dependent package
   // dropdown on the product create/edit forms, same pattern as Brand.categoryId.

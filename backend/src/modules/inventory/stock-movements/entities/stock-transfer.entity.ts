@@ -49,7 +49,7 @@ export class StockTransfer extends BaseEntity {
   status: DocumentStatus;
 
   @Column({ type: "text", nullable: true })
-  notes: string | null;
+  notes: string;
 
   @Column("uuid")
   createdById: string;

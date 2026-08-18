@@ -176,7 +176,7 @@ export class PurchaseInvoice extends BaseEntity {
   amountPaid: number;
 
   @Column("uuid", { nullable: true })
-  journalEntryId: string | null;
+  journalEntryId: string;
 
   @Column("uuid")
   createdById: string;
@@ -231,7 +231,7 @@ export class PurchasePayment extends BaseEntity {
   supplier: Supplier;
 
   @Column("uuid", { nullable: true })
-  invoiceId: string | null;
+  invoiceId: string;
 
   @ManyToOne(() => PurchaseInvoice, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "invoiceId" })
@@ -241,7 +241,7 @@ export class PurchasePayment extends BaseEntity {
   amount: number;
 
   @Column("uuid", { nullable: true })
-  journalEntryId: string | null;
+  journalEntryId: string;
 
   @Column("uuid")
   createdById: string;

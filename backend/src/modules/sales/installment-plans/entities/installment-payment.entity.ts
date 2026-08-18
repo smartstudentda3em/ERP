@@ -26,7 +26,7 @@ export class InstallmentPayment extends BaseEntity {
   installmentPlan: InstallmentPlan;
 
   @Column("uuid", { nullable: true })
-  scheduleItemId: string | null;
+  scheduleItemId: string;
 
   @ManyToOne(() => InstallmentScheduleItem, {
     nullable: true,
@@ -62,7 +62,7 @@ export class InstallmentPayment extends BaseEntity {
   method: PaymentMethod;
 
   @Column("uuid", { nullable: true })
-  cashMovementId: string | null;
+  cashMovementId: string;
 
   @Column("uuid")
   companyId: string;

@@ -26,14 +26,14 @@ export class CommissionException extends BaseEntity {
   salesRepresentative: SalesRepresentative;
 
   @Column("uuid", { nullable: true })
-  productId: string | null;
+  productId: string;
 
   @ManyToOne(() => Product, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "productId" })
   product: Product | null;
 
   @Column("uuid", { nullable: true })
-  categoryId: string | null;
+  categoryId: string;
 
   @ManyToOne(() => ProductCategory, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "categoryId" })

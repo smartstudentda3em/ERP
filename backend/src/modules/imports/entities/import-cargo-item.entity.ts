@@ -38,7 +38,7 @@ export class ImportCargoItem extends BaseEntity {
   /** Snapshot of the selected supplier's currency at the time this line was recorded — set
    * server-side from Supplier.currencyId, never trusted from the client. */
   @Column("uuid", { nullable: true })
-  currencyId: string | null;
+  currencyId: string;
 
   @ManyToOne(() => Currency, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "currencyId" })
@@ -54,14 +54,14 @@ export class ImportCargoItem extends BaseEntity {
    * user choice (like conversionRate), not a fact derived elsewhere, so it's trusted from the
    * client rather than server-derived the way currencyId is. */
   @Column("uuid", { nullable: true })
-  localCurrencyId: string | null;
+  localCurrencyId: string;
 
   @ManyToOne(() => Currency, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "localCurrencyId" })
   localCurrency: Currency | null;
 
   @Column({ type: "text", nullable: true })
-  specifications: string | null;
+  specifications: string;
 
   @Column({ type: "date" })
   orderDate: string;
@@ -81,7 +81,7 @@ export class ImportCargoItem extends BaseEntity {
   shipment: Shipment;
 
   @Column({ type: "text", nullable: true })
-  notes: string | null;
+  notes: string;
 
   @Column("uuid")
   companyId: string;

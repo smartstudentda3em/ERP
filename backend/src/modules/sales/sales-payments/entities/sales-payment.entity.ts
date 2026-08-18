@@ -19,7 +19,7 @@ export class SalesPayment extends BaseEntity {
 
   /** Nullable — Printing Press receipts (see CreateSalesPaymentDto) never carry a customer. */
   @Column("uuid", { nullable: true })
-  customerId: string | null;
+  customerId: string;
 
   @ManyToOne(() => Customer, { nullable: true, onDelete: "RESTRICT" })
   @JoinColumn({ name: "customerId" })
@@ -29,17 +29,17 @@ export class SalesPayment extends BaseEntity {
   companyId: string;
 
   @Column("uuid", { nullable: true })
-  branchId: string | null;
+  branchId: string;
 
   @Column("uuid", { nullable: true })
-  invoiceId: string | null;
+  invoiceId: string;
 
   @ManyToOne(() => SalesInvoice, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "invoiceId" })
   invoice: SalesInvoice | null;
 
   @Column("uuid", { nullable: true })
-  salesRepresentativeId: string | null;
+  salesRepresentativeId: string;
 
   @ManyToOne(() => SalesRepresentative, {
     nullable: true,
@@ -61,19 +61,19 @@ export class SalesPayment extends BaseEntity {
   amount: number;
 
   @Column("uuid", { nullable: true })
-  cashBoxId: string | null;
+  cashBoxId: string;
 
   @Column("uuid", { nullable: true })
-  bankAccountId: string | null;
+  bankAccountId: string;
 
   @Column({ type: "varchar", length: 100, nullable: true })
-  referenceNumber: string | null;
+  referenceNumber: string;
 
   @Column("uuid", { nullable: true })
-  cashMovementId: string | null;
+  cashMovementId: string;
 
   @Column({ type: "text", nullable: true })
-  notes: string | null;
+  notes: string;
 
   @Column("uuid")
   createdById: string;

@@ -54,5 +54,5 @@ export class NumberingSeries extends BaseEntity {
 
   /** Period key ('2026' for yearly, '2026-07' for monthly) the counter was last reset for — lets getNextNumber() detect a rollover. */
   @Column({ type: "varchar", length: 10, nullable: true })
-  lastResetKey: string | null;
+  lastResetKey: string;
 }

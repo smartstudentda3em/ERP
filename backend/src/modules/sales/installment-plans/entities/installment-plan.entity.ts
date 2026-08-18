@@ -35,7 +35,7 @@ export class InstallmentPlan extends BaseEntity {
   company: Company;
 
   @Column("uuid", { nullable: true })
-  branchId: string | null;
+  branchId: string;
 
   @ManyToOne(() => Branch, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "branchId" })
@@ -90,13 +90,13 @@ export class InstallmentPlan extends BaseEntity {
   status: InstallmentPlanStatus;
 
   @Column({ type: "timestamptz", nullable: true })
-  settledAt: Date | null;
+  settledAt: Date;
 
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  settlementDiscountAmount: number | null;
+  settlementDiscountAmount: number;
 
   @Column({ type: "text", nullable: true })
-  settlementNotes: string | null;
+  settlementNotes: string;
 
   @Column("uuid")
   createdById: string;

@@ -24,7 +24,7 @@ export class ShipmentExpense extends BaseEntity {
   amount: number;
 
   @Column({ type: "text", nullable: true })
-  description: string | null;
+  description: string;
 
   @Column("uuid")
   createdById: string;

@@ -20,7 +20,7 @@ export class Quotation extends BaseEntity {
   quotationDate: string;
 
   @Column({ type: "date", nullable: true })
-  validUntil: string | null;
+  validUntil: string;
 
   @Column("uuid")
   customerId: string;
@@ -37,14 +37,14 @@ export class Quotation extends BaseEntity {
   company: Company;
 
   @Column("uuid", { nullable: true })
-  branchId: string | null;
+  branchId: string;
 
   @ManyToOne(() => Branch, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "branchId" })
   branch: Branch | null;
 
   @Column("uuid", { nullable: true })
-  salesRepresentativeId: string | null;
+  salesRepresentativeId: string;
 
   @ManyToOne(() => SalesRepresentative, {
     nullable: true,
@@ -67,7 +67,7 @@ export class Quotation extends BaseEntity {
   grandTotal: number;
 
   @Column({ type: "text", nullable: true })
-  notes: string | null;
+  notes: string;
 
   @Column("uuid")
   createdById: string;

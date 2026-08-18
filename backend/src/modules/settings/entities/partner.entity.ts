@@ -42,7 +42,7 @@ export class Partner extends BaseEntity {
    * caps and dividend math group strictly by this column.
    */
   @Column('uuid', { nullable: true })
-  branchId: string | null;
+  branchId: string;
 
   @ManyToOne(() => Branch, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'branchId' })

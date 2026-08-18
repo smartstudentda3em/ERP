@@ -38,5 +38,5 @@ export class StockLevel extends BaseEntity {
   averageCost: number;
 
   @Column({ type: "varchar", length: 50, nullable: true })
-  location: string | null;
+  location: string;
 }

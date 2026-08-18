@@ -51,7 +51,7 @@ export class Warehouse extends BaseEntity {
   company: Company;
 
   @Column("uuid", { nullable: true })
-  branchId: string | null;
+  branchId: string;
 
   @ManyToOne(() => Branch, { onDelete: "SET NULL", nullable: true })
   @JoinColumn({ name: "branchId" })

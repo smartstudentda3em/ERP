@@ -26,11 +26,11 @@ export class SupplierPayment extends BaseEntity {
   companyId: string;
 
   @Column("uuid", { nullable: true })
-  branchId: string | null;
+  branchId: string;
 
   /** Optional link to the specific receipt this payment settles — omitted for a general payment on account. */
   @Column("uuid", { nullable: true })
-  purchaseReceiptId: string | null;
+  purchaseReceiptId: string;
 
   @Column({ type: "enum", enum: PaymentMethod })
   method: PaymentMethod;
@@ -39,13 +39,13 @@ export class SupplierPayment extends BaseEntity {
   amount: number;
 
   @Column({ type: "varchar", length: 100, nullable: true })
-  referenceNumber: string | null;
+  referenceNumber: string;
 
   @Column("uuid", { nullable: true })
-  cashMovementId: string | null;
+  cashMovementId: string;
 
   @Column({ type: "text", nullable: true })
-  notes: string | null;
+  notes: string;
 
   @Column("uuid")
   createdById: string;

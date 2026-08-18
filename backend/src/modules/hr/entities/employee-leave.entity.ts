@@ -36,7 +36,7 @@ export class EmployeeLeave extends BaseEntity {
   type: LeaveType;
 
   @Column({ type: "text", nullable: true })
-  notes: string | null;
+  notes: string;
 
   @Column("uuid")
   createdById: string;

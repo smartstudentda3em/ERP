@@ -21,18 +21,18 @@ export class WhatsAppOutboxMessage extends BaseEntity {
   recipientLabel: string;
 
   @Column({ type: "varchar", length: 30, nullable: true })
-  recipientPhone: string | null;
+  recipientPhone: string;
 
   @Column({ type: "text" })
   content: string;
 
   @Column("uuid", { nullable: true })
-  relatedInstallmentPlanId: string | null;
+  relatedInstallmentPlanId: string;
 
   /** Used only for the daily reminder cron's idempotency check (skip if a CUSTOMER_REMINDER
    * already exists today for this schedule item) — not a relation, just a dedup key. */
   @Column("uuid", { nullable: true })
-  relatedScheduleItemId: string | null;
+  relatedScheduleItemId: string;
 
   @Column({
     type: "varchar",

@@ -255,6 +255,11 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   // one outdoor unit, so these are two fixed slots rather than a free-form list.
   const [indoorComponentId, setIndoorComponentId] = useState('');
   const [outdoorComponentId, setOutdoorComponentId] = useState('');
+  // Air Conditioning company only — lets the user create a new indoor/outdoor part directly from
+  // the kit form (typing a name + "إضافة") instead of having to leave and create it separately
+  // first. The new part inherits the kit's own category/unit/package so it doesn't need its own form.
+  const [newIndoorName, setNewIndoorName] = useState('');
+  const [newOutdoorName, setNewOutdoorName] = useState('');
   const [breakdownProduct, setBreakdownProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState('');
   // Printing Press only — everything below drives its "من تاريخ/إلى تاريخ" filter, summary cards,
@@ -523,6 +528,8 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       setForm(emptyForm);
       setIndoorComponentId('');
       setOutdoorComponentId('');
+      setNewIndoorName('');
+      setNewOutdoorName('');
       toast.success(t('common.addedSuccessfully'));
     },
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
@@ -553,6 +560,8 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       setForm(emptyForm);
       setIndoorComponentId('');
       setOutdoorComponentId('');
+      setNewIndoorName('');
+      setNewOutdoorName('');
       toast.success(t('common.savedSuccessfully'));
     },
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
@@ -562,6 +571,37 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     mutationFn: (id: string) => apiClient.delete(`/inventory/products/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
+  });
+
+  // Air Conditioning company only — lets the user type a new indoor/outdoor part's name and
+  // create+link it in one step, instead of leaving the kit form to create it separately first.
+  // Inherits the kit's own category/unit/package so the new part needs no form of its own.
+  const createComponentMutation = useMutation({
+    mutationFn: (input: { name: string; role: 'INDOOR_UNIT' | 'OUTDOOR_UNIT' }) =>
+      unwrap<Product>(
+        apiClient.post('/inventory/products', {
+          nameEn: input.name,
+          nameAr: input.name,
+          categoryId: form.categoryId,
+          unitId: form.unitId,
+          packageTypeId: form.packageTypeId,
+          unitsPerPackage: Number(form.unitsPerPackage) || 1,
+          isKit: false,
+          acPartRole: input.role,
+        }),
+      ),
+    onSuccess: (created, input) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      if (input.role === 'INDOOR_UNIT') {
+        setIndoorComponentId(created.id);
+        setNewIndoorName('');
+      } else {
+        setOutdoorComponentId(created.id);
+        setNewOutdoorName('');
+      }
+      toast.success(t('common.addedSuccessfully'));
     },
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
   });
@@ -577,6 +617,8 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     setForm(emptyForm);
     setIndoorComponentId('');
     setOutdoorComponentId('');
+    setNewIndoorName('');
+    setNewOutdoorName('');
     setModalOpen(true);
   }
 
@@ -610,6 +652,8 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     );
     setIndoorComponentId(savedIndoor?.componentProductId ?? '');
     setOutdoorComponentId(savedOutdoor?.componentProductId ?? '');
+    setNewIndoorName('');
+    setNewOutdoorName('');
     setModalOpen(true);
   }
 
@@ -1118,7 +1162,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
             </div>
           )}
           {isAirConditioning && form.isKit && (
-            <div className="col-span-2 space-y-2 rounded-lg border border-[var(--border)] p-3">
+            <div className="col-span-2 space-y-3 rounded-lg border border-[var(--border)] p-3">
               <div className="text-sm font-medium">{t('products.components')}</div>
               <FormField label={t('products.indoorUnit')}>
                 <SearchableSelect
@@ -1127,6 +1171,23 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
                   onChange={setIndoorComponentId}
                 />
               </FormField>
+              {form.categoryId && form.unitId && form.packageTypeId && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder={t('products.newIndoorUnitPlaceholder') ?? ''}
+                    value={newIndoorName}
+                    onChange={(e) => setNewIndoorName(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!newIndoorName.trim() || createComponentMutation.isPending}
+                    onClick={() => createComponentMutation.mutate({ name: newIndoorName.trim(), role: 'INDOOR_UNIT' })}
+                  >
+                    + {t('common.add')}
+                  </Button>
+                </div>
+              )}
               <FormField label={t('products.outdoorUnit')}>
                 <SearchableSelect
                   value={outdoorComponentId}
@@ -1134,6 +1195,23 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
                   onChange={setOutdoorComponentId}
                 />
               </FormField>
+              {form.categoryId && form.unitId && form.packageTypeId && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder={t('products.newOutdoorUnitPlaceholder') ?? ''}
+                    value={newOutdoorName}
+                    onChange={(e) => setNewOutdoorName(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!newOutdoorName.trim() || createComponentMutation.isPending}
+                    onClick={() => createComponentMutation.mutate({ name: newOutdoorName.trim(), role: 'OUTDOOR_UNIT' })}
+                  >
+                    + {t('common.add')}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
           <p className="col-span-2 text-xs text-[var(--text-muted)]">{t('fields.pricingViaReceiptHint')}</p>

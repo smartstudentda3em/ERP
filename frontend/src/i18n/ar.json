@@ -691,6 +691,8 @@
     "acPartRoleNone": "غير ذلك (قطعة غيار / لا ينطبق)",
     "indoorUnit": "الوحدة الداخلية",
     "outdoorUnit": "الوحدة الخارجية",
+    "newIndoorUnitPlaceholder": "اسم وحدة داخلية جديدة",
+    "newOutdoorUnitPlaceholder": "اسم وحدة خارجية جديدة",
     "kitNoNesting": "لا يمكن اختيار صنف من نوع Kit كمكوّن",
     "kitCannotAdjust": "لا يمكن تسوية مخزون صنف Kit مباشرة — عدّل المكونات كل منها على حدة",
     "kitInsufficientComponent": "الكمية غير كافية من المكوّن \"{{name}}\" (المتاح {{available}}، المطلوب {{required}})"

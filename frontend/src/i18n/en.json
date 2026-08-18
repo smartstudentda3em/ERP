@@ -691,6 +691,8 @@
     "acPartRoleNone": "Other (spare part / not applicable)",
     "indoorUnit": "Indoor unit",
     "outdoorUnit": "Outdoor unit",
+    "newIndoorUnitPlaceholder": "New indoor unit name",
+    "newOutdoorUnitPlaceholder": "New outdoor unit name",
     "kitNoNesting": "A kit product cannot be used as a component",
     "kitCannotAdjust": "A kit product's stock can't be adjusted directly — adjust its components individually",
     "kitInsufficientComponent": "Insufficient stock of component \"{{name}}\" (available {{available}}, required {{required}})"

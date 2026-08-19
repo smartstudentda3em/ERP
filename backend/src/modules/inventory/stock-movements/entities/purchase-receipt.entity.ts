@@ -95,6 +95,23 @@ export class PurchaseReceipt extends BaseEntity {
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
   unitSellingPrice: number | null;
 
+  /** Kit products only (Product.isKit) — how packagePurchasePrice splits across the kit's two
+   * physical parts. Always both-or-neither; validated in PurchaseReceiptsService to sum to
+   * exactly packagePurchasePrice. Null for every non-kit product's receipts. */
+  @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
+  kitIndoorPurchasePrice: number | null;
+
+  @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
+  kitOutdoorPurchasePrice: number | null;
+
+  /** Optional even when the two purchase-price fields above are given — same "informational only"
+   * status as packageSellingPrice/unitSellingPrice. */
+  @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
+  kitIndoorSellingPrice: number | null;
+
+  @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
+  kitOutdoorSellingPrice: number | null;
+
   @Column("uuid")
   createdById: string;
 }

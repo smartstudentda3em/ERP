@@ -31,6 +31,9 @@ interface Product {
   nameEn: string;
   packageTypeId: string;
   unitsPerPackage: number;
+  /** AC "Split AC Kit" category only — see the kit indoor/outdoor pricing breakdown fields below,
+   * which only apply (and are only sent to the backend) when this is true. */
+  isKit?: boolean;
 }
 
 interface Warehouse {
@@ -78,6 +81,10 @@ interface PurchaseReceipt {
   packagePurchasePrice: number;
   packageSellingPrice: number | null;
   unitSellingPrice: number | null;
+  kitIndoorPurchasePrice: number | null;
+  kitOutdoorPurchasePrice: number | null;
+  kitIndoorSellingPrice: number | null;
+  kitOutdoorSellingPrice: number | null;
   unitCost: number;
   totalAmount: number;
   paidAmount: number;
@@ -95,6 +102,10 @@ const emptyForm = {
   packagePurchasePrice: '',
   packageSellingPrice: '',
   unitSellingPrice: '',
+  kitIndoorPurchasePrice: '',
+  kitOutdoorPurchasePrice: '',
+  kitIndoorSellingPrice: '',
+  kitOutdoorSellingPrice: '',
   paidAmount: '',
   // Printing Press only — every other company's payment always settles into BANK (see saveMutation).
   paymentAccount: 'CASH' as 'CASH' | 'BANK',
@@ -264,6 +275,20 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
   const paidAmount = form.paidAmount ? Number(form.paidAmount) : 0;
   const outstandingToSupplier = totalAmount !== null ? totalAmount - paidAmount : null;
 
+  // AC "Split AC Kit" category only — the base "سعر شراء العبوة" field above stays the single
+  // source of truth for the receipt's total cost; these two just have to add up to it exactly
+  // (see PurchaseReceiptsService.assertKitPricingFields, which enforces the same rule server-side).
+  const isKitProduct = !!selectedProduct?.isKit;
+  const kitPurchaseSum =
+    form.kitIndoorPurchasePrice && form.kitOutdoorPurchasePrice
+      ? Math.round((Number(form.kitIndoorPurchasePrice) + Number(form.kitOutdoorPurchasePrice)) * 10000) / 10000
+      : null;
+  const kitPurchasePriceMismatch =
+    isKitProduct &&
+    kitPurchaseSum !== null &&
+    form.packagePurchasePrice !== '' &&
+    kitPurchaseSum !== Math.round(Number(form.packagePurchasePrice) * 10000) / 10000;
+
   function resetForm() {
     setEditingId(null);
     setSelectedProductId(null);
@@ -284,6 +309,10 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       packagePurchasePrice: String(receipt.packagePurchasePrice),
       packageSellingPrice: receipt.packageSellingPrice != null ? String(receipt.packageSellingPrice) : '',
       unitSellingPrice: receipt.unitSellingPrice != null ? String(receipt.unitSellingPrice) : '',
+      kitIndoorPurchasePrice: receipt.kitIndoorPurchasePrice != null ? String(receipt.kitIndoorPurchasePrice) : '',
+      kitOutdoorPurchasePrice: receipt.kitOutdoorPurchasePrice != null ? String(receipt.kitOutdoorPurchasePrice) : '',
+      kitIndoorSellingPrice: receipt.kitIndoorSellingPrice != null ? String(receipt.kitIndoorSellingPrice) : '',
+      kitOutdoorSellingPrice: receipt.kitOutdoorSellingPrice != null ? String(receipt.kitOutdoorSellingPrice) : '',
       paidAmount: String(receipt.paidAmount ?? 0),
       // Not persisted on the receipt row (see saveMutation) — there is no original value to
       // restore, so this always resets to the default and the required select forces a fresh,
@@ -314,7 +343,16 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
         quantityPackages: Number(form.quantityPackages),
         packagePurchasePrice: Number(form.packagePurchasePrice),
         packageSellingPrice: form.packageSellingPrice ? Number(form.packageSellingPrice) : undefined,
-        unitSellingPrice: form.unitSellingPrice ? Number(form.unitSellingPrice) : undefined,
+        // Legacy single-unit price — never sent for a kit even if a stale value lingers in state
+        // from switching the selected product mid-edit (see PurchaseReceiptsService, which ignores
+        // it for a kit anyway, but the UI shouldn't send a field it no longer shows).
+        unitSellingPrice: !isKitProduct && form.unitSellingPrice ? Number(form.unitSellingPrice) : undefined,
+        // AC "Split AC Kit" category only — omitted entirely for every other product, matching the
+        // backend's own kit-only rejection in PurchaseReceiptsService.assertKitPricingFields.
+        kitIndoorPurchasePrice: isKitProduct && form.kitIndoorPurchasePrice ? Number(form.kitIndoorPurchasePrice) : undefined,
+        kitOutdoorPurchasePrice: isKitProduct && form.kitOutdoorPurchasePrice ? Number(form.kitOutdoorPurchasePrice) : undefined,
+        kitIndoorSellingPrice: isKitProduct && form.kitIndoorSellingPrice ? Number(form.kitIndoorSellingPrice) : undefined,
+        kitOutdoorSellingPrice: isKitProduct && form.kitOutdoorSellingPrice ? Number(form.kitOutdoorSellingPrice) : undefined,
         paidAmount: paidAmount > 0 ? paidAmount : undefined,
         // Printing Press only: the user picks Cash Treasury vs. Bank Account explicitly (see the
         // form field below). Every other company keeps the prior fixed behavior — settled through
@@ -641,9 +679,67 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               onChange={(e) => setForm({ ...form, packagePurchasePrice: e.target.value })}
             />
           </FormField>
-          <FormField label={t('fields.unitCost')}>
-            <Input disabled value={unitCost !== null ? unitCost.toFixed(4) : ''} placeholder="—" />
-          </FormField>
+          {/* Hidden for a kit — its per-unit cost is meaningless once the price splits across
+              indoor/outdoor below (see the kit block right after this). */}
+          {!isKitProduct && (
+            <FormField label={t('fields.unitCost')}>
+              <Input disabled value={unitCost !== null ? unitCost.toFixed(4) : ''} placeholder="—" />
+            </FormField>
+          )}
+
+          {/* AC "Split AC Kit" category only (Product.isKit) — every other product keeps the
+              single packagePurchasePrice field above with no sub-fields, exactly like before. The
+              two purchase fields are required together and must sum to packagePurchasePrice (see
+              PurchaseReceiptsService.assertKitPricingFields for the same rule enforced server-side);
+              the two selling fields are optional, same status as packageSellingPrice/unitSellingPrice. */}
+          {isKitProduct && (
+            <>
+              <FormField label={t('purchasing.kitIndoorPurchasePrice')}>
+                <Input
+                  required
+                  type="number"
+                  step="0.01"
+                  value={form.kitIndoorPurchasePrice}
+                  onChange={(e) => setForm({ ...form, kitIndoorPurchasePrice: e.target.value })}
+                />
+              </FormField>
+              <FormField label={t('purchasing.kitOutdoorPurchasePrice')}>
+                <Input
+                  required
+                  type="number"
+                  step="0.01"
+                  value={form.kitOutdoorPurchasePrice}
+                  onChange={(e) => setForm({ ...form, kitOutdoorPurchasePrice: e.target.value })}
+                />
+              </FormField>
+              <FormField label={t('purchasing.kitIndoorSellingPriceOptional')}>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.kitIndoorSellingPrice}
+                  onChange={(e) => setForm({ ...form, kitIndoorSellingPrice: e.target.value })}
+                />
+              </FormField>
+              <FormField label={t('purchasing.kitOutdoorSellingPriceOptional')}>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.kitOutdoorSellingPrice}
+                  onChange={(e) => setForm({ ...form, kitOutdoorSellingPrice: e.target.value })}
+                />
+              </FormField>
+              {kitPurchasePriceMismatch && (
+                <div className="col-span-2">
+                  <p className="text-xs text-red-600">
+                    {t('purchasing.kitPriceMismatch', {
+                      sum: formatAmount(kitPurchaseSum ?? 0),
+                      total: formatAmount(Number(form.packagePurchasePrice)),
+                    })}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
 
           {!isPrintingPress && (
             <FormField label={t('purchasing.packageSellingPriceOptional')}>
@@ -655,7 +751,9 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               />
             </FormField>
           )}
-          {!isPrintingPress && (
+          {/* Hidden for a kit — superseded by kitIndoorSellingPrice/kitOutdoorSellingPrice above
+              (see PurchaseReceiptsService, which ignores this field entirely for a kit product). */}
+          {!isPrintingPress && !isKitProduct && (
             <FormField label={t('purchasing.unitSellingPriceOptional')}>
               <Input
                 type="number"
@@ -753,7 +851,11 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               type="submit"
               loading={saveMutation.isPending}
               disabled={
-                !selectedProduct || !hasValidUnitsPerPackage || !form.warehouseId || (isPrintingPress && !form.branchId)
+                !selectedProduct ||
+                !hasValidUnitsPerPackage ||
+                !form.warehouseId ||
+                (isPrintingPress && !form.branchId) ||
+                kitPurchasePriceMismatch
               }
             >
               {t('common.save')}

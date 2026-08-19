@@ -14,10 +14,11 @@ import { StockMovementType } from '../../../entities/enums';
 
 /**
  * Kit-aware wrapper around StockService.issue/receive — AC company only. A "kit" product
- * (Product.isKit) never holds its own StockLevel row; issuing/receiving it explodes into
- * the same call against its ProductComponent list instead, so every existing caller of
- * StockService.issue/receive can swap to this service with no other change and keep working
- * identically for every non-kit product.
+ * (Product.isKit) with real ProductComponent rows configured never holds its own StockLevel row;
+ * issuing/receiving it explodes into the same call against its component list instead. A kit with
+ * no components configured (the common case — linking is optional, see ProductsService) falls back
+ * to plain stock on the kit's own product row, identically to every non-kit product. Every existing
+ * caller of StockService.issue/receive can swap to this service with no other change.
  */
 @Injectable()
 export class ProductKitsService {
@@ -26,17 +27,13 @@ export class ProductKitsService {
     private readonly stockService: StockService,
   ) {}
 
+  /** Empty is a valid result — a Kit with no linked components just isn't wired up for explosion
+   * (see issueSmart/receiveSmart's fallback to plain stock in that case). */
   private async loadKitComponents(m: EntityManager, product: Product): Promise<ProductComponent[]> {
-    const components = await m.getRepository(ProductComponent).find({
+    return m.getRepository(ProductComponent).find({
       where: { parentProductId: product.id },
       relations: ['componentProduct'],
     });
-    if (components.length === 0) {
-      throw new BadRequestException(
-        `Kit product "${product.nameAr || product.nameEn}" has no components configured`,
-      );
-    }
-    return components;
   }
 
   async issueSmart(
@@ -52,6 +49,8 @@ export class ProductKitsService {
       if (!product.isKit) return this.stockService.issue(input, movementType, m);
 
       const components = await this.loadKitComponents(m, product);
+      // No BOM configured for this Kit — it just holds its own stock like any other product.
+      if (components.length === 0) return this.stockService.issue(input, movementType, m);
       const requestedQty = Number(input.quantity);
 
       // Pre-check every component before touching any stock, so a short component gives a
@@ -99,6 +98,8 @@ export class ProductKitsService {
       if (!product.isKit) return this.stockService.receive(input, movementType, m);
 
       const components = await this.loadKitComponents(m, product);
+      // No BOM configured for this Kit — it just holds its own stock like any other product.
+      if (components.length === 0) return this.stockService.receive(input, movementType, m);
       const requestedQty = Number(input.quantity);
       const totalCostToDistribute = requestedQty * Number(input.unitCost);
 

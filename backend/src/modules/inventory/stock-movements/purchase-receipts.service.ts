@@ -21,6 +21,31 @@ export class PurchaseReceiptsService {
     private readonly cashMovementsService: CashMovementsService,
   ) {}
 
+  /** Kit-only pricing breakdown (indoor/outdoor purchase+selling prices) — rejected outright for a
+   * non-kit product, and when given for a kit, the two purchase prices must sum to exactly
+   * packagePurchasePrice (rounded the same way unitCost is below, to tolerate float noise). */
+  private assertKitPricingFields(product: Product, dto: CreatePurchaseReceiptDto): void {
+    const hasAnyKitField =
+      dto.kitIndoorPurchasePrice != null ||
+      dto.kitOutdoorPurchasePrice != null ||
+      dto.kitIndoorSellingPrice != null ||
+      dto.kitOutdoorSellingPrice != null;
+    if (!hasAnyKitField) return;
+    if (!product.isKit) {
+      throw new BadRequestException('Indoor/outdoor pricing fields only apply to a kit product');
+    }
+    if (dto.kitIndoorPurchasePrice == null || dto.kitOutdoorPurchasePrice == null) {
+      throw new BadRequestException('Both indoor and outdoor purchase prices are required together');
+    }
+    const sum = Math.round((dto.kitIndoorPurchasePrice + dto.kitOutdoorPurchasePrice) * 10000) / 10000;
+    const total = Math.round(dto.packagePurchasePrice * 10000) / 10000;
+    if (sum !== total) {
+      throw new BadRequestException(
+        `Indoor + outdoor purchase price (${sum}) must equal the total package purchase price (${total})`,
+      );
+    }
+  }
+
   findAll(companyId: string, productId?: string, warehouseId?: string) {
     return this.repo.find({
       where: {
@@ -72,6 +97,7 @@ export class PurchaseReceiptsService {
       if (!unitsPerPackage || unitsPerPackage <= 0) {
         throw new BadRequestException('This product has no valid units-per-package set');
       }
+      this.assertKitPricingFields(product, dto);
       const totalUnits = dto.quantityPackages * unitsPerPackage;
       const unitCost = Math.round((dto.packagePurchasePrice / unitsPerPackage) * 10000) / 10000;
       const totalAmount = dto.quantityPackages * dto.packagePurchasePrice;
@@ -117,12 +143,14 @@ export class PurchaseReceiptsService {
 
       // A kit's own purchasePrice/averageCost stay meaningless — it's never receive()'d directly
       // (see ProductKitsService), only its components are. packagePurchasePrice/packageSellingPrice
-      // are still saved purely for display (a reference "suggested combo price").
+      // are still saved purely for display (a reference "suggested combo price"). unitSellingPrice
+      // is the legacy single-unit price, superseded for a kit by the indoor/outdoor selling prices
+      // above — ignored entirely for a kit even if a stale client still sends it.
       await manager.getRepository(Product).update(dto.productId, {
         packagePurchasePrice: dto.packagePurchasePrice,
         ...(product.isKit ? {} : { purchasePrice: unitCost }),
         ...(dto.packageSellingPrice != null ? { packageSellingPrice: dto.packageSellingPrice } : {}),
-        ...(dto.unitSellingPrice != null ? { sellingPrice: dto.unitSellingPrice } : {}),
+        ...(!product.isKit && dto.unitSellingPrice != null ? { sellingPrice: dto.unitSellingPrice } : {}),
       });
 
       const receipt = manager.getRepository(PurchaseReceipt).create({
@@ -141,7 +169,13 @@ export class PurchaseReceiptsService {
         totalAmount,
         paidAmount,
         packageSellingPrice: dto.packageSellingPrice ?? null,
-        unitSellingPrice: dto.unitSellingPrice ?? null,
+        // Legacy single-unit price — ignored entirely for a kit (see the indoor/outdoor selling
+        // prices below instead), never persisted even if a stale client still sends it.
+        unitSellingPrice: product.isKit ? null : (dto.unitSellingPrice ?? null),
+        kitIndoorPurchasePrice: dto.kitIndoorPurchasePrice ?? null,
+        kitOutdoorPurchasePrice: dto.kitOutdoorPurchasePrice ?? null,
+        kitIndoorSellingPrice: dto.kitIndoorSellingPrice ?? null,
+        kitOutdoorSellingPrice: dto.kitOutdoorSellingPrice ?? null,
         createdById,
       });
       const savedReceipt = await manager.getRepository(PurchaseReceipt).save(receipt);
@@ -211,6 +245,7 @@ export class PurchaseReceiptsService {
       if (!unitsPerPackage || unitsPerPackage <= 0) {
         throw new BadRequestException('This product has no valid units-per-package set');
       }
+      this.assertKitPricingFields(product, dto);
       const totalUnits = dto.quantityPackages * unitsPerPackage;
       const unitCost = Math.round((dto.packagePurchasePrice / unitsPerPackage) * 10000) / 10000;
       const totalAmount = dto.quantityPackages * dto.packagePurchasePrice;
@@ -276,7 +311,7 @@ export class PurchaseReceiptsService {
         packagePurchasePrice: dto.packagePurchasePrice,
         ...(product.isKit ? {} : { purchasePrice: unitCost }),
         ...(dto.packageSellingPrice != null ? { packageSellingPrice: dto.packageSellingPrice } : {}),
-        ...(dto.unitSellingPrice != null ? { sellingPrice: dto.unitSellingPrice } : {}),
+        ...(!product.isKit && dto.unitSellingPrice != null ? { sellingPrice: dto.unitSellingPrice } : {}),
       });
 
       Object.assign(existing, {
@@ -293,7 +328,13 @@ export class PurchaseReceiptsService {
         totalAmount,
         paidAmount,
         packageSellingPrice: dto.packageSellingPrice ?? null,
-        unitSellingPrice: dto.unitSellingPrice ?? null,
+        // Legacy single-unit price — ignored entirely for a kit (see the indoor/outdoor selling
+        // prices below instead), never persisted even if a stale client still sends it.
+        unitSellingPrice: product.isKit ? null : (dto.unitSellingPrice ?? null),
+        kitIndoorPurchasePrice: dto.kitIndoorPurchasePrice ?? null,
+        kitOutdoorPurchasePrice: dto.kitOutdoorPurchasePrice ?? null,
+        kitIndoorSellingPrice: dto.kitIndoorSellingPrice ?? null,
+        kitOutdoorSellingPrice: dto.kitOutdoorSellingPrice ?? null,
       });
       const savedReceipt = await manager.getRepository(PurchaseReceipt).save(existing);
 

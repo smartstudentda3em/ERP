@@ -122,6 +122,34 @@ export class ProductsService extends BaseCrudService<Product> {
     }
   }
 
+  /** AC (Air Conditioning) company only — every product's "العبوة" is never picked by the user; it's
+   * always this one shared, lazily-created PackageType row per category (find-or-create, same
+   * pattern as resolveCatalogDefaults below) — Carton/Bundle/Roll/... never applied to AC parts. */
+  private async resolveKitPackageTypeId(companyId: string, categoryId: string): Promise<string> {
+    const code = 'AC_KIT_WHOLE_UNIT';
+    let packageType = await this.packageTypeRepo.findOne({ where: { companyId, categoryId, code } });
+    if (!packageType) {
+      packageType = await this.packageTypeRepo.save(
+        this.packageTypeRepo.create({ companyId, categoryId, code, nameEn: 'Whole Unit', nameAr: 'وحدة كاملة' }),
+      );
+    }
+    return packageType.id;
+  }
+
+  /** AC (Air Conditioning) company only — every product's "الوحدة" (base unit of measure) is never
+   * picked by the user either, for the same reason as the package: AC parts are always counted as
+   * whole physical units, never Piece/Kilogram/etc. Same find-or-create-per-category pattern. */
+  private async resolveAcUnitId(companyId: string, categoryId: string): Promise<string> {
+    const code = 'AC_UNIT_WHOLE';
+    let unit = await this.unitRepo.findOne({ where: { companyId, categoryId, code } });
+    if (!unit) {
+      unit = await this.unitRepo.save(
+        this.unitRepo.create({ companyId, categoryId, code, nameEn: 'Unit', nameAr: 'وحدة' }),
+      );
+    }
+    return unit.id;
+  }
+
   /** Scoped to the caller's company — an id that belongs to another company 404s exactly like an id that doesn't exist at all, so ids can't be probed cross-company. */
   async findOneScoped(id: string, companyId: string): Promise<Product> {
     const product = await super.findOne(id);
@@ -195,11 +223,22 @@ export class ProductsService extends BaseCrudService<Product> {
     if (dto.isKit && dto.acPartRole) {
       throw new BadRequestException('A kit product cannot also be tagged as an indoor/outdoor part');
     }
-    if (dto.isKit) {
-      if (!dto.components || dto.components.length === 0) {
-        throw new BadRequestException('A kit product requires at least one component');
-      }
+    // Linking real indoor/outdoor components is optional — a Kit with none configured just holds
+    // its own stock directly (see ProductKitsService.issueSmart/receiveSmart's fallback), exactly
+    // like any other product. When components ARE provided, they still must be the correct shape.
+    if (dto.isKit && dto.components && dto.components.length > 0) {
       await this.validateComponents(companyId, dto.components);
+    }
+    // AC (Air Conditioning) company only — every product's "العبوة" and "الوحدة" are both this one
+    // shared pair of rows, never a user pick. Every other company keeps picking real ones, which is
+    // why both DTO fields are optional now.
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code === 'AC') {
+      dto.packageTypeId = await this.resolveKitPackageTypeId(companyId, dto.categoryId);
+      dto.unitId = await this.resolveAcUnitId(companyId, dto.categoryId);
+    } else {
+      if (!dto.packageTypeId) throw new BadRequestException('Package type is required');
+      if (!dto.unitId) throw new BadRequestException('Unit is required');
     }
     const derivedPurchasePrice = this.computePackageDerivedPurchasePrice(dto);
     const { components, ...rest } = dto;
@@ -240,11 +279,17 @@ export class ProductsService extends BaseCrudService<Product> {
         : undefined
       : dto.components;
 
-    if (nextIsKit && componentsToApply !== undefined) {
-      if (componentsToApply.length === 0) {
-        throw new BadRequestException('A kit product requires at least one component');
-      }
+    if (nextIsKit && componentsToApply !== undefined && componentsToApply.length > 0) {
       await this.validateComponents(companyId, componentsToApply, id);
+    }
+
+    // AC (Air Conditioning) company only — every product's "العبوة" and "الوحدة" are always the
+    // shared rows (see createForCompany); every other company keeps its own values untouched.
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code === 'AC') {
+      const nextCategoryId = dto.categoryId !== undefined ? dto.categoryId : existing.categoryId;
+      dto.packageTypeId = await this.resolveKitPackageTypeId(companyId, nextCategoryId as string);
+      dto.unitId = await this.resolveAcUnitId(companyId, nextCategoryId as string);
     }
 
     const merged: PackagingFields = {

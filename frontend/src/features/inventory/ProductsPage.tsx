@@ -251,15 +251,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
-  // Air Conditioning company only — see Product.isKit. A kit is always exactly one indoor +
-  // one outdoor unit, so these are two fixed slots rather than a free-form list.
-  const [indoorComponentId, setIndoorComponentId] = useState('');
-  const [outdoorComponentId, setOutdoorComponentId] = useState('');
-  // Air Conditioning company only — lets the user create a new indoor/outdoor part directly from
-  // the kit form (typing a name + "إضافة") instead of having to leave and create it separately
-  // first. The new part inherits the kit's own category/unit/package so it doesn't need its own form.
-  const [newIndoorName, setNewIndoorName] = useState('');
-  const [newOutdoorName, setNewOutdoorName] = useState('');
   const [breakdownProduct, setBreakdownProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState('');
   // Printing Press only — everything below drives its "من تاريخ/إلى تاريخ" filter, summary cards,
@@ -409,37 +400,21 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     return (quantityByProduct.get(productId) ?? []).reduce((sum, r) => sum + r.quantity, 0);
   }
 
-  // Air Conditioning company only — a kit product (see Product.isKit) never holds its own
-  // StockLevel row, so "how many full kits are available" is a computed minimum across its
-  // components' own real stock, reusing the same quantityByProduct map (components are normal
-  // products already present in it).
+  // Air Conditioning company only — a kit product (see Product.isKit) with real components wired
+  // up never holds its own StockLevel row, so "how many full kits are available" is a computed
+  // minimum across its components' own real stock, reusing the same quantityByProduct map
+  // (components are normal products already present in it). A kit with no components configured
+  // (the normal case now — there's no UI to wire them) just holds its own stock directly instead.
   function availableKitQuantity(product: Product): number {
-    if (!product.components || product.components.length === 0) return 0;
+    if (!product.components || product.components.length === 0) return totalQuantity(product.id);
     return Math.min(
       ...product.components.map((c) => Math.floor(totalQuantity(c.componentProductId) / (Number(c.quantity) || 1))),
     );
   }
 
-  // Air Conditioning company only — the indoor/outdoor pickers offer every real part tagged with
-  // the matching acPartRole; matching a kit to the right model/capacity relies on clear naming
-  // (e.g. "1.5 حصان" in the name/SKU) rather than a separate machine-checked field.
-  const indoorOptions = useMemo(
-    () =>
-      (productsQuery.data ?? [])
-        .filter((p) => p.acPartRole === 'INDOOR_UNIT' && p.id !== editingId)
-        .map((p) => ({ value: p.id, label: p.nameEn })),
-    [productsQuery.data, editingId],
-  );
-  const outdoorOptions = useMemo(
-    () =>
-      (productsQuery.data ?? [])
-        .filter((p) => p.acPartRole === 'OUTDOOR_UNIT' && p.id !== editingId)
-        .map((p) => ({ value: p.id, label: p.nameEn })),
-    [productsQuery.data, editingId],
-  );
-
-  // Drives the single unified "نوع صنف التكييف" selector from the underlying isKit/acPartRole
-  // state, so the form only shows one control instead of a checkbox plus a second dropdown.
+  // Drives the single "نوع صنف التكييف" selector from the underlying isKit/acPartRole state — the
+  // only 3 real classifications are indoor-only / outdoor-only / whole unit (Kit); anything else
+  // (spare parts, refrigerant, ...) is just left unselected.
   function acUnitTypeValue(isKit: boolean, acPartRole: string): string {
     if (isKit) return 'KIT';
     if (acPartRole === 'INDOOR_UNIT' || acPartRole === 'OUTDOOR_UNIT') return acPartRole;
@@ -487,20 +462,14 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   );
 
   // Air Conditioning company only — omitted entirely for every other company, matching the
-  // backend's own AC-only rejection in ProductsService. A kit is always exactly 1 indoor + 1
-  // outdoor unit (see indoorComponentId/outdoorComponentId), never an arbitrary list.
+  // backend's own AC-only rejection in ProductsService. Linking real indoor/outdoor components to
+  // a Kit isn't done from this screen — a Kit with none configured just holds its own stock
+  // directly, like any other product (see ProductKitsService.issueSmart/receiveSmart).
   function kitPayloadFields() {
     if (!isAirConditioning) return {};
     return {
       isKit: form.isKit,
       acPartRole: form.isKit ? null : form.acPartRole || null,
-      components:
-        form.isKit && indoorComponentId && outdoorComponentId
-          ? [
-              { componentProductId: indoorComponentId, quantity: 1 },
-              { componentProductId: outdoorComponentId, quantity: 1 },
-            ]
-          : [],
     };
   }
 
@@ -511,10 +480,13 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
         barcode: form.barcode || undefined,
         nameEn: form.name,
         nameAr: form.name,
-        unitId: form.unitId,
+        unitId: isAirConditioning ? undefined : form.unitId,
         reorderLevel: Number(form.reorderLevel),
         notes: form.notes || undefined,
-        packageTypeId: form.packageTypeId,
+        // AC (Air Conditioning) company — every product's package is always the shared "وحدة كاملة"
+        // row the backend resolves on its own (see ProductsService.resolveKitPackageTypeId); the
+        // user never picks a package for this company at all.
+        packageTypeId: isAirConditioning ? undefined : form.packageTypeId,
         unitsPerPackage: Number(form.unitsPerPackage),
         brandId: form.brandId || undefined,
         categoryId: form.categoryId,
@@ -526,10 +498,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setModalOpen(false);
       setForm(emptyForm);
-      setIndoorComponentId('');
-      setOutdoorComponentId('');
-      setNewIndoorName('');
-      setNewOutdoorName('');
       toast.success(t('common.addedSuccessfully'));
     },
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
@@ -542,10 +510,10 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
         barcode: form.barcode || undefined,
         nameEn: form.name,
         nameAr: form.name,
-        unitId: form.unitId,
+        unitId: isAirConditioning ? undefined : form.unitId,
         reorderLevel: Number(form.reorderLevel),
         notes: form.notes || undefined,
-        packageTypeId: form.packageTypeId,
+        packageTypeId: isAirConditioning ? undefined : form.packageTypeId,
         unitsPerPackage: Number(form.unitsPerPackage),
         brandId: form.brandId || null,
         categoryId: form.categoryId,
@@ -558,10 +526,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       setModalOpen(false);
       setEditingId(null);
       setForm(emptyForm);
-      setIndoorComponentId('');
-      setOutdoorComponentId('');
-      setNewIndoorName('');
-      setNewOutdoorName('');
       toast.success(t('common.savedSuccessfully'));
     },
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
@@ -575,37 +539,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
   });
 
-  // Air Conditioning company only — lets the user type a new indoor/outdoor part's name and
-  // create+link it in one step, instead of leaving the kit form to create it separately first.
-  // Inherits the kit's own category/unit/package so the new part needs no form of its own.
-  const createComponentMutation = useMutation({
-    mutationFn: (input: { name: string; role: 'INDOOR_UNIT' | 'OUTDOOR_UNIT' }) =>
-      unwrap<Product>(
-        apiClient.post('/inventory/products', {
-          nameEn: input.name,
-          nameAr: input.name,
-          categoryId: form.categoryId,
-          unitId: form.unitId,
-          packageTypeId: form.packageTypeId,
-          unitsPerPackage: Number(form.unitsPerPackage) || 1,
-          isKit: false,
-          acPartRole: input.role,
-        }),
-      ),
-    onSuccess: (created, input) => {
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      if (input.role === 'INDOOR_UNIT') {
-        setIndoorComponentId(created.id);
-        setNewIndoorName('');
-      } else {
-        setOutdoorComponentId(created.id);
-        setNewOutdoorName('');
-      }
-      toast.success(t('common.addedSuccessfully'));
-    },
-    onError: (err: any) => toast.error(getErrorMessage(err, t('common.saveFailed'))),
-  });
-
   async function handleDelete(e: MouseEvent, product: Product) {
     e.stopPropagation();
     const ok = await confirm({ message: t('common.confirmDelete', { name: product.nameEn }) });
@@ -615,10 +548,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   function openCreateModal() {
     setEditingId(null);
     setForm(emptyForm);
-    setIndoorComponentId('');
-    setOutdoorComponentId('');
-    setNewIndoorName('');
-    setNewOutdoorName('');
     setModalOpen(true);
   }
 
@@ -640,20 +569,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       isKit: product.isKit ?? false,
       acPartRole: product.acPartRole ?? '',
     });
-    // Match each saved component back to its indoor/outdoor slot by the underlying product's own
-    // acPartRole (looked up in the already-loaded product list, not the component sub-object,
-    // which doesn't carry it) rather than assuming array order.
-    const allProducts = productsQuery.data ?? [];
-    const savedIndoor = (product.components ?? []).find(
-      (c) => allProducts.find((p) => p.id === c.componentProductId)?.acPartRole === 'INDOOR_UNIT',
-    );
-    const savedOutdoor = (product.components ?? []).find(
-      (c) => allProducts.find((p) => p.id === c.componentProductId)?.acPartRole === 'OUTDOOR_UNIT',
-    );
-    setIndoorComponentId(savedIndoor?.componentProductId ?? '');
-    setOutdoorComponentId(savedOutdoor?.componentProductId ?? '');
-    setNewIndoorName('');
-    setNewOutdoorName('');
     setModalOpen(true);
   }
 
@@ -1062,39 +977,62 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
             </Select>
           </FormField>
           <FormField label={t('fields.package')}>
-            <Select
-              required
-              value={form.packageTypeId}
-              disabled={!form.categoryId}
-              onChange={(e) => setForm({ ...form, packageTypeId: e.target.value })}
-            >
-              <option value="">{form.categoryId ? '—' : t('products.selectCategoryFirst')}</option>
-              {(packageTypesQuery.data ?? [])
-                .filter((p) => p.categoryId === form.categoryId)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nameEn}
-                  </option>
-                ))}
-            </Select>
+            {isAirConditioning ? (
+              <Input value={t('products.wholeUnit')} disabled />
+            ) : (
+              <Select
+                required
+                value={form.packageTypeId}
+                disabled={!form.categoryId}
+                onChange={(e) => setForm({ ...form, packageTypeId: e.target.value })}
+              >
+                <option value="">{form.categoryId ? '—' : t('products.selectCategoryFirst')}</option>
+                {(packageTypesQuery.data ?? [])
+                  .filter((p) => p.categoryId === form.categoryId)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nameEn}
+                    </option>
+                  ))}
+              </Select>
+            )}
           </FormField>
-          <FormField label={t('fields.unit')}>
-            <Select
-              required
-              value={form.unitId}
-              disabled={!form.categoryId}
-              onChange={(e) => setForm({ ...form, unitId: e.target.value })}
-            >
-              <option value="">{form.categoryId ? '—' : t('products.selectCategoryFirst')}</option>
-              {(unitsQuery.data ?? [])
-                .filter((u) => u.categoryId === form.categoryId)
-                .map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nameEn}
-                  </option>
-                ))}
-            </Select>
-          </FormField>
+          {isAirConditioning ? (
+            <FormField label={t('products.acUnitType')}>
+              <Select
+                value={acUnitTypeValue(form.isKit, form.acPartRole)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === 'KIT') setForm({ ...form, isKit: true, acPartRole: '' });
+                  else if (v === 'INDOOR_UNIT' || v === 'OUTDOOR_UNIT') setForm({ ...form, isKit: false, acPartRole: v });
+                  else setForm({ ...form, isKit: false, acPartRole: '' });
+                }}
+              >
+                <option value="">{t('products.acPartRoleNone')}</option>
+                <option value="INDOOR_UNIT">{t('products.indoorUnitOnly')}</option>
+                <option value="OUTDOOR_UNIT">{t('products.outdoorUnitOnly')}</option>
+                <option value="KIT">{t('products.wholeUnitKit')}</option>
+              </Select>
+            </FormField>
+          ) : (
+            <FormField label={t('fields.unit')}>
+              <Select
+                required
+                value={form.unitId}
+                disabled={!form.categoryId}
+                onChange={(e) => setForm({ ...form, unitId: e.target.value })}
+              >
+                <option value="">{form.categoryId ? '—' : t('products.selectCategoryFirst')}</option>
+                {(unitsQuery.data ?? [])
+                  .filter((u) => u.categoryId === form.categoryId)
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.nameEn}
+                    </option>
+                  ))}
+              </Select>
+            </FormField>
+          )}
           <div className="col-span-2">
             <FormField label={t('fields.unitsPerPackage')}>
               <Input
@@ -1139,79 +1077,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
                   onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
                 />
               </FormField>
-            </div>
-          )}
-          {isAirConditioning && (
-            <div className="col-span-2">
-              <FormField label={t('products.acUnitType')}>
-                <Select
-                  value={acUnitTypeValue(form.isKit, form.acPartRole)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === 'KIT') setForm({ ...form, isKit: true, acPartRole: '' });
-                    else if (v === 'INDOOR_UNIT' || v === 'OUTDOOR_UNIT') setForm({ ...form, isKit: false, acPartRole: v });
-                    else setForm({ ...form, isKit: false, acPartRole: '' });
-                  }}
-                >
-                  <option value="">{t('products.acPartRoleNone')}</option>
-                  <option value="KIT">{t('products.isKit')}</option>
-                  <option value="INDOOR_UNIT">{t('products.indoorUnit')}</option>
-                  <option value="OUTDOOR_UNIT">{t('products.outdoorUnit')}</option>
-                </Select>
-              </FormField>
-            </div>
-          )}
-          {isAirConditioning && form.isKit && (
-            <div className="col-span-2 space-y-3 rounded-lg border border-[var(--border)] p-3">
-              <div className="text-sm font-medium">{t('products.components')}</div>
-              <FormField label={t('products.indoorUnit')}>
-                <SearchableSelect
-                  value={indoorComponentId}
-                  options={indoorOptions}
-                  onChange={setIndoorComponentId}
-                />
-              </FormField>
-              {form.categoryId && form.unitId && form.packageTypeId && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder={t('products.newIndoorUnitPlaceholder') ?? ''}
-                    value={newIndoorName}
-                    onChange={(e) => setNewIndoorName(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={!newIndoorName.trim() || createComponentMutation.isPending}
-                    onClick={() => createComponentMutation.mutate({ name: newIndoorName.trim(), role: 'INDOOR_UNIT' })}
-                  >
-                    + {t('common.add')}
-                  </Button>
-                </div>
-              )}
-              <FormField label={t('products.outdoorUnit')}>
-                <SearchableSelect
-                  value={outdoorComponentId}
-                  options={outdoorOptions}
-                  onChange={setOutdoorComponentId}
-                />
-              </FormField>
-              {form.categoryId && form.unitId && form.packageTypeId && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder={t('products.newOutdoorUnitPlaceholder') ?? ''}
-                    value={newOutdoorName}
-                    onChange={(e) => setNewOutdoorName(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={!newOutdoorName.trim() || createComponentMutation.isPending}
-                    onClick={() => createComponentMutation.mutate({ name: newOutdoorName.trim(), role: 'OUTDOOR_UNIT' })}
-                  >
-                    + {t('common.add')}
-                  </Button>
-                </div>
-              )}
             </div>
           )}
           <p className="col-span-2 text-xs text-[var(--text-muted)]">{t('fields.pricingViaReceiptHint')}</p>

@@ -1,6 +1,16 @@
 import { PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { AcPartRole } from '../../../../entities/enums';
 
 /** One BOM line for a Kit product — AC company only, see Product.isKit. */
@@ -16,8 +26,11 @@ export class CreateProductDto {
   @IsOptional() @IsString() nameAr?: string;
   @IsUUID() categoryId: string;
   @IsOptional() @IsUUID() brandId?: string;
-  @IsUUID() unitId: string;
-  @IsUUID() packageTypeId: string;
+  /** AC (Air Conditioning) products never let the user pick this or packageTypeId below —
+   * ProductsService always overrides both to a shared, lazily-created pair of rows and rejects them
+   * as missing for every other company. See ProductsService.resolveAcUnitId/resolveKitPackageTypeId. */
+  @IsOptional() @IsUUID() unitId?: string;
+  @IsOptional() @IsUUID() packageTypeId?: string;
   @IsNumber() @Min(0.0001) unitsPerPackage: number;
   @IsOptional() @IsNumber() @Min(0) packagePurchasePrice?: number;
   @IsOptional() @IsNumber() @Min(0) packageSellingPrice?: number;

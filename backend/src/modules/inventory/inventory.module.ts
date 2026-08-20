@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Product } from './products/entities/product.entity';
 import { ProductBatch } from './products/entities/product-batch.entity';
-import { ProductComponent } from './products/entities/product-component.entity';
 import { StockLevel } from './stock-movements/entities/stock-level.entity';
 import { StockMovement } from './stock-movements/entities/stock-movement.entity';
 import {
@@ -30,7 +29,6 @@ import { WarehouseViewController } from './stock-movements/warehouse-view.contro
 import { WarehouseViewService } from './stock-movements/warehouse-view.service';
 import { PurchaseReceiptsController } from './stock-movements/purchase-receipts.controller';
 import { PurchaseReceiptsService } from './stock-movements/purchase-receipts.service';
-import { ProductKitsService } from './products/product-kits.service';
 import { SupplierPayment } from '../parties/suppliers/entities/supplier-payment.entity';
 import { Supplier } from '../parties/suppliers/entities/supplier.entity';
 import { SupplierPaymentsController } from './supplier-payments/supplier-payments.controller';
@@ -44,7 +42,6 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
     TypeOrmModule.forFeature([
       Product,
       ProductBatch,
-      ProductComponent,
       StockLevel,
       StockMovement,
       StockAdjustment,
@@ -77,7 +74,6 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
   providers: [
     ProductsService,
     StockService,
-    ProductKitsService,
     StockAdjustmentsService,
     StockAuditsService,
     StockTransfersService,
@@ -85,6 +81,6 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
     PurchaseReceiptsService,
     SupplierPaymentsService,
   ],
-  exports: [StockService, ProductKitsService, TypeOrmModule, PurchaseReceiptsService, StockAuditsService],
+  exports: [StockService, TypeOrmModule, PurchaseReceiptsService, StockAuditsService],
 })
 export class InventoryModule {}

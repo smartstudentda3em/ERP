@@ -16,7 +16,7 @@ import {
   StockMovementType,
 } from '../../../entities/enums';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
-import { ProductKitsService } from '../../inventory/products/product-kits.service';
+import { StockService } from '../../inventory/stock-movements/stock.service';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
 import { CreateInstallmentPlanDto, EarlySettleInstallmentPlanDto, RecordInstallmentPaymentDto } from './dto/installment-plan.dto';
 import { computeInstallmentTerms, generateInstallmentSchedule } from '../../../common/utils/installment-calculator';
@@ -50,7 +50,7 @@ export class InstallmentPlansService {
     @InjectRepository(Customer) private readonly customerRepo: Repository<Customer>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
-    private readonly productKitsService: ProductKitsService,
+    private readonly stockService: StockService,
     private readonly cashMovementsService: CashMovementsService,
   ) {}
 
@@ -67,7 +67,7 @@ export class InstallmentPlansService {
       let totalPrice = 0;
       const lineEntities: Partial<InstallmentPlanLine>[] = [];
       for (const line of dto.lines) {
-        const { unitCost } = await this.productKitsService.issueSmart(
+        const { unitCost } = await this.stockService.issue(
           {
             companyId,
             productId: line.productId,
@@ -415,7 +415,7 @@ export class InstallmentPlansService {
 
     await this.dataSource.transaction(async (manager) => {
       for (const line of plan.lines) {
-        await this.productKitsService.receiveSmart(
+        await this.stockService.receive(
           {
             companyId,
             productId: line.productId,

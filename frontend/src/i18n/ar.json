@@ -685,15 +685,7 @@
     "stockTooltipMinRequired": "الحد الأدنى",
     "stockTooltipShortage": "النقص",
     "stockTooltipNone": "لا يوجد",
-    "wholeUnit": "وحدة كاملة",
-    "acUnitType": "نوع الوحدة",
-    "acPartRoleNone": "غير ذلك (قطعة غيار / لا ينطبق)",
-    "indoorUnitOnly": "وحدة داخلية فقط",
-    "outdoorUnitOnly": "وحدة خارجية فقط",
-    "wholeUnitKit": "مجموع الاثنين (وحدة كاملة / Kit)",
-    "kitNoNesting": "لا يمكن اختيار صنف من نوع Kit كمكوّن",
-    "kitCannotAdjust": "لا يمكن تسوية مخزون صنف Kit مباشرة — عدّل المكونات كل منها على حدة",
-    "kitInsufficientComponent": "الكمية غير كافية من المكوّن \"{{name}}\" (المتاح {{available}}، المطلوب {{required}})"
+    "capacityLabel": "القدرة"
   },
   "settingsCategories": {
     "availablePackages": "العبوات المتاحة",
@@ -744,11 +736,6 @@
     "changeItem": "تغيير",
     "unitSellingPriceOptional": "سعر بيع الوحدة (اختياري)",
     "packageSellingPriceOptional": "سعر بيع العبوة (اختياري)",
-    "kitIndoorPurchasePrice": "سعر شراء الوحدة الداخلية",
-    "kitOutdoorPurchasePrice": "سعر شراء الوحدة الخارجية",
-    "kitIndoorSellingPriceOptional": "سعر بيع الوحدة الداخلية (اختياري)",
-    "kitOutdoorSellingPriceOptional": "سعر بيع الوحدة الخارجية (اختياري)",
-    "kitPriceMismatch": "مجموع سعر شراء الوحدتين الداخلية والخارجية ({{sum}}) يجب أن يساوي سعر شراء العبوة الإجمالي ({{total}})",
     "paidAmountNow": "المبلغ المدفوع الآن",
     "paymentSource": "مصدر الدفع / طريقة السحب",
     "insufficientBalanceWarning": "تنبيه: المبلغ المدفوع أكبر من الرصيد المتاح في هذا الحساب",

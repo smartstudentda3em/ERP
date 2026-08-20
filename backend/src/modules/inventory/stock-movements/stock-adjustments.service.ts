@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import {
   StockAdjustment,
   StockAdjustmentLine,
@@ -9,7 +9,6 @@ import { StockService } from './stock.service';
 import { StockMovementType, DocumentStatus } from '../../../entities/enums';
 import { CreateStockAdjustmentDto } from './dto/stock.dto';
 import { Warehouse } from '../../settings/entities/warehouse.entity';
-import { Product } from '../products/entities/product.entity';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
 
 @Injectable()
@@ -51,20 +50,6 @@ export class StockAdjustmentsService {
         .getRepository(Warehouse)
         .findOne({ where: { id: dto.warehouseId, companyId } });
       if (!warehouse) throw new NotFoundException('Warehouse not found');
-
-      // A kit product (see Product.isKit) has no StockLevel row of its own — "how many kits are
-      // physically on the shelf" isn't a countable fact, only its real components are. Rejected
-      // here rather than exploded, unlike sales/purchases/transfers.
-      const products = await manager
-        .getRepository(Product)
-        .find({ where: { id: In(dto.lines.map((l) => l.productId)), companyId } });
-      const kitProduct = products.find((p) => p.isKit);
-      if (kitProduct) {
-        throw new BadRequestException(
-          `Cannot adjust stock of kit product "${kitProduct.nameAr || kitProduct.nameEn}" directly — adjust its components individually`,
-        );
-      }
-
       const documentNumber =
         (await this.numberingSeriesService.tryGetNextNumber(companyId, 'STOCK_ADJUSTMENT')) ??
         `ADJ-${Date.now()}`;

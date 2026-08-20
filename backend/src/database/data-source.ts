@@ -40,7 +40,6 @@ import { CommissionException } from '../modules/parties/entities/commission-exce
 // Inventory
 import { Product } from '../modules/inventory/products/entities/product.entity';
 import { ProductBatch } from '../modules/inventory/products/entities/product-batch.entity';
-import { ProductComponent } from '../modules/inventory/products/entities/product-component.entity';
 import { StockLevel } from '../modules/inventory/stock-movements/entities/stock-level.entity';
 import { StockMovement } from '../modules/inventory/stock-movements/entities/stock-movement.entity';
 import {
@@ -113,7 +112,6 @@ export const allEntities = [
   CommissionException,
   Product,
   ProductBatch,
-  ProductComponent,
   StockLevel,
   StockMovement,
   StockAdjustment,

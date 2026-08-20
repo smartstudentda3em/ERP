@@ -70,9 +70,7 @@ export class StockAuditsService {
       stockLevelRows.map((r) => [r.productId, Number(r.quantityOnHand)]),
     );
 
-    // Kit products (see Product.isKit) have no StockLevel row of their own, so they never belong
-    // on a physical count sheet — only their real components do.
-    const products = await this.productRepo.find({ where: { companyId, isActive: true, isKit: false } as any });
+    const products = await this.productRepo.find({ where: { companyId, isActive: true } as any });
     const productIds = products.map((p) => p.id);
     const { dateFrom, dateTo } = (await this.isPress(companyId)) ? monthRange(auditDate) : yearRange(auditDate);
     const consumedByProductId = await getConsumedQuantitiesByProductId(

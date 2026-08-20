@@ -685,15 +685,7 @@
     "stockTooltipMinRequired": "Minimum",
     "stockTooltipShortage": "Shortage",
     "stockTooltipNone": "None",
-    "wholeUnit": "Whole unit",
-    "acUnitType": "Unit type",
-    "acPartRoleNone": "Other (spare part / not applicable)",
-    "indoorUnitOnly": "Indoor unit only",
-    "outdoorUnitOnly": "Outdoor unit only",
-    "wholeUnitKit": "Both together (Whole unit / Kit)",
-    "kitNoNesting": "A kit product cannot be used as a component",
-    "kitCannotAdjust": "A kit product's stock can't be adjusted directly — adjust its components individually",
-    "kitInsufficientComponent": "Insufficient stock of component \"{{name}}\" (available {{available}}, required {{required}})"
+    "capacityLabel": "Capacity"
   },
   "settingsCategories": {
     "availablePackages": "Available Packages",
@@ -744,11 +736,6 @@
     "changeItem": "Change",
     "unitSellingPriceOptional": "Unit Selling Price (optional)",
     "packageSellingPriceOptional": "Package Selling Price (optional)",
-    "kitIndoorPurchasePrice": "Indoor Unit Purchase Price",
-    "kitOutdoorPurchasePrice": "Outdoor Unit Purchase Price",
-    "kitIndoorSellingPriceOptional": "Indoor Unit Selling Price (optional)",
-    "kitOutdoorSellingPriceOptional": "Outdoor Unit Selling Price (optional)",
-    "kitPriceMismatch": "Indoor + outdoor purchase price ({{sum}}) must equal the total package purchase price ({{total}})",
     "paidAmountNow": "Amount Paid Now",
     "paymentSource": "Payment Source / Withdrawal Method",
     "insufficientBalanceWarning": "Warning: the paid amount exceeds the available balance in this account",

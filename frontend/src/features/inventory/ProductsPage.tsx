@@ -43,15 +43,6 @@ interface Product {
   notes?: string;
   isActive: boolean;
   isSellable?: boolean;
-  isKit?: boolean;
-  acPartRole?: 'INDOOR_UNIT' | 'OUTDOOR_UNIT' | null;
-  components?: ProductComponent[];
-}
-
-interface ProductComponent {
-  componentProductId: string;
-  quantity: number;
-  componentProduct?: { id: string; nameEn: string; nameAr?: string };
 }
 
 interface Unit {
@@ -122,8 +113,6 @@ const emptyForm = {
   categoryId: '',
   isSellable: false,
   sellingPrice: '',
-  isKit: false,
-  acPartRole: '',
 };
 
 type StockStatus = 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
@@ -400,27 +389,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     return (quantityByProduct.get(productId) ?? []).reduce((sum, r) => sum + r.quantity, 0);
   }
 
-  // Air Conditioning company only — a kit product (see Product.isKit) with real components wired
-  // up never holds its own StockLevel row, so "how many full kits are available" is a computed
-  // minimum across its components' own real stock, reusing the same quantityByProduct map
-  // (components are normal products already present in it). A kit with no components configured
-  // (the normal case now — there's no UI to wire them) just holds its own stock directly instead.
-  function availableKitQuantity(product: Product): number {
-    if (!product.components || product.components.length === 0) return totalQuantity(product.id);
-    return Math.min(
-      ...product.components.map((c) => Math.floor(totalQuantity(c.componentProductId) / (Number(c.quantity) || 1))),
-    );
-  }
-
-  // Drives the single "نوع صنف التكييف" selector from the underlying isKit/acPartRole state — the
-  // only 3 real classifications are indoor-only / outdoor-only / whole unit (Kit); anything else
-  // (spare parts, refrigerant, ...) is just left unselected.
-  function acUnitTypeValue(isKit: boolean, acPartRole: string): string {
-    if (isKit) return 'KIT';
-    if (acPartRole === 'INDOOR_UNIT' || acPartRole === 'OUTDOOR_UNIT') return acPartRole;
-    return '';
-  }
-
   // Printing Press only — narrows the table (and everything derived from it below) to just
   // item name / category / brand matches, deliberately excluding SKU/barcode which this tenant's
   // raw-materials table doesn't even display as columns. Every other company keeps relying on the
@@ -461,18 +429,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
     [visibleDateFilteredReceipts],
   );
 
-  // Air Conditioning company only — omitted entirely for every other company, matching the
-  // backend's own AC-only rejection in ProductsService. Linking real indoor/outdoor components to
-  // a Kit isn't done from this screen — a Kit with none configured just holds its own stock
-  // directly, like any other product (see ProductKitsService.issueSmart/receiveSmart).
-  function kitPayloadFields() {
-    if (!isAirConditioning) return {};
-    return {
-      isKit: form.isKit,
-      acPartRole: form.isKit ? null : form.acPartRole || null,
-    };
-  }
-
   const createMutation = useMutation({
     mutationFn: () =>
       apiClient.post('/inventory/products', {
@@ -480,19 +436,15 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
         barcode: form.barcode || undefined,
         nameEn: form.name,
         nameAr: form.name,
-        unitId: isAirConditioning ? undefined : form.unitId,
+        unitId: form.unitId,
         reorderLevel: Number(form.reorderLevel),
         notes: form.notes || undefined,
-        // AC (Air Conditioning) company — every product's package is always the shared "وحدة كاملة"
-        // row the backend resolves on its own (see ProductsService.resolveKitPackageTypeId); the
-        // user never picks a package for this company at all.
-        packageTypeId: isAirConditioning ? undefined : form.packageTypeId,
+        packageTypeId: form.packageTypeId,
         unitsPerPackage: Number(form.unitsPerPackage),
         brandId: form.brandId || undefined,
         categoryId: form.categoryId,
         isSellable: form.isSellable,
         sellingPrice: form.isSellable && form.sellingPrice ? Number(form.sellingPrice) : undefined,
-        ...kitPayloadFields(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
@@ -510,16 +462,15 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
         barcode: form.barcode || undefined,
         nameEn: form.name,
         nameAr: form.name,
-        unitId: isAirConditioning ? undefined : form.unitId,
+        unitId: form.unitId,
         reorderLevel: Number(form.reorderLevel),
         notes: form.notes || undefined,
-        packageTypeId: isAirConditioning ? undefined : form.packageTypeId,
+        packageTypeId: form.packageTypeId,
         unitsPerPackage: Number(form.unitsPerPackage),
         brandId: form.brandId || null,
         categoryId: form.categoryId,
         isSellable: form.isSellable,
         sellingPrice: form.isSellable && form.sellingPrice ? Number(form.sellingPrice) : null,
-        ...kitPayloadFields(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
@@ -566,8 +517,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       categoryId: product.categoryId ?? '',
       isSellable: product.isSellable ?? false,
       sellingPrice: product.sellingPrice != null ? String(product.sellingPrice) : '',
-      isKit: product.isKit ?? false,
-      acPartRole: product.acPartRole ?? '',
     });
     setModalOpen(true);
   }
@@ -595,7 +544,13 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
       ? []
       : [
           { header: t('fields.sku'), accessor: (r: Product) => r.sku ?? '—', width: '8%' },
-          { header: t('fields.barcode'), accessor: (r: Product) => r.barcode ?? '—', width: '10%' },
+          // AC (Air Conditioning) company only — this column shows the same underlying barcode
+          // data, just relabeled "القدرة" (capacity); every other company keeps "الباركود".
+          {
+            header: t(isAirConditioning ? 'products.capacityLabel' : 'fields.barcode'),
+            accessor: (r: Product) => r.barcode ?? '—',
+            width: '10%',
+          },
         ]),
     { header: t('common.name'), accessor: (r) => <bdi dir="ltr">{r.nameEn}</bdi> },
     ...(isPrintingPress ? [{ header: t('fields.category'), accessor: (r: Product) => categoryLabel(r) }] : []),
@@ -610,10 +565,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
           {
             header: t('fields.availableQuantity'),
             accessor: (r: Product) => {
-              // A kit product (AC only, see Product.isKit) has no StockLevel row of its own — its
-              // quantity is computed from its components, which have no per-warehouse breakdown of
-              // their own to show for the kit itself, so it isn't clickable like a normal product.
-              const total = r.isKit ? availableKitQuantity(r) : totalQuantity(r.id);
+              const total = totalQuantity(r.id);
               const display = (
                 <PackageQuantity
                   baseQuantity={total}
@@ -621,7 +573,6 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
                   packageUnitName={packageTypesQuery.data?.find((p) => p.id === r.packageTypeId)?.nameEn}
                 />
               );
-              if (r.isKit) return display;
               return (
                 <button
                   type="button"
@@ -934,7 +885,9 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
             </FormField>
           )}
           {!isPrintingPress && (
-            <FormField label={t('fields.barcode')}>
+            // AC (Air Conditioning) company only — same underlying barcode field/column, just
+            // relabeled "القدرة" (capacity); every other company keeps "الباركود".
+            <FormField label={t(isAirConditioning ? 'products.capacityLabel' : 'fields.barcode')}>
               <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
             </FormField>
           )}
@@ -977,62 +930,39 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
             </Select>
           </FormField>
           <FormField label={t('fields.package')}>
-            {isAirConditioning ? (
-              <Input value={t('products.wholeUnit')} disabled />
-            ) : (
-              <Select
-                required
-                value={form.packageTypeId}
-                disabled={!form.categoryId}
-                onChange={(e) => setForm({ ...form, packageTypeId: e.target.value })}
-              >
-                <option value="">{form.categoryId ? '—' : t('products.selectCategoryFirst')}</option>
-                {(packageTypesQuery.data ?? [])
-                  .filter((p) => p.categoryId === form.categoryId)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nameEn}
-                    </option>
-                  ))}
-              </Select>
-            )}
+            <Select
+              required
+              value={form.packageTypeId}
+              disabled={!form.categoryId}
+              onChange={(e) => setForm({ ...form, packageTypeId: e.target.value })}
+            >
+              <option value="">{form.categoryId ? '—' : t('products.selectCategoryFirst')}</option>
+              {(packageTypesQuery.data ?? [])
+                .filter((p) => p.categoryId === form.categoryId)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nameEn}
+                  </option>
+                ))}
+            </Select>
           </FormField>
-          {isAirConditioning ? (
-            <FormField label={t('products.acUnitType')}>
-              <Select
-                value={acUnitTypeValue(form.isKit, form.acPartRole)}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === 'KIT') setForm({ ...form, isKit: true, acPartRole: '' });
-                  else if (v === 'INDOOR_UNIT' || v === 'OUTDOOR_UNIT') setForm({ ...form, isKit: false, acPartRole: v });
-                  else setForm({ ...form, isKit: false, acPartRole: '' });
-                }}
-              >
-                <option value="">{t('products.acPartRoleNone')}</option>
-                <option value="INDOOR_UNIT">{t('products.indoorUnitOnly')}</option>
-                <option value="OUTDOOR_UNIT">{t('products.outdoorUnitOnly')}</option>
-                <option value="KIT">{t('products.wholeUnitKit')}</option>
-              </Select>
-            </FormField>
-          ) : (
-            <FormField label={t('fields.unit')}>
-              <Select
-                required
-                value={form.unitId}
-                disabled={!form.categoryId}
-                onChange={(e) => setForm({ ...form, unitId: e.target.value })}
-              >
-                <option value="">{form.categoryId ? '—' : t('products.selectCategoryFirst')}</option>
-                {(unitsQuery.data ?? [])
-                  .filter((u) => u.categoryId === form.categoryId)
-                  .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.nameEn}
-                    </option>
-                  ))}
-              </Select>
-            </FormField>
-          )}
+          <FormField label={t('fields.unit')}>
+            <Select
+              required
+              value={form.unitId}
+              disabled={!form.categoryId}
+              onChange={(e) => setForm({ ...form, unitId: e.target.value })}
+            >
+              <option value="">{form.categoryId ? '—' : t('products.selectCategoryFirst')}</option>
+              {(unitsQuery.data ?? [])
+                .filter((u) => u.categoryId === form.categoryId)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nameEn}
+                  </option>
+                ))}
+            </Select>
+          </FormField>
           <div className="col-span-2">
             <FormField label={t('fields.unitsPerPackage')}>
               <Input

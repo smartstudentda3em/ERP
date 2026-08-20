@@ -63,12 +63,6 @@ export class CreatePurchaseReceiptDto {
   @IsNumber() @Min(0) packagePurchasePrice: number;
   @IsOptional() @IsNumber() @Min(0) packageSellingPrice?: number;
   @IsOptional() @IsNumber() @Min(0) unitSellingPrice?: number;
-  /** Kit products only — see PurchaseReceiptsService for the AC-kit-only gate and the
-   * indoor+outdoor === packagePurchasePrice validation. Rejected outright for a non-kit product. */
-  @IsOptional() @IsNumber() @Min(0) kitIndoorPurchasePrice?: number;
-  @IsOptional() @IsNumber() @Min(0) kitOutdoorPurchasePrice?: number;
-  @IsOptional() @IsNumber() @Min(0) kitIndoorSellingPrice?: number;
-  @IsOptional() @IsNumber() @Min(0) kitOutdoorSellingPrice?: number;
   /** Amount actually paid to the supplier up front (cash/transfer) at receipt time — the rest posts to the supplier's outstanding balance. Omitted/0 means fully on credit (آجل). */
   @IsOptional() @IsNumber() @Min(0) paidAmount?: number;
   /** Which treasury account the up-front payment came out of — required only when paidAmount > 0. */

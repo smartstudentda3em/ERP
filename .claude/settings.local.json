@@ -190,7 +190,11 @@
       "Bash(bash /tmp/cleanup_purchase_kit.sh)",
       "Bash(bash /tmp/create_kit3.sh)",
       "Bash(bash /tmp/verify_ignore_unitselling.sh)",
-      "Bash(bash /tmp/cleanup_hide_fields_test.sh)"
+      "Bash(bash /tmp/cleanup_hide_fields_test.sh)",
+      "Bash(powershell -Command \"Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Select-Object -First 1\")",
+      "Bash(powershell -Command \"Get-Process -Name 'com.docker.backend' -ErrorAction SilentlyContinue | Select-Object -First 1\")",
+      "Bash(bash /tmp/final_cleanup.sh)",
+      "Bash(bash /tmp/final_cleanup2.sh)"
     ]
   }
 }

@@ -9,6 +9,7 @@ import { ProductType } from '../../../entities/enums';
 import { Unit } from '../../settings/entities/unit.entity';
 import { PackageType } from '../../settings/entities/package-type.entity';
 import { ProductCategory } from '../../settings/entities/product-category.entity';
+import { Company } from '../../settings/entities/company.entity';
 import { SalesRepAccessService } from '../../../common/services/sales-rep-access.service';
 
 interface PackagingFields {
@@ -25,6 +26,7 @@ export class ProductsService extends BaseCrudService<Product> {
     @InjectRepository(Unit) private readonly unitRepo: Repository<Unit>,
     @InjectRepository(PackageType) private readonly packageTypeRepo: Repository<PackageType>,
     @InjectRepository(ProductCategory) private readonly categoryRepo: Repository<ProductCategory>,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     private readonly salesRepAccess: SalesRepAccessService,
   ) {
     super(repo);
@@ -44,13 +46,13 @@ export class ProductsService extends BaseCrudService<Product> {
   }
 
   /**
-   * `repo.save()` has no application-level guard for a duplicate barcode (only `sku` is
-   * pre-checked) or for a category/unit/package/brand id that's been deleted out from under an
-   * open form — both surface as a raw Postgres `QueryFailedError`, which the global exception
-   * filter would otherwise forward as an opaque 500 with driver text instead of a message the
-   * frontend can show the user. This turns the two constraint-violation codes Product's schema can
-   * actually trigger (23505 unique, 23503 foreign key) into the same kind of HttpException the
-   * pre-checks above already throw; anything else is rethrown untouched.
+   * `repo.save()` has no application-level guard for a category/unit/package/brand id that's been
+   * deleted out from under an open form — it surfaces as a raw Postgres `QueryFailedError`, which
+   * the global exception filter would otherwise forward as an opaque 500 with driver text instead
+   * of a message the frontend can show the user. The 23505 branch is a defensive fallback (SKU/
+   * barcode duplicates are normally caught earlier by assertSkuBarcodeUnique, which is where the
+   * AC exemption lives — there's no DB unique constraint left on this entity to actually trigger
+   * it); 23503 (foreign key) is the one that still happens in practice.
    */
   private toFriendlySaveError(err: unknown): Error {
     const code = (err instanceof QueryFailedError ? (err as any).driverError?.code ?? (err as any).code : undefined) as
@@ -59,6 +61,28 @@ export class ProductsService extends BaseCrudService<Product> {
     if (code === '23505') return new ConflictException('SKU or barcode already exists');
     if (code === '23503') return new BadRequestException('Selected category, unit, package type, or brand is invalid');
     return err instanceof Error ? err : new Error(String(err));
+  }
+
+  /** SKU/barcode ("القدرة" for AC) uniqueness is a per-company business rule, not a DB constraint
+   * (see the entity's comment) — every company gets a real duplicate rejection here, except AC
+   * (Air Conditioning), where the same SKU/capacity code legitimately repeats across a split
+   * unit's indoor/outdoor halves, so this is a deliberate no-op there. `excludeId` lets an edit
+   * pass its own unchanged sku/barcode back without tripping on itself. */
+  private async assertSkuBarcodeUnique(
+    companyId: string,
+    dto: { sku?: string; barcode?: string },
+    excludeId?: string,
+  ): Promise<void> {
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code === 'AC') return;
+    if (dto.sku) {
+      const existing = await this.repo.findOne({ where: { companyId, sku: dto.sku } });
+      if (existing && existing.id !== excludeId) throw new ConflictException('SKU already exists');
+    }
+    if (dto.barcode) {
+      const existing = await this.repo.findOne({ where: { companyId, barcode: dto.barcode } });
+      if (existing && existing.id !== excludeId) throw new ConflictException('Barcode already exists');
+    }
   }
 
   /** Scoped to the caller's company — an id that belongs to another company 404s exactly like an id that doesn't exist at all, so ids can't be probed cross-company. */
@@ -119,14 +143,7 @@ export class ProductsService extends BaseCrudService<Product> {
   }
 
   async createForCompany(dto: CreateProductDto, companyId: string): Promise<Product> {
-    if (dto.sku) {
-      const existing = await this.repo.findOne({ where: { companyId, sku: dto.sku } });
-      if (existing) throw new ConflictException('SKU already exists');
-    }
-    if (dto.barcode) {
-      const existing = await this.repo.findOne({ where: { companyId, barcode: dto.barcode } });
-      if (existing) throw new ConflictException('Barcode already exists');
-    }
+    await this.assertSkuBarcodeUnique(companyId, dto);
     const derivedPurchasePrice = this.computePackageDerivedPurchasePrice(dto);
     const finalDto = derivedPurchasePrice !== undefined ? { ...dto, purchasePrice: derivedPurchasePrice } : dto;
     // No stock movement can exist yet for a brand-new product, so the average cost starts out
@@ -143,6 +160,7 @@ export class ProductsService extends BaseCrudService<Product> {
 
   async updateScoped(id: string, companyId: string, dto: UpdateProductDto): Promise<Product> {
     const existing = await this.findOneScoped(id, companyId);
+    await this.assertSkuBarcodeUnique(companyId, dto, id);
 
     const merged: PackagingFields = {
       packageTypeId: dto.packageTypeId !== undefined ? dto.packageTypeId : existing.packageTypeId,
@@ -183,9 +201,8 @@ export class ProductsService extends BaseCrudService<Product> {
   /**
    * Matches partially and case-insensitively (ILIKE %term%) across SKU, barcode, name, brand, and
    * category — the exact five fields the Products screen's search bar covers, deliberately
-   * excluding anything warehouse/stock-related. `sku`/`barcode` are already indexed via their
-   * unique constraints; `nameEn`, `categoryId`, `brandId` carry their own indexes (see the entity)
-   * so this stays fast as the catalog grows.
+   * excluding anything warehouse/stock-related. `nameEn`, `categoryId`, `brandId` carry their own
+   * indexes (see the entity) so this stays fast as the catalog grows.
    */
   async search(companyId: string, term: string): Promise<Product[]> {
     const q = `%${term.trim()}%`;

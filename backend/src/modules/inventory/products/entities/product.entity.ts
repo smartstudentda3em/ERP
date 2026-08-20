@@ -1,4 +1,4 @@
-import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from "typeorm";
+import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
 import { BaseEntity } from "../../../../entities/base.entity";
 import { ProductCategory } from "../../../settings/entities/product-category.entity";
 import { Brand } from "../../../settings/entities/brand.entity";
@@ -8,11 +8,12 @@ import { Tax } from "../../../settings/entities/tax.entity";
 import { Company } from "../../../settings/entities/company.entity";
 import { ProductType } from "../../../../entities/enums";
 
-// sku/barcode are unique per company, not globally — two different companies (separate
-// businesses sharing this system) may legitimately reuse the same SKU/barcode.
+// sku/barcode uniqueness is enforced in ProductsService (assertSkuBarcodeUnique), not here as a DB
+// constraint — Postgres partial indexes can't reference another table (companies), so excluding
+// just the AC company from the rule can't be expressed as a schema-level constraint. Every company
+// except AC still gets a real duplicate rejection; AC's "القدرة" (barcode) and SKU legitimately
+// repeat across a split unit's indoor/outdoor halves.
 @Entity("products")
-@Unique(["companyId", "sku"])
-@Unique(["companyId", "barcode"])
 export class Product extends BaseEntity {
   @Column("uuid")
   companyId: string;

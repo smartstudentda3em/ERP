@@ -194,7 +194,13 @@
       "Bash(powershell -Command \"Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Select-Object -First 1\")",
       "Bash(powershell -Command \"Get-Process -Name 'com.docker.backend' -ErrorAction SilentlyContinue | Select-Object -First 1\")",
       "Bash(bash /tmp/final_cleanup.sh)",
-      "Bash(bash /tmp/final_cleanup2.sh)"
+      "Bash(bash /tmp/final_cleanup2.sh)",
+      "Bash(bash /tmp/verify_dup.sh)",
+      "Bash(bash /tmp/verify_dup2.sh)",
+      "Bash(bash /tmp/verify_dup3.sh)",
+      "Bash(bash /tmp/verify_dup4.sh)",
+      "Bash(bash /tmp/verify_dup5.sh)",
+      "Bash(bash /tmp/final_cleanup3.sh)"
     ]
   }
 }

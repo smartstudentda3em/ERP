@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount, roundTo } from '../../lib/number-format';
 import { Button } from '../../components/ui/Button';
-import { Input, Select } from '../../components/ui/Input';
+import { FormField, Input, Select } from '../../components/ui/Input';
 import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { useActiveCompany, useIsSalesRep } from '../../lib/use-active-company';
 
@@ -224,7 +224,7 @@ export function SalesLineEditor({
   if (isPrintingPress) {
     return (
       <div className="col-span-2">
-        <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+        <div className="hidden overflow-x-auto rounded-lg border border-[var(--border)] md:block">
           <table className="app-table w-full">
             <thead>
               <tr>
@@ -324,7 +324,91 @@ export function SalesLineEditor({
             </tbody>
           </table>
         </div>
-        <Button type="button" variant="secondary" className="mt-2" onClick={() => onChange([...lines, emptyLine()])}>
+
+        {/* Phone: one card per line instead of the table above. */}
+        <div className="flex flex-col gap-3 md:hidden">
+          {lines.map((line, i) => {
+            const product = products.find((p) => p.id === line.productId);
+            const unitPrice = Number(line.unitPrice || 0);
+            const quantity = Number(line.quantity || 0);
+            const pricing = product ? pricingFor(product, line.unitKind) : null;
+            const profitPerUnit = !isSalesRep && pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
+            const belowCost = profitPerUnit !== null && profitPerUnit < 0;
+
+            return (
+              <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                <div className="mb-3 flex items-start gap-2">
+                  <div className="flex-1">
+                    <SearchableSelect
+                      options={productOptions}
+                      value={line.productId}
+                      onChange={(v) => updateLine(i, { productId: v })}
+                      placeholder={t('actions.searchProduct') ?? ''}
+                      clearable
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-lg p-2 text-lg leading-none text-red-600"
+                    aria-label={t('common.delete') ?? 'Delete'}
+                    onClick={() => onChange(lines.filter((_, idx) => idx !== i))}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label={t('fields.actualSellingPrice')}>
+                    <Input
+                      className={belowCost && warnOnSellBelowCost ? 'border-yellow-500' : ''}
+                      type="number"
+                      step="0.01"
+                      value={line.unitPrice}
+                      onChange={(e) => updateLine(i, { unitPrice: e.target.value })}
+                    />
+                  </FormField>
+                  <FormField label={t('fields.quantity')}>
+                    <Input
+                      type="number"
+                      value={line.quantity}
+                      onChange={(e) => updateLine(i, { quantity: e.target.value })}
+                    />
+                  </FormField>
+                </div>
+                <div className="mt-3">
+                  <FormField label={t('fields.lineTotal')}>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={line.lineTotal}
+                      onChange={(e) => updateLine(i, { lineTotal: e.target.value })}
+                    />
+                  </FormField>
+                </div>
+                {product && pricing && (
+                  <div className="mt-3 flex flex-col gap-1 text-xs text-[var(--text-muted)]">
+                    {pricing.suggestedPrice != null && (
+                      <span>
+                        {t('fields.suggestedPrice')}: <span className="font-medium">{formatAmount(pricing.suggestedPrice)}</span>{' '}
+                        <span className="italic">({t('fields.referenceOnly')})</span>
+                      </span>
+                    )}
+                    {profitPerUnit !== null && (
+                      <span className={belowCost ? 'font-medium text-red-600' : ''}>
+                        {t('fields.profit')}: {formatAmount(profitPerUnit)} × {quantity} ={' '}
+                        {formatAmount(profitPerUnit * quantity)}
+                      </span>
+                    )}
+                    {belowCost && warnOnSellBelowCost && (
+                      <span className="font-medium text-red-600">⚠ {t('fields.belowCostWarning')}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <Button type="button" variant="secondary" className="mt-3" onClick={() => onChange([...lines, emptyLine()])}>
           {t('actions.addLinePress')}
         </Button>
         <div className="mt-3 text-end text-sm font-semibold">
@@ -337,7 +421,10 @@ export function SalesLineEditor({
   if (layout === 'table') {
     return (
       <div className="col-span-2">
-        <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+        {/* Tablet/desktop: the original table, unchanged. A مندوب's invoice form is what the mobile
+            app actually opens on a phone, so below `md` this gives way to the card list further
+            down instead of forcing a horizontal-scroll to reach the quantity/price fields. */}
+        <div className="hidden overflow-x-auto rounded-lg border border-[var(--border)] md:block">
           <table className="app-table w-full">
             <thead>
               <tr>
@@ -448,7 +535,102 @@ export function SalesLineEditor({
             </tbody>
           </table>
         </div>
-        <div className="mt-2 flex justify-end">
+
+        {/* Phone: one card per line instead of the table above. */}
+        <div className="flex flex-col gap-3 md:hidden">
+          {lines.map((line, i) => {
+            const product = products.find((p) => p.id === line.productId);
+            const canSellByPackage = !!(product?.packageTypeId && product?.unitsPerPackage);
+            const unitPrice = Number(line.unitPrice || 0);
+            const quantity = Number(line.quantity || 0);
+            const pricing = product ? pricingFor(product, line.unitKind) : null;
+            const profitPerUnit = !isSalesRep && pricing?.purchasePrice != null ? unitPrice - pricing.purchasePrice : null;
+            const belowCost = profitPerUnit !== null && profitPerUnit < 0;
+
+            return (
+              <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                <div className="mb-3 flex items-start gap-2">
+                  <div className="flex-1">
+                    <SearchableSelect
+                      options={productOptions}
+                      value={line.productId}
+                      onChange={(v) => updateLine(i, { productId: v })}
+                      placeholder={t('actions.searchProduct') ?? ''}
+                      clearable
+                    />
+                    {canSellByPackage && (
+                      <Select
+                        className="mt-2"
+                        value={line.unitKind}
+                        onChange={(e) => switchUnitKind(i, e.target.value as UnitKind)}
+                      >
+                        <option value="UNIT">{unitName(product!.unitId)}</option>
+                        <option value="PACKAGE">{packageTypeName(product!.packageTypeId)}</option>
+                      </Select>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-lg p-2 text-lg leading-none text-red-600"
+                    aria-label={t('common.delete') ?? 'Delete'}
+                    onClick={() => onChange(lines.filter((_, idx) => idx !== i))}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label={t('fields.quantity')}>
+                    <Input
+                      type="number"
+                      value={line.quantity}
+                      onChange={(e) => updateLine(i, { quantity: e.target.value })}
+                    />
+                  </FormField>
+                  <FormField label={t('fields.actualSellingPrice')}>
+                    <Input
+                      className={belowCost && warnOnSellBelowCost ? 'border-yellow-500' : ''}
+                      type="number"
+                      step="0.01"
+                      value={line.unitPrice}
+                      onChange={(e) => updateLine(i, { unitPrice: e.target.value })}
+                    />
+                  </FormField>
+                </div>
+                <div className="mt-3">
+                  <FormField label={t('fields.lineTotal')}>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={line.lineTotal}
+                      onChange={(e) => updateLine(i, { lineTotal: e.target.value })}
+                    />
+                  </FormField>
+                </div>
+                {product && pricing && (
+                  <div className="mt-3 flex flex-col gap-1 text-xs text-[var(--text-muted)]">
+                    {pricing.suggestedPrice != null && (
+                      <span>
+                        {t('fields.suggestedPrice')}: <span className="font-medium">{formatAmount(pricing.suggestedPrice)}</span>{' '}
+                        <span className="italic">({t('fields.referenceOnly')})</span>
+                      </span>
+                    )}
+                    {profitPerUnit !== null && (
+                      <span className={belowCost ? 'font-medium text-red-600' : ''}>
+                        {t('fields.profit')}: {formatAmount(profitPerUnit)} × {quantity} ={' '}
+                        {formatAmount(profitPerUnit * quantity)}
+                      </span>
+                    )}
+                    {belowCost && warnOnSellBelowCost && (
+                      <span className="font-medium text-red-600">⚠ {t('fields.belowCostWarning')}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 flex justify-end">
           <Button type="button" variant="secondary" onClick={() => onChange([...lines, emptyLine()])}>
             {t('actions.addLine')}
           </Button>

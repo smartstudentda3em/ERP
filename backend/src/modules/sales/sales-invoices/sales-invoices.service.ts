@@ -53,22 +53,44 @@ export class SalesInvoicesService {
    * getSalesLines()/resolveBranchId(): a non-admin pinned to a branch (via their own linked
    * SalesRepresentative) only ever sees that branch's invoices.
    *
+   * A "مندوب" caller is additionally pinned to ONLY their own invoices (salesRepresentativeId must
+   * match their own linked rep) — unlike "مدير فرع", a مندوب has no concept of "my branch's sales"
+   * at all, only "my own sales" (see SalesRepAccessService.isCallerSalesRep's doc comment on why a
+   * مندوب has no branch concept the way مدير فرع does). If a مندوب somehow has no linked rep row
+   * (shouldn't happen — auto-provisioned at user creation), they see nothing rather than everyone
+   * else's invoices by accident.
+   *
    * `isBranchManagerSelf` additionally hides any invoice that earns this caller zero commission —
-   * exclusively for the "مدير فرع" role (resolved by the controller from the caller's own JWT
-   * permissions, same pattern as StockAuditsController's autoApprove), never for Administrator or
-   * the broader "Manager" role. Uses the exact same resolveLineCommissionRate() a line's rate is
-   * computed with in the Branch Managers Commission report / "أدائي" dashboard
-   * (sales-representatives.controller.ts), so "0% commission" can never mean something different
-   * on this screen than it does there. An invoice with no lines at all (shouldn't happen, but
-   * never crashes on it) counts as zero-commission and is hidden too. */
-  async findAll(companyId: string, userId: string, isBranchManagerSelf = false) {
+   * exclusively for the "مدير فرع" role (re-derived from the DB via
+   * SalesRepAccessService.isCallerBranchManager, never for Administrator or the broader "Manager"
+   * role). Uses the exact same resolveLineCommissionRate() a line's rate is computed with in the
+   * Branch Managers Commission report / "أدائي" dashboard (sales-representatives.controller.ts), so
+   * "0% commission" can never mean something different on this screen than it does there. An
+   * invoice with no lines at all (shouldn't happen, but never crashes on it) counts as
+   * zero-commission and is hidden too. */
+  async findAll(companyId: string, userId: string) {
     const branchId = await this.salesRepAccess.resolveBranchId(userId, undefined, companyId);
-    let invoices = await this.repo.find({
-      where: { companyId, ...(branchId ? { branchId } : {}) },
-      relations: ['customer', 'warehouse', 'salesRepresentative', 'branch'],
-      order: { createdAt: 'DESC' },
-    });
+    const isSalesRep = await this.salesRepAccess.isCallerSalesRep(userId);
+    let ownRepId: string | null = null;
+    if (isSalesRep) {
+      const ownRep = await this.salesRepRepo.findOne({ where: { userId, companyId } });
+      ownRepId = ownRep?.id ?? null;
+    }
 
+    let invoices =
+      isSalesRep && !ownRepId
+        ? []
+        : await this.repo.find({
+            where: {
+              companyId,
+              ...(branchId ? { branchId } : {}),
+              ...(isSalesRep ? { salesRepresentativeId: ownRepId! } : {}),
+            },
+            relations: ['customer', 'warehouse', 'salesRepresentative', 'branch'],
+            order: { createdAt: 'DESC' },
+          });
+
+    const isBranchManagerSelf = await this.salesRepAccess.isCallerBranchManager(userId);
     if (isBranchManagerSelf && invoices.length) {
       const ownRep = await this.salesRepRepo.findOne({ where: { userId, companyId } });
       if (ownRep) {

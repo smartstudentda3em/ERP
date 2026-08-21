@@ -87,7 +87,12 @@ export function DataTable<T>({
           />
         </div>
       )}
-      <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+      {/* Desktop/tablet: the original table, unchanged. Hidden below `md` in favor of the card list
+          below it — a plain HTML table with fixed-width columns has no way to reflow at phone
+          widths, and this component is shared by every list screen in the app (including the ones
+          مندوب/مدير فرع use inside the Android app), so the fix lives here once instead of being
+          rebuilt per screen. */}
+      <div className="hidden overflow-x-auto rounded-lg border border-[var(--border)] md:block">
         <table className="app-table">
           {columns.some((col) => col.width) && (
             <colgroup>
@@ -149,6 +154,44 @@ export function DataTable<T>({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Phone: one card per row instead of a horizontally-scrolling table. The first column
+          becomes the card's title (it's always the row's own identifying value — a name, a
+          document number, a date); every other column renders as a label/value line. */}
+      <div className="flex flex-col gap-2.5 md:hidden">
+        {isLoading ? (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-center text-sm text-[var(--text-muted)]">
+            {t('common.loading')}
+          </div>
+        ) : paged.length === 0 ? (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-center text-sm text-[var(--text-muted)]">
+            {t('common.noData')}
+          </div>
+        ) : (
+          paged.map((row) => {
+            const [titleCol, ...restCols] = columns;
+            return (
+              <div
+                key={keyField(row)}
+                className={`rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 ${onRowClick ? 'cursor-pointer active:bg-[var(--surface-2,var(--table-header-bg))]' : ''}`}
+                onClick={() => onRowClick?.(row)}
+              >
+                <div className="mb-2.5 text-base font-semibold">{titleCol.accessor(row)}</div>
+                <div className="flex flex-col gap-2">
+                  {restCols.map((col, i) => (
+                    <div key={i} className="flex items-start justify-between gap-3 text-sm">
+                      <span className="shrink-0 text-[var(--text-muted)]">{col.header}</span>
+                      <span className={`text-end font-medium ${col.highlight ? 'text-[var(--accent,var(--primary-600))]' : ''}`}>
+                        {col.accessor(row)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
       {totalPages > 1 && (
         <div className="mt-3 flex items-center justify-end gap-2 text-sm">

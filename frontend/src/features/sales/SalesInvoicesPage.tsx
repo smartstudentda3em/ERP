@@ -440,7 +440,7 @@ export function SalesInvoicesPage() {
         widthClass="max-w-5xl"
       >
         <form
-          className="grid grid-cols-2 gap-3"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault();
             createMutation.mutate();
@@ -511,7 +511,7 @@ export function SalesInvoicesPage() {
             </Card>
           ) : (
             <>
-              <div className="col-span-2 grid grid-cols-2 gap-3">
+              <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <FormField label={t('nav.customers')}>
                   <Select required value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
                     <option value="">{t('actions.selectCustomer')}</option>

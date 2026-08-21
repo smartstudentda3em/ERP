@@ -231,7 +231,26 @@
       "Bash(curl -s -o /dev/null -w \"icon-512: %{http_code}\\\\n\" https://erp.smartstudent.live/icon-512.png)",
       "Bash(/d/Android/jdk/bin/keytool -genkeypair -v -keystore /d/Android/keystore/erp-release.keystore -alias erp-mobile -keyalg RSA -keysize 2048 -validity 10000 -storepass ErpMobile2026Secure -keypass ErpMobile2026Secure -dname 'CN=Smart Student ERP, OU=IT, O=Smart Student, L=Cairo, ST=Cairo, C=EG')",
       "Bash(\"/d/Android/jdk/bin/keytool\" -list -v -keystore /d/Android/keystore/erp-release.keystore -storepass \"ErpMobile2026Secure\")",
-      "Bash(curl -s http://localhost:5173/.well-known/assetlinks.json)"
+      "Bash(curl -s http://localhost:5173/.well-known/assetlinks.json)",
+      "Bash(curl -s https://erp.smartstudent.live/.well-known/assetlinks.json)",
+      "Bash(mkdir -p /d/Android/twa-project)",
+      "Bash(npm init *)",
+      "Bash(npx bubblewrap *)",
+      "Bash(pkill -f \"bubblewrap\")",
+      "Bash(pkill -f \"cli.js\")",
+      "Read(//e//**)",
+      "Read(//c/Users/surface/**)",
+      "Read(//c/Users/surface/.bubblewrap/**)",
+      "Bash(xargs grep -l \"contains the folder\")",
+      "PowerShell(cmd /c mklink /J \"D:\\\\Android\\\\Sdk\\\\bin\" \"D:\\\\Android\\\\Sdk\\\\cmdline-tools\\\\latest\\\\bin\")",
+      "Bash(./sdkmanager.bat --sdk_root=\"D:/Android/Sdk\" \"platforms/android-36\" \"build-tools/36.1.0\")",
+      "Bash(node generate.js)",
+      "Bash(export BUBBLEWRAP_KEYSTORE_PASSWORD=\"ErpMobile2026Secure\")",
+      "Bash(export BUBBLEWRAP_KEY_PASSWORD=\"ErpMobile2026Secure\")",
+      "Bash(curl -s -o /dev/null -w \"local apk: %{http_code} content-type=%{content_type}\\\\n\" http://localhost:5173/app-release-signed.apk)",
+      "Bash(curl -s -o /dev/null -w \"live apk: %{http_code} content-type=%{content_type} size=%{size_download}\\\\n\" https://erp.smartstudent.live/app-release-signed.apk)",
+      "Bash(curl -s http://localhost:3000/api/customers?companyId=dd995cad-06cd-4073-b985-b560b448efc0 -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s -X POST http://localhost:3000/api/sales/invoices -H 'Content-Type: application/json' -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -d '{ *)"
     ]
   }
 }

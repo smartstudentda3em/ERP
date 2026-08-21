@@ -13,16 +13,10 @@ export class SalesInvoicesController {
   @Get()
   @Permissions('sales.invoice.view')
   findAll(@CurrentUser() user: AuthenticatedUser) {
-    // "مدير فرع" (Branch Manager) is the only role meant to trigger this commission-based filter —
-    // it lacks sales-representatives.view same as "مندوب" does (Sidebar.tsx's isBranchManagerSelf
-    // uses that same bare signal), but a مندوب has no commission concept at all and must always see
-    // every invoice on their branch, not zero. dashboard.view disambiguates the two: مدير فرع has
-    // it, مندوب never does (see DefaultRedirect.tsx). See SalesInvoicesService.findAll()'s own doc
-    // comment for what "zero-commission" filtering means here.
-    const isBranchManagerSelf =
-      !(user.permissions?.includes('sales-representatives.view') ?? false) &&
-      (user.permissions?.includes('dashboard.view') ?? false);
-    return this.service.findAll(user.companyId!, user.userId, isBranchManagerSelf);
+    // Branch/own-invoice scoping and the "مدير فرع" zero-commission filter are both resolved inside
+    // the service itself now (re-derived from the DB via SalesRepAccessService), not inferred here
+    // from JWT permission codes — see SalesInvoicesService.findAll()'s own doc comment.
+    return this.service.findAll(user.companyId!, user.userId);
   }
 
   /** Lightweight active-user list for the "attributed to" field — gated by sales.invoice.create rather than users.view, so a salesperson without user-management access can still attribute their own invoices. */

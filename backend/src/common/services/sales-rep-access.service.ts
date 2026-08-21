@@ -6,6 +6,8 @@ import { SalesRepresentative } from '../../modules/parties/entities/sales-repres
 
 /** Mirrors SALES_REP_ROLE_NAME in backend/src/modules/users/users.service.ts. */
 const SALES_REP_ROLE_NAME = 'مندوب';
+/** Mirrors BRANCH_MANAGER_ROLE_NAME in backend/src/modules/users/users.service.ts. */
+const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
 
 /**
  * Enforces that non-admin callers can only ever attribute a sales transaction (quotation, invoice,
@@ -34,6 +36,15 @@ export class SalesRepAccessService {
   async isCallerSalesRep(userId: string): Promise<boolean> {
     const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['roles'] });
     return user?.roles?.some((r) => r.name === SALES_REP_ROLE_NAME) ?? false;
+  }
+
+  /** True when the CALLER holds the "مدير فرع" role — used by SalesInvoicesService.findAll() to
+   * decide whether the zero-commission filter applies. Re-derives the role from the DB rather than
+   * trusting a `dashboard.view`/permission-code inference (the previous approach), since that
+   * permission is no longer a reliable signal once مدير فرع stops holding it. */
+  async isCallerBranchManager(userId: string): Promise<boolean> {
+    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['roles'] });
+    return user?.roles?.some((r) => r.name === BRANCH_MANAGER_ROLE_NAME) ?? false;
   }
 
   /** True when `salesRepresentativeId` is linked to a "مندوب" (field sales agent) login account —

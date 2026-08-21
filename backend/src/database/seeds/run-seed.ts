@@ -628,6 +628,9 @@ async function main() {
     'sales.invoice.create',
     'sales.payment.view',
     'sales.payment.create',
+    // View + create only, no edit/delete/statement — see RepCustomersView in CustomersPage.tsx.
+    'customers.view',
+    'customers.create',
   ];
   const branchManagerPermissions = allPermissions.filter((p) =>
     BRANCH_MANAGER_PERMISSION_CODES.includes(`${p.module}.${p.action}`),
@@ -689,6 +692,10 @@ async function main() {
     'sales.invoice.create',
     'inventory.product.view',
     'customers.view',
+    // Unlocks the /customers route itself (view + create only, via RepCustomersView) — see
+    // router.tsx's /customers route, which no longer blocks مندوب the way its sibling
+    // customer routes (statement, outstanding-balances) still do.
+    'customers.create',
     'settings.warehouse.view',
     'settings.branch.view',
     // Lets a مندوب reach /sales/payments and record a follow-up collection against their own

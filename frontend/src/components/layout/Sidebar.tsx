@@ -54,12 +54,13 @@ const items: NavItem[] = [
   // can't actually enter (see router.tsx's matching RequirePermission guard).
   { to: '/dashboard', label: 'nav.dashboard', icon: '📊', permission: 'dashboard.view' },
   {
+    // Deliberately no hideForSalesRep here (unlike outstanding-balances below) — مندوب/مدير فرع
+    // are meant to reach this one, landing on the stripped-down RepCustomersView (see router.tsx).
     to: '/customers',
     label: 'nav.customers',
     icon: '🧑‍💼',
     permission: 'customers.view',
     hideForPrintingPress: true,
-    hideForSalesRep: true,
   },
   {
     to: '/outstanding-balances',

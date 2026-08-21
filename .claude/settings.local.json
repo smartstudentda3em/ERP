@@ -250,7 +250,8 @@
       "Bash(curl -s -o /dev/null -w \"local apk: %{http_code} content-type=%{content_type}\\\\n\" http://localhost:5173/app-release-signed.apk)",
       "Bash(curl -s -o /dev/null -w \"live apk: %{http_code} content-type=%{content_type} size=%{size_download}\\\\n\" https://erp.smartstudent.live/app-release-signed.apk)",
       "Bash(curl -s http://localhost:3000/api/customers?companyId=dd995cad-06cd-4073-b985-b560b448efc0 -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
-      "Bash(curl -s -X POST http://localhost:3000/api/sales/invoices -H 'Content-Type: application/json' -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -d '{ *)"
+      "Bash(curl -s -X POST http://localhost:3000/api/sales/invoices -H 'Content-Type: application/json' -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -d '{ *)",
+      "Bash(curl -s -o /dev/null -w \"live site: %{http_code}\\\\n\" https://erp.smartstudent.live)"
     ]
   }
 }

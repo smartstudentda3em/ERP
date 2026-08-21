@@ -249,7 +249,9 @@
     "selectUnit": "اختر وحدة…",
     "selectRole": "اختر دور…",
     "balanceDue": "الرصيد المستحق",
-    "downloadPdf": "تحميل PDF"
+    "downloadPdf": "تحميل PDF",
+    "shareWhatsApp": "إرسال عبر واتساب",
+    "shareNotSupported": "المتصفح لا يدعم المشاركة المباشرة — استخدم زر تحميل PDF وأرفقه يدوياً"
   },
   "paymentMethod": {
     "CASH": "نقدي",

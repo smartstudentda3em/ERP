@@ -14,9 +14,10 @@ import { FormField, Input, Select } from '../../components/ui/Input';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
-import { exportElementToPdf } from '../../lib/pdf-export';
+import { exportElementToPdf, exportElementToPdfBlob } from '../../lib/pdf-export';
 import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 import { DocumentFooter } from './DocumentFooter';
+import { useToast } from '../../components/ui/Toast';
 
 interface InvoiceLine {
   id: string;
@@ -75,6 +76,7 @@ export function SalesInvoiceDetailPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const { t } = useTranslation();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const { isPrintingPress } = useActiveCompany();
@@ -85,6 +87,7 @@ export function SalesInvoiceDetailPage() {
   // same as the standalone سند قبض form's own paymentAccount field.
   const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK' | ''>('');
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [whatsappLoading, setWhatsappLoading] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
   const invoiceQuery = useQuery({
@@ -155,6 +158,39 @@ export function SalesInvoiceDetailPage() {
     }
   }
 
+  /**
+   * "إرسال عبر واتساب" — builds the same PDF as handleDownloadPdf() but as an in-memory Blob (never
+   * touches disk) and hands it to the OS share sheet via the Web Share API's file-sharing support
+   * (Level 2), which on Android lets the caller pick WhatsApp and land the file directly in a chat.
+   * WhatsApp's own `wa.me`/`api.whatsapp.com` deep links can only pre-fill TEXT, never attach a
+   * file — so a native share-sheet handoff is the only way to actually deliver the PDF itself, not
+   * just a message about it. There's no way to pre-select *which* WhatsApp chat opens; the user
+   * still picks the contact themselves after WhatsApp opens, same as sharing a photo from the
+   * Gallery app would work.
+   */
+  async function handleShareWhatsApp() {
+    if (!printRef.current || !inv) return;
+    setWhatsappLoading(true);
+    printRef.current.classList.add('pdf-export-mode');
+    try {
+      const filename = buildPdfFileName('فاتورة بيع', inv.customer?.name, inv.documentNumber);
+      const blob = await exportElementToPdfBlob(printRef.current, 'portrait');
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+      } else {
+        toast.error(t('actions.shareNotSupported'));
+      }
+    } catch (err: any) {
+      // AbortError just means the user closed the share sheet without picking anything — not a
+      // real failure, so it stays silent rather than showing an error toast for a non-error.
+      if (err?.name !== 'AbortError') toast.error(t('common.saveFailed'));
+    } finally {
+      printRef.current?.classList.remove('pdf-export-mode');
+      setWhatsappLoading(false);
+    }
+  }
+
   // Lets the invoices table's row-level طباعة/تصدير PDF buttons trigger the action immediately on
   // arrival, via ?autoprint=1 / ?autopdf=1, instead of requiring a second click on this page.
   useEffect(() => {
@@ -179,6 +215,9 @@ export function SalesInvoiceDetailPage() {
               </Button>
               <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
                 {t('actions.downloadPdf')}
+              </Button>
+              <Button variant="secondary" onClick={handleShareWhatsApp} loading={whatsappLoading}>
+                {t('actions.shareWhatsApp')}
               </Button>
               {balanceDue > 0 && (
                 <Button

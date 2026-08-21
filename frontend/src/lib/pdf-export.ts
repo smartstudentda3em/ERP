@@ -18,18 +18,12 @@ const BOUNDARY_SELECTOR = 'tr, thead, tfoot, h1, h2, h3, h4, .section-title';
 export type PdfOrientation = 'portrait' | 'landscape';
 
 /**
- * Captures `element` (already-rendered DOM, e.g. a `printRef` container) and saves it as
- * `filename`, splitting tall content across multiple A4 pages instead of squeezing everything
- * onto one. Page breaks snap to the nearest row/heading boundary that still fits, so a table row
- * is never cut in half across two pages. Callers keep their own `pdf-export-mode` class toggling
- * / try-catch-finally around this call exactly as before — this only replaces the
- * html2canvas+jsPDF capture-and-save core.
+ * Shared capture-and-paginate core behind both exportElementToPdf() (saves a file) and
+ * exportElementToPdfBlob() (returns the PDF as a Blob, e.g. to hand to navigator.share()) —
+ * everything up through building the multi-page jsPDF document, minus the final save()/output()
+ * call each of those two differs on.
  */
-export async function exportElementToPdf(
-  element: HTMLElement,
-  filename: string,
-  orientation: PdfOrientation = 'portrait',
-): Promise<void> {
+async function buildPdf(element: HTMLElement, orientation: PdfOrientation) {
   const [{ default: html2canvas }, { default: JsPDF }] = await Promise.all([
     import('html2canvas'),
     import('jspdf'),
@@ -101,5 +95,35 @@ export async function exportElementToPdf(
     sliceStart = sliceEnd;
   }
 
+  return pdf;
+}
+
+/**
+ * Captures `element` (already-rendered DOM, e.g. a `printRef` container) and saves it as
+ * `filename`, splitting tall content across multiple A4 pages instead of squeezing everything
+ * onto one. Page breaks snap to the nearest row/heading boundary that still fits, so a table row
+ * is never cut in half across two pages. Callers keep their own `pdf-export-mode` class toggling
+ * / try-catch-finally around this call exactly as before — this only replaces the
+ * html2canvas+jsPDF capture-and-save core.
+ */
+export async function exportElementToPdf(
+  element: HTMLElement,
+  filename: string,
+  orientation: PdfOrientation = 'portrait',
+): Promise<void> {
+  const pdf = await buildPdf(element, orientation);
   pdf.save(filename);
+}
+
+/**
+ * Same capture/pagination as exportElementToPdf(), but returns the PDF as a Blob instead of
+ * triggering a file download — for handing to navigator.share() (e.g. "send via WhatsApp" on the
+ * Sales Invoice detail page) rather than saving to disk.
+ */
+export async function exportElementToPdfBlob(
+  element: HTMLElement,
+  orientation: PdfOrientation = 'portrait',
+): Promise<Blob> {
+  const pdf = await buildPdf(element, orientation);
+  return pdf.output('blob');
 }

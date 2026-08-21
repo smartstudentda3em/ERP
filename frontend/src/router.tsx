@@ -86,13 +86,15 @@ export const router = createBrowserRouter([
                 ),
               },
               {
+                // Deliberately no <RequireNotSalesRep> here (unlike the sibling customer routes
+                // below) — a مندوب/مدير فرع is allowed onto this one specific route, which renders
+                // its own stripped-down RepCustomersView internally (see CustomersPage.tsx). The
+                // deeper financial-detail routes (statement, outstanding-balances) stay blocked.
                 path: '/customers',
                 element: (
                   <RequirePermission code="customers.view">
                     <RequireNotPrintingPress>
-                      <RequireNotSalesRep>
-                        <CustomersPage />
-                      </RequireNotSalesRep>
+                      <CustomersPage />
                     </RequireNotPrintingPress>
                   </RequirePermission>
                 ),

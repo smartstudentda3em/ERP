@@ -77,3 +77,10 @@ export function useIsPressManagerRestricted(): boolean {
 export function useIsSalesRep(): boolean {
   return useAuthStore((s) => s.hasRole('مندوب'));
 }
+
+/** True for a "مدير فرع" (Branch Manager) user, in any company — mirrors useIsSalesRep() above.
+ * Drives CustomersPage.tsx's stripped-down (name/mobile/address + create only, no financial
+ * totals) customer view, shared with مندوب. */
+export function useIsBranchManager(): boolean {
+  return useAuthStore((s) => s.hasRole('مدير فرع'));
+}

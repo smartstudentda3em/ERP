@@ -249,7 +249,9 @@
     "selectUnit": "Select unit…",
     "selectRole": "Select role…",
     "balanceDue": "Balance Due",
-    "downloadPdf": "Download PDF"
+    "downloadPdf": "Download PDF",
+    "shareWhatsApp": "Send via WhatsApp",
+    "shareNotSupported": "Your browser doesn't support direct sharing — use Download PDF and attach it manually"
   },
   "paymentMethod": {
     "CASH": "Cash",

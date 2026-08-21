@@ -14,10 +14,11 @@ import { apiClient, unwrap } from './api-client';
 export async function uploadSharedPdf(blob: Blob, filename: string): Promise<string> {
   const formData = new FormData();
   formData.append('file', blob, filename);
-  const { id } = await unwrap<{ id: string }>(
-    apiClient.post('/shared-documents', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }),
-  );
+  // No explicit Content-Type here — a multipart body needs its boundary parameter in that header
+  // (e.g. "multipart/form-data; boundary=..."), which only the browser/axios can generate from the
+  // actual FormData contents. Setting the header manually without one produces a body the server
+  // can't parse; some browsers silently patch in the boundary anyway (masking the bug in testing),
+  // but not all of them do.
+  const { id } = await unwrap<{ id: string }>(apiClient.post('/shared-documents', formData));
   return `${window.location.origin}/api/shared-documents/${id}`;
 }

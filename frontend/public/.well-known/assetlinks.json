@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "live.smartstudent.erp",
+      "sha256_cert_fingerprints": [
+        "65:0A:CB:41:03:B5:28:15:37:3F:A5:0F:BE:2A:D2:80:05:75:05:31:BF:73:05:E1:74:AD:DA:C1:14:71:EC:F3"
+      ]
+    }
+  }
+]

@@ -226,7 +226,12 @@
       "Bash(curl -s -o /dev/null -w \"manifest: %{http_code}\\\\n\" http://localhost:5173/manifest.json)",
       "Bash(curl -s -o /dev/null -w \"icon-192: %{http_code}\\\\n\" http://localhost:5173/icon-192.png)",
       "Bash(curl -s -o /dev/null -w \"icon-512: %{http_code}\\\\n\" http://localhost:5173/icon-512.png)",
-      "Bash(curl -s http://localhost:5173/manifest.json)"
+      "Bash(curl -s http://localhost:5173/manifest.json)",
+      "Bash(curl -s -o /dev/null -w \"manifest: %{http_code}\\\\n\" https://erp.smartstudent.live/manifest.json)",
+      "Bash(curl -s -o /dev/null -w \"icon-512: %{http_code}\\\\n\" https://erp.smartstudent.live/icon-512.png)",
+      "Bash(/d/Android/jdk/bin/keytool -genkeypair -v -keystore /d/Android/keystore/erp-release.keystore -alias erp-mobile -keyalg RSA -keysize 2048 -validity 10000 -storepass ErpMobile2026Secure -keypass ErpMobile2026Secure -dname 'CN=Smart Student ERP, OU=IT, O=Smart Student, L=Cairo, ST=Cairo, C=EG')",
+      "Bash(\"/d/Android/jdk/bin/keytool\" -list -v -keystore /d/Android/keystore/erp-release.keystore -storepass \"ErpMobile2026Secure\")",
+      "Bash(curl -s http://localhost:5173/.well-known/assetlinks.json)"
     ]
   }
 }

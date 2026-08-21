@@ -82,21 +82,22 @@ export function DocumentLetterhead({
         </table>
       </div>
 
-      <div style={{ textAlign: 'center', margin: '15px 0 0' }}>
+      <div style={{ textAlign: 'center', margin: '18px 0 0' }}>
         <span
           style={{
             backgroundColor: '#1e3a8a',
             color: '#fff',
-            padding: '5px 20px',
+            padding: '7px 28px',
             fontSize: '13pt',
-            fontWeight: 'bold',
-            borderRadius: 4,
+            fontWeight: 800,
+            letterSpacing: '0.5px',
+            borderRadius: 999,
             display: 'inline-block',
           }}
         >
           {docTypeLabel}
         </span>
-        {metaLine && <div style={{ marginTop: 6, fontSize: '10pt', color: '#334155' }}>{metaLine}</div>}
+        {metaLine && <div style={{ marginTop: 8, fontSize: '10pt', color: '#334155' }}>{metaLine}</div>}
       </div>
     </div>
   );

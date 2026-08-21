@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -14,7 +14,7 @@ import { FormField, Input, Select } from '../../components/ui/Input';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
-import { exportElementToPdf, exportElementToPdfBlob } from '../../lib/pdf-export';
+import { exportElementToPdfBlob } from '../../lib/pdf-export';
 import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 import { DocumentFooter } from './DocumentFooter';
 import { useToast } from '../../components/ui/Toast';
@@ -80,14 +80,17 @@ export function SalesInvoiceDetailPage() {
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const { isPrintingPress } = useActiveCompany();
+  // The mobile app (مندوب/مدير فرع) never gets a "طباعة" button — there's no printer attached to
+  // a phone, and if they really do want a paper copy they'd print from the desktop site anyway.
+  // Print stays for every other role (Administrator, Manager, desktop browsing in general).
+  const isMobileRestrictedRole = useIsSalesRep() || useIsBranchManager();
   const [payOpen, setPayOpen] = useState(false);
   const [amount, setAmount] = useState('0');
   // Printing Press only — which treasury account this collected amount actually lands in. Starts
   // unset (not defaulted to CASH) so the branch manager must explicitly say where the money went,
   // same as the standalone سند قبض form's own paymentAccount field.
   const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK' | ''>('');
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [whatsappLoading, setWhatsappLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
   const invoiceQuery = useQuery({
@@ -142,35 +145,22 @@ export function SalesInvoiceDetailPage() {
   const company =
     companiesQuery.data?.find((c) => c.id === (inv?.companyId ?? companyId)) ?? companiesQuery.data?.[0];
 
-  async function handleDownloadPdf() {
-    if (!printRef.current || !inv) return;
-    setPdfLoading(true);
-    printRef.current.classList.add('pdf-export-mode');
-    try {
-      await exportElementToPdf(
-        printRef.current,
-        buildPdfFileName('فاتورة بيع', inv.customer?.name, inv.documentNumber),
-        'portrait',
-      );
-    } finally {
-      printRef.current?.classList.remove('pdf-export-mode');
-      setPdfLoading(false);
-    }
-  }
-
   /**
-   * "إرسال عبر واتساب" — builds the same PDF as handleDownloadPdf() but as an in-memory Blob (never
-   * touches disk) and hands it to the OS share sheet via the Web Share API's file-sharing support
-   * (Level 2), which on Android lets the caller pick WhatsApp and land the file directly in a chat.
-   * WhatsApp's own `wa.me`/`api.whatsapp.com` deep links can only pre-fill TEXT, never attach a
-   * file — so a native share-sheet handoff is the only way to actually deliver the PDF itself, not
-   * just a message about it. There's no way to pre-select *which* WhatsApp chat opens; the user
-   * still picks the contact themselves after WhatsApp opens, same as sharing a photo from the
-   * Gallery app would work.
+   * "مشاركة" — one button that replaces the old separate "تحميل PDF"/"إرسال عبر واتساب" pair.
+   * Builds the invoice PDF as an in-memory Blob (never touches disk) and hands it straight to the
+   * OS share sheet via the Web Share API's file-sharing support (Level 2) — on Android this lets
+   * the sender pick WhatsApp, or any other installed app, and land the file directly in a chat
+   * without a separate "download it, then go attach it" step. WhatsApp's own `wa.me`/
+   * `api.whatsapp.com` deep links can only pre-fill TEXT, never attach a file, so a native
+   * share-sheet handoff is the only way to actually deliver the PDF itself. There's no way to
+   * pre-select *which* chat opens; the sender still picks the contact themselves, same as sharing
+   * a photo from the Gallery app would work. Falls back to a plain download only on a browser that
+   * doesn't support file sharing at all (e.g. desktop Chrome), so the button still does *something*
+   * useful everywhere rather than just failing.
    */
-  async function handleShareWhatsApp() {
+  async function handleShareInvoice() {
     if (!printRef.current || !inv) return;
-    setWhatsappLoading(true);
+    setShareLoading(true);
     printRef.current.classList.add('pdf-export-mode');
     try {
       const filename = buildPdfFileName('فاتورة بيع', inv.customer?.name, inv.documentNumber);
@@ -179,7 +169,16 @@ export function SalesInvoiceDetailPage() {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: filename });
       } else {
-        toast.error(t('actions.shareNotSupported'));
+        // Reuses the blob already captured above instead of re-running html2canvas, since the
+        // browser's own <a download> is enough to save it — no need to render the DOM twice just
+        // because this browser doesn't support navigator.share's file mode.
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast.warning(t('actions.shareNotSupported'));
       }
     } catch (err: any) {
       // AbortError just means the user closed the share sheet without picking anything — not a
@@ -187,18 +186,18 @@ export function SalesInvoiceDetailPage() {
       if (err?.name !== 'AbortError') toast.error(t('common.saveFailed'));
     } finally {
       printRef.current?.classList.remove('pdf-export-mode');
-      setWhatsappLoading(false);
+      setShareLoading(false);
     }
   }
 
-  // Lets the invoices table's row-level طباعة/تصدير PDF buttons trigger the action immediately on
+  // Lets the invoices table's row-level طباعة/مشاركة buttons trigger the action immediately on
   // arrival, via ?autoprint=1 / ?autopdf=1, instead of requiring a second click on this page.
   useEffect(() => {
     if (!inv) return;
-    if (searchParams.get('autoprint') === '1') {
+    if (searchParams.get('autoprint') === '1' && !isMobileRestrictedRole) {
       window.print();
     } else if (searchParams.get('autopdf') === '1') {
-      handleDownloadPdf();
+      handleShareInvoice();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inv]);
@@ -210,14 +209,13 @@ export function SalesInvoiceDetailPage() {
         actions={
           inv ? (
             <div className="flex flex-wrap gap-2 print:hidden">
-              <Button variant="secondary" onClick={() => window.print()}>
-                {t('common.print')}
-              </Button>
-              <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
-                {t('actions.downloadPdf')}
-              </Button>
-              <Button variant="secondary" onClick={handleShareWhatsApp} loading={whatsappLoading}>
-                {t('actions.shareWhatsApp')}
+              {!isMobileRestrictedRole && (
+                <Button variant="secondary" onClick={() => window.print()}>
+                  {t('common.print')}
+                </Button>
+              )}
+              <Button variant="secondary" onClick={handleShareInvoice} loading={shareLoading}>
+                {t('actions.shareInvoice')}
               </Button>
               {balanceDue > 0 && (
                 <Button
@@ -317,20 +315,20 @@ export function SalesInvoiceDetailPage() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-4 ms-auto max-w-xs space-y-1 text-sm">
+            <div className="mt-6 ms-auto w-full max-w-xs space-y-2 rounded-lg border border-[var(--border)] p-4 text-sm">
               <div className="flex justify-between">
                 <span className="text-[var(--text-muted)]">{t('fields.subtotal')}</span>
-                <span>{money(inv.subtotal)}</span>
+                <span className="font-medium">{money(inv.subtotal)}</span>
               </div>
-              <div className="flex justify-between font-semibold">
+              <div className="flex justify-between border-t border-[var(--border)] pt-2 text-base font-bold">
                 <span>{t('fields.totalSaleAmount')}</span>
                 <span>{money(inv.grandTotal)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[var(--text-muted)]">{t('fields.paidAmount')}</span>
-                <span>{money(inv.amountPaid)}</span>
+                <span className="font-medium">{money(inv.amountPaid)}</span>
               </div>
-              <div className="flex justify-between font-semibold text-red-600">
+              <div className="flex justify-between border-t border-[var(--border)] pt-2 text-base font-bold text-red-600">
                 <span>{t('actions.balanceDue')}</span>
                 <span>{money(balanceDue)}</span>
               </div>

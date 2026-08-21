@@ -250,8 +250,8 @@
     "selectRole": "Select role…",
     "balanceDue": "Balance Due",
     "downloadPdf": "Download PDF",
-    "shareWhatsApp": "Send via WhatsApp",
-    "shareNotSupported": "Your browser doesn't support direct sharing — use Download PDF and attach it manually"
+    "shareInvoice": "Share",
+    "shareNotSupported": "Your browser doesn't support direct sharing — the file was downloaded instead"
   },
   "paymentMethod": {
     "CASH": "Cash",

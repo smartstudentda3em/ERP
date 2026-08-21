@@ -250,8 +250,8 @@
     "selectRole": "اختر دور…",
     "balanceDue": "الرصيد المستحق",
     "downloadPdf": "تحميل PDF",
-    "shareWhatsApp": "إرسال عبر واتساب",
-    "shareNotSupported": "المتصفح لا يدعم المشاركة المباشرة — استخدم زر تحميل PDF وأرفقه يدوياً"
+    "shareInvoice": "مشاركة",
+    "shareNotSupported": "المتصفح لا يدعم المشاركة المباشرة، تم تحميل الملف بدلاً من ذلك"
   },
   "paymentMethod": {
     "CASH": "نقدي",

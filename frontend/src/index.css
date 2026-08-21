@@ -111,9 +111,24 @@ body {
 
 /* Shared by every printable document (Sales Invoice, Quotation, Customer Statement) — an elegant
    Arabic-first typeface for the whole letterhead/body/footer instead of the app's default UI font,
-   since these are formal exported documents, not screen chrome. */
+   since these are formal exported documents, not screen chrome. Every themed color used inside it
+   (.card, text-[var(--text-muted)], the shared .app-table, etc.) reads from these CSS custom
+   properties, so redefining them here pins the WHOLE document to one fixed light palette
+   regardless of the app's own dark/light setting — a customer-facing document must always look
+   the same. Before this, a dark-mode capture baked a dark background + light text into the
+   "printed" invoice, which is what made it look unprofessional. */
 .printable-document {
   font-family: 'Cairo', 'Tajawal', 'Segoe UI', Tahoma, sans-serif;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --table-header-bg: #eef1f6;
+  --table-stripe: rgba(15, 23, 42, 0.025);
+  --table-hover: transparent;
+  background-color: #ffffff;
+  color: #0f172a;
 }
 
 /* Printable documents (Sales Invoice, Quotation, Customer Statement) target A4 with consistent

@@ -95,14 +95,15 @@ async function buildPdf(element: HTMLElement, orientation: PdfOrientation) {
     const sliceHeightMm = sliceHeightPx / pxPerMm;
     pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', 0, 0, pageWidthMm, sliceHeightMm);
 
+    // jsPDF's built-in fonts have no Arabic glyphs, so this footer (real vector text, unlike the
+    // rest of the page which is a raster image of the captured DOM) has to stay in plain numerals
+    // and Latin punctuation — "1 / 3" rather than a translated "Page 1 of 3". The page count is
+    // only shown at all once there's more than one page; a short, single-page invoice (the common
+    // case) gets just the date, since "1 / 1" on every export is just noise.
     pdf.setFontSize(8);
-    pdf.setTextColor(120);
-    pdf.text(
-      `Page ${page + 1} of ${totalPages} - ${dateLabel}`,
-      pageWidthMm / 2,
-      pageHeightMm - FOOTER_HEIGHT_MM / 2,
-      { align: 'center' },
-    );
+    pdf.setTextColor(148, 163, 184);
+    const footerText = totalPages > 1 ? `${page + 1} / ${totalPages}   •   ${dateLabel}` : dateLabel;
+    pdf.text(footerText, pageWidthMm / 2, pageHeightMm - FOOTER_HEIGHT_MM / 2, { align: 'center' });
 
     sliceStart = sliceEnd;
   }

@@ -22,9 +22,16 @@ export function Modal({
     // A modal is screen chrome, never print content — its own printable region (if any) is
     // rendered by the caller as a sibling, not as a child here, precisely so it isn't caught by
     // this print:hidden and hidden along with the rest of the modal.
+    //
+    // The scrollable element is the INNER box (max-h + its own overflow-y-auto), not this outer
+    // `fixed` overlay — a `position: fixed` ancestor scrolling its own overflow is a known-flaky
+    // pattern on Android WebView/TWA touch-scroll (the gesture doesn't always get captured), which
+    // silently stranded the Save button below the fold on a long form (e.g. the Sales Invoice
+    // modal) with no way to reach it. A normal in-flow scrollable block doesn't have that problem.
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-16 print:hidden">
       <div
-        className={`w-full ${widthClass} rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-xl`}
+        className={`w-full ${widthClass} max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-xl`}
+        style={{ WebkitOverflowScrolling: 'touch' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between gap-3">

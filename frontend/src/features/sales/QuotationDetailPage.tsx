@@ -115,6 +115,7 @@ export function QuotationDetailPage() {
       // broadly supported than Level 2 file sharing). Upload the already-captured PDF so it has a
       // real public URL, then share that link instead of the file itself.
       const canShareUrl = navigator.canShare ? navigator.canShare({ url: window.location.origin }) : !!navigator.share;
+      let step2ErrorDetail = '';
       if (canShareUrl) {
         try {
           const sharedUrl = await uploadSharedPdf(blob, filename);
@@ -123,6 +124,12 @@ export function QuotationDetailPage() {
         } catch (err: any) {
           if (err?.name === 'AbortError') return;
           // Upload failure or share-of-a-link failure — falls through to the plain download below.
+          // Recorded (temporarily) for the diagnostic toast: distinguishes "the upload request
+          // itself failed" (name/message from axios — a network error, a timeout, a 4xx/5xx status
+          // in err.response.status) from "the link upload worked but navigator.share(url) itself
+          // then failed" (name/message from the Web Share API).
+          const status = err?.response?.status;
+          step2ErrorDetail = `${err?.name || 'Error'}${status ? ` ${status}` : ''}: ${String(err?.message || '').slice(0, 80)}`;
         }
       }
 
@@ -140,7 +147,8 @@ export function QuotationDetailPage() {
       link.download = filename;
       link.click();
       URL.revokeObjectURL(downloadUrl);
-      toast.warning(`${t('actions.shareNotSupported')} (${shareEngineHint()}, ${shareCapabilityHint()})`);
+      const diagnosticSuffix = step2ErrorDetail ? `, ${step2ErrorDetail}` : '';
+      toast.warning(`${t('actions.shareNotSupported')} (${shareEngineHint()}, ${shareCapabilityHint()}${diagnosticSuffix})`);
     } catch (err) {
       toast.error(t('common.saveFailed'));
     } finally {

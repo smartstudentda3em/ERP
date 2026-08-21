@@ -251,7 +251,7 @@
     "balanceDue": "Balance Due",
     "downloadPdf": "Download PDF",
     "shareInvoice": "Share",
-    "shareNotSupported": "Your browser doesn't support direct sharing — the file was downloaded instead"
+    "shareNotSupported": "Your browser doesn't support direct sharing — opened the file so you can save or share it from there"
   },
   "paymentMethod": {
     "CASH": "Cash",

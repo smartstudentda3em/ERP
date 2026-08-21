@@ -104,12 +104,23 @@ export function QuotationDetailPage() {
         }
       }
 
+      // No native share support (or the attempt above failed) — tries opening it as a normal page
+      // view first: browsers generally render a PDF viewed this way in their own built-in viewer
+      // (with its own share/print icons) with no extra prompt, whereas an explicit <a download>
+      // forces a "save this file?" confirmation on some mobile browsers (Samsung Internet in
+      // particular). window.open() can come back null if a popup blocker steps in — since this call
+      // is already several `await`s removed from the original click, that's a real possibility here
+      // — so this only falls back to the guaranteed-working forced download when the view attempt
+      // didn't open.
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.click();
-      URL.revokeObjectURL(url);
+      const opened = window.open(url, '_blank');
+      if (!opened) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
       toast.warning(t('actions.shareNotSupported'));
     } catch (err) {
       toast.error(t('common.saveFailed'));

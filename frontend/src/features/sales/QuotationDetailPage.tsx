@@ -11,6 +11,7 @@ import { Button } from '../../components/ui/Button';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdfBlob } from '../../lib/pdf-export';
+import { shareEngineHint } from '../../lib/browser-info';
 import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 import { DocumentFooter } from './DocumentFooter';
 import { useActiveCompany, useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
@@ -118,7 +119,11 @@ export function QuotationDetailPage() {
       link.download = filename;
       link.click();
       URL.revokeObjectURL(url);
-      toast.warning(t('actions.shareNotSupported'));
+      // Engine name appended temporarily — canShare({files}) came back false/undefined here, and
+      // there's no way to tell from this side of the API whether Android handed this TWA to Chrome
+      // (should support file sharing) or to Samsung Internet (historically weak/no support for it)
+      // without asking the browser itself. Remove once that's confirmed.
+      toast.warning(`${t('actions.shareNotSupported')} (${shareEngineHint()})`);
     } catch (err) {
       toast.error(t('common.saveFailed'));
     } finally {

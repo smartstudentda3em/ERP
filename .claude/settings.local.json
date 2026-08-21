@@ -202,7 +202,9 @@
       "Bash(bash /tmp/verify_dup5.sh)",
       "Bash(bash /tmp/final_cleanup3.sh)",
       "Bash(bash /tmp/verify_capacity_col.sh)",
-      "Bash(awk -F: '$1+0 < 991')"
+      "Bash(awk -F: '$1+0 < 991')",
+      "Bash(grep -n \"^\\\\s*[A-Za-z]*Module,\\\\?$\" src/app.module.ts)",
+      "Bash(python3 -c \"import sys,json; print\\(json.load\\(sys.stdin\\)['data']['accessToken']\\)\")"
     ]
   }
 }

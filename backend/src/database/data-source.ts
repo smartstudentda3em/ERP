@@ -83,6 +83,8 @@ import { ShipmentPayment } from '../modules/imports/entities/shipment-payment.en
 import { ShippingExpenseType } from '../modules/imports/entities/shipping-expense-type.entity';
 import { WhatsAppOutboxMessage } from '../modules/whatsapp/entities/whatsapp-outbox-message.entity';
 import { BackupRecord } from '../modules/backups/entities/backup-record.entity';
+import { AcSupplierPayment } from '../modules/ac-supplier-ledger/entities/ac-supplier-payment.entity';
+import { AcSupplierTaxPayment } from '../modules/ac-supplier-ledger/entities/ac-supplier-tax-payment.entity';
 
 export const allEntities = [
   Company,
@@ -148,6 +150,8 @@ export const allEntities = [
   ShippingExpenseType,
   WhatsAppOutboxMessage,
   BackupRecord,
+  AcSupplierPayment,
+  AcSupplierTaxPayment,
 ];
 
 export const AppDataSource = new DataSource({

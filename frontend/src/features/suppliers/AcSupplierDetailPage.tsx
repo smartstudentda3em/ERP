@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount, formatQuantity } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { PageHeader, ComingSoon } from '../../components/ui/PageHeader';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { FormField, Input, Select } from '../../components/ui/Input';
@@ -19,10 +19,13 @@ import { localToday } from '../../lib/date-utils';
  * Air Conditioning company only — a standalone supplier detail screen, entry point is the
  * supplier's own name in SuppliersTab.tsx's table (AC-gated there). Deliberately self-contained:
  * doesn't import or depend on ImportCargoTab/ShippingTab/ShipmentPaymentsTab or any of their
- * services — the only backend endpoints this screen calls (/suppliers, /inventory/purchase-receipts,
- * /supplier-payments) are generic parties/purchasing resources shared company-wide, not part of the
- * Cargo/Shipping import-tracking feature set, so reusing them here doesn't couple this screen to
- * that system in any way. Nothing here is imported by, or affects, any other screen.
+ * services. /suppliers, /inventory/purchase-receipts and /supplier-payments (read-only here, for
+ * historical payments) are generic parties/purchasing resources shared company-wide, not part of
+ * the Cargo/Shipping import-tracking feature set, so reusing them here doesn't couple this screen
+ * to that system. /ac-supplier-payments and /ac-supplier-tax-payments are new, AC-only, standalone
+ * endpoints (ac-supplier-ledger module) with no CashMovementsService/treasury dependency at all —
+ * this is where the page's own "+ تسجيل دفعة"/"+ تسجيل ضريبة" actions write. Nothing here is
+ * imported by, or affects, any other screen.
  */
 
 type Tab = 'payments' | 'purchases' | 'tax';
@@ -58,6 +61,40 @@ interface SupplierPayment {
   notes?: string | null;
   createdByName: string;
   purchaseReceiptId?: string | null;
+}
+
+/** Standalone, non-treasury-linked payment log (see AcSupplierPayment entity) — the only
+ * mechanism the "+ تسجيل دفعة" modal writes to going forward. Has no method/documentNumber by
+ * design, unlike the legacy SupplierPayment above. */
+interface AcSupplierPayment {
+  id: string;
+  paymentDate: string;
+  amount: number;
+  notes?: string | null;
+  createdByName: string;
+}
+
+/** Unified row shape merging legacy (treasury-linked) SupplierPayment rows with the new
+ * standalone AcSupplierPayment rows, so "دفعات المورد" shows every payment ever recorded for this
+ * supplier regardless of which mechanism wrote it. */
+interface UnifiedPaymentRow {
+  id: string;
+  source: 'legacy' | 'standalone';
+  paymentDate: string;
+  amount: number;
+  method: string | null;
+  notes: string | null;
+  createdByName: string;
+  documentNumber: string | null;
+}
+
+interface AcSupplierTaxPayment {
+  id: string;
+  taxDate: string;
+  amount: number;
+  notes?: string | null;
+  purchaseReceiptId?: string | null;
+  createdByName: string;
 }
 
 function money(n: number): string {
@@ -96,8 +133,13 @@ export function AcSupplierDetailPage() {
 
   const [payOpen, setPayOpen] = useState(false);
   const [payAmount, setPayAmount] = useState('0');
-  const [payMethod, setPayMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH');
   const [payNotes, setPayNotes] = useState('');
+
+  const [taxOpen, setTaxOpen] = useState(false);
+  const [taxAmount, setTaxAmount] = useState('0');
+  const [taxDate, setTaxDate] = useState(localToday());
+  const [taxReceiptId, setTaxReceiptId] = useState('');
+  const [taxNotes, setTaxNotes] = useState('');
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers', companyId],
@@ -118,6 +160,24 @@ export function AcSupplierDetailPage() {
     queryKey: ['supplier-payments', companyId, id],
     queryFn: () =>
       unwrap<SupplierPayment[]>(apiClient.get('/supplier-payments', { params: { companyId, supplierId: id } })),
+    enabled: !!companyId && !!id,
+  });
+
+  // The new standalone, non-treasury-linked payment log — everything recorded via this page's
+  // own "+ تسجيل دفعة" modal from now on lands here instead of /supplier-payments.
+  const acPaymentsQuery = useQuery({
+    queryKey: ['ac-supplier-payments', companyId, id],
+    queryFn: () =>
+      unwrap<AcSupplierPayment[]>(apiClient.get('/ac-supplier-payments', { params: { companyId, supplierId: id } })),
+    enabled: !!companyId && !!id,
+  });
+
+  const taxQuery = useQuery({
+    queryKey: ['ac-supplier-tax-payments', companyId, id],
+    queryFn: () =>
+      unwrap<AcSupplierTaxPayment[]>(
+        apiClient.get('/ac-supplier-tax-payments', { params: { companyId, supplierId: id } }),
+      ),
     enabled: !!companyId && !!id,
   });
 
@@ -142,13 +202,50 @@ export function AcSupplierDetailPage() {
     [cashReceipts],
   );
 
+  // "دفعات المورد" shows every payment ever recorded for this supplier, merging the legacy
+  // treasury-linked SupplierPayment rows with the new standalone AcSupplierPayment rows — the
+  // legacy rows are historical fact (real money that left the business via Cash/Bank) and stay
+  // visible even though new payments no longer use that mechanism.
+  const unifiedPayments = useMemo<UnifiedPaymentRow[]>(() => {
+    const legacy: UnifiedPaymentRow[] = (paymentsQuery.data ?? []).map((p) => ({
+      id: p.id,
+      source: 'legacy',
+      paymentDate: p.paymentDate,
+      amount: Number(p.amount),
+      method: t(`paymentMethod.${p.method}`),
+      notes: p.notes ?? null,
+      createdByName: p.createdByName,
+      documentNumber: p.documentNumber,
+    }));
+    const standalone: UnifiedPaymentRow[] = (acPaymentsQuery.data ?? []).map((p) => ({
+      id: p.id,
+      source: 'standalone',
+      paymentDate: p.paymentDate,
+      amount: Number(p.amount),
+      method: null,
+      notes: p.notes ?? null,
+      createdByName: p.createdByName,
+      documentNumber: null,
+    }));
+    return [...legacy, ...standalone].sort((a, b) => (a.paymentDate < b.paymentDate ? 1 : -1));
+  }, [paymentsQuery.data, acPaymentsQuery.data, t]);
+
   const filteredPayments = useMemo(
-    () => (paymentsQuery.data ?? []).filter((p) => inDateRange(p.paymentDate, dateRange)),
-    [paymentsQuery.data, dateRange],
+    () => unifiedPayments.filter((p) => inDateRange(p.paymentDate, dateRange)),
+    [unifiedPayments, dateRange],
   );
   const totalPayments = useMemo(
     () => filteredPayments.reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
     [filteredPayments],
+  );
+
+  const filteredTaxPayments = useMemo(
+    () => (taxQuery.data ?? []).filter((p) => inDateRange(p.taxDate, dateRange)),
+    [taxQuery.data, dateRange],
+  );
+  const totalTaxForPeriod = useMemo(
+    () => filteredTaxPayments.reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
+    [filteredTaxPayments],
   );
 
   /**
@@ -159,12 +256,15 @@ export function AcSupplierDetailPage() {
    * periods. Free-goods receipts are excluded from "الفواتير المشتراة بالسعر الأساسي" by
    * construction (their totalAmount is always 0), matching point 3's required separation.
    *
-   * "Total paid" must count money paid two different ways without double-counting: (a) paidAmount
+   * "Total paid" must count money paid three different ways without double-counting: (a) paidAmount
    * recorded directly on a receipt (at creation, or via a later per-receipt "دفع المتبقي" action,
    * which increments the receipt's own paidAmount AND writes a tied SupplierPayment row for the
-   * same money), and (b) a general/untied SupplierPayment (the "سداد المتبقي" bulk action). Mirrors
+   * same money), (b) a general/untied SupplierPayment (the "سداد المتبقي" bulk action — legacy,
+   * treasury-linked, real money that already left the business), and (c) the new standalone
+   * AcSupplierPayment log this page's own "+ تسجيل دفعة" modal now writes to. (a)+(b) mirror
    * SupplierStatementPage.tsx's own proven legacyVoucherRows/tiedAmountByReceipt logic exactly, so
-   * this reconciliation never disagrees with that page's own totals for the same data.
+   * this never disagrees with that page's totals for the same underlying data; (c) is summed on top
+   * unconditionally since it's a disjoint, independently-tracked payment source.
    */
   const allCashReceipts = useMemo(() => allSupplierReceipts.filter((r) => !r.isFreeGoods), [allSupplierReceipts]);
   const totalCashPurchasesAllTime = useMemo(
@@ -185,23 +285,28 @@ export function AcSupplierDetailPage() {
       return sum + Math.max(0, amount);
     }, 0);
     const real = (paymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
-    return legacy + real;
-  }, [allSupplierReceipts, tiedAmountByReceiptAllTime, paymentsQuery.data]);
+    const standalone = (acPaymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
+    return legacy + real + standalone;
+  }, [allSupplierReceipts, tiedAmountByReceiptAllTime, paymentsQuery.data, acPaymentsQuery.data]);
   const netBalanceOwed = totalCashPurchasesAllTime - totalPaidAllTime;
 
   function invalidatePayments() {
     queryClient.invalidateQueries({ queryKey: ['supplier-payments', companyId, id] });
+    queryClient.invalidateQueries({ queryKey: ['ac-supplier-payments', companyId, id] });
     queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
     queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
   }
 
+  function invalidateTax() {
+    queryClient.invalidateQueries({ queryKey: ['ac-supplier-tax-payments', companyId, id] });
+  }
+
+  // Writes only to the new standalone log — no method field, never touches the treasury.
   const payMutation = useMutation({
     mutationFn: () =>
-      apiClient.post('/supplier-payments', {
+      apiClient.post('/ac-supplier-payments', {
         paymentDate: localToday(),
         supplierId: id,
-        companyId,
-        method: payMethod,
         amount: Number(payAmount),
         notes: payNotes || undefined,
       }),
@@ -209,7 +314,6 @@ export function AcSupplierDetailPage() {
       invalidatePayments();
       setPayOpen(false);
       setPayAmount('0');
-      setPayMethod('CASH');
       setPayNotes('');
       toast.success(t('suppliers.paymentSavedSuccess'));
     },
@@ -217,7 +321,10 @@ export function AcSupplierDetailPage() {
   });
 
   const deletePaymentMutation = useMutation({
-    mutationFn: (paymentId: string) => apiClient.delete(`/supplier-payments/${paymentId}`),
+    mutationFn: (p: UnifiedPaymentRow) =>
+      p.source === 'legacy'
+        ? apiClient.delete(`/supplier-payments/${p.id}`)
+        : apiClient.delete(`/ac-supplier-payments/${p.id}`),
     onSuccess: () => {
       invalidatePayments();
       toast.success(t('common.deletedSuccessfully'));
@@ -225,16 +332,51 @@ export function AcSupplierDetailPage() {
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
-  async function handleDeletePayment(p: SupplierPayment) {
-    const ok = await confirm({ message: t('common.confirmDelete', { name: p.documentNumber }) });
-    if (ok) deletePaymentMutation.mutate(p.id);
+  async function handleDeletePayment(p: UnifiedPaymentRow) {
+    const ok = await confirm({ message: t('common.confirmDelete', { name: p.documentNumber ?? p.paymentDate }) });
+    if (ok) deletePaymentMutation.mutate(p);
   }
 
-  const paymentColumns: Column<SupplierPayment>[] = [
-    { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
+  const taxMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post('/ac-supplier-tax-payments', {
+        supplierId: id,
+        taxDate,
+        amount: Number(taxAmount),
+        purchaseReceiptId: taxReceiptId || undefined,
+        notes: taxNotes || undefined,
+      }),
+    onSuccess: () => {
+      invalidateTax();
+      setTaxOpen(false);
+      setTaxAmount('0');
+      setTaxDate(localToday());
+      setTaxReceiptId('');
+      setTaxNotes('');
+      toast.success(t('suppliers.taxSavedSuccess'));
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
+  });
+
+  const deleteTaxMutation = useMutation({
+    mutationFn: (taxId: string) => apiClient.delete(`/ac-supplier-tax-payments/${taxId}`),
+    onSuccess: () => {
+      invalidateTax();
+      toast.success(t('common.deletedSuccessfully'));
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
+  });
+
+  async function handleDeleteTax(p: AcSupplierTaxPayment) {
+    const ok = await confirm({ message: t('common.confirmDelete', { name: money(Number(p.amount)) }) });
+    if (ok) deleteTaxMutation.mutate(p.id);
+  }
+
+  const paymentColumns: Column<UnifiedPaymentRow>[] = [
+    { header: t('table.documentNumber'), accessor: (r) => r.documentNumber ?? '—' },
     { header: t('common.date'), accessor: (r) => r.paymentDate },
     { header: t('fields.amount'), accessor: (r) => money(r.amount), align: 'right' },
-    { header: t('fields.method'), accessor: (r) => t(`paymentMethod.${r.method}`) },
+    { header: t('fields.method'), accessor: (r) => r.method ?? '—' },
     { header: t('table.description'), accessor: (r) => r.notes ?? '—' },
     { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
     {
@@ -245,6 +387,31 @@ export function AcSupplierDetailPage() {
           className="text-red-600 hover:underline"
           disabled={deletePaymentMutation.isPending}
           onClick={() => handleDeletePayment(r)}
+        >
+          {t('common.delete')}
+        </button>
+      ),
+      align: 'center',
+    },
+  ];
+
+  const taxColumns: Column<AcSupplierTaxPayment>[] = [
+    { header: t('common.date'), accessor: (r) => r.taxDate },
+    { header: t('fields.amount'), accessor: (r) => money(Number(r.amount)), align: 'right' },
+    {
+      header: t('fields.invoiceOptional'),
+      accessor: (r) => allSupplierReceipts.find((rec) => rec.id === r.purchaseReceiptId)?.documentNumber ?? '—',
+    },
+    { header: t('table.description'), accessor: (r) => r.notes ?? '—' },
+    { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
+    {
+      header: t('common.actions'),
+      accessor: (r) => (
+        <button
+          type="button"
+          className="text-red-600 hover:underline"
+          disabled={deleteTaxMutation.isPending}
+          onClick={() => handleDeleteTax(r)}
         >
           {t('common.delete')}
         </button>
@@ -345,7 +512,7 @@ export function AcSupplierDetailPage() {
             columns={paymentColumns}
             data={filteredPayments}
             keyField={(r) => r.id}
-            isLoading={paymentsQuery.isLoading}
+            isLoading={paymentsQuery.isLoading || acPaymentsQuery.isLoading}
           />
         </>
       )}
@@ -384,7 +551,22 @@ export function AcSupplierDetailPage() {
         </div>
       )}
 
-      {tab === 'tax' && <ComingSoon title={t('suppliers.salesTaxTab')} />}
+      {tab === 'tax' && (
+        <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="rounded-lg bg-[var(--table-header-bg)] px-3 py-1.5 text-sm font-medium">
+              {t('suppliers.totalTaxForPeriod')}: <span className="font-semibold">{money(totalTaxForPeriod)}</span>
+            </div>
+            <Button onClick={() => setTaxOpen(true)}>+ {t('actions.recordTax')}</Button>
+          </div>
+          <DataTable
+            columns={taxColumns}
+            data={filteredTaxPayments}
+            keyField={(r) => r.id}
+            isLoading={taxQuery.isLoading}
+          />
+        </>
+      )}
 
       <Modal open={payOpen} onClose={() => setPayOpen(false)} title={t('actions.recordPayment')}>
         <form
@@ -407,12 +589,6 @@ export function AcSupplierDetailPage() {
               onChange={(e) => setPayAmount(e.target.value)}
             />
           </FormField>
-          <FormField label={t('fields.method')}>
-            <Select required value={payMethod} onChange={(e) => setPayMethod(e.target.value as 'CASH' | 'BANK_TRANSFER')}>
-              <option value="CASH">{t('paymentMethod.CASH')}</option>
-              <option value="BANK_TRANSFER">{t('paymentMethod.BANK_TRANSFER')}</option>
-            </Select>
-          </FormField>
           <div className="col-span-2">
             <FormField label={t('table.description')}>
               <Input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} />
@@ -423,6 +599,55 @@ export function AcSupplierDetailPage() {
               {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={payMutation.isPending}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={taxOpen} onClose={() => setTaxOpen(false)} title={t('actions.recordTax')}>
+        <form
+          className="grid grid-cols-2 gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            taxMutation.mutate();
+          }}
+        >
+          <FormField label={t('common.date')}>
+            <Input type="date" required value={taxDate} onChange={(e) => setTaxDate(e.target.value)} />
+          </FormField>
+          <FormField label={t('fields.amount')}>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              value={taxAmount}
+              onChange={(e) => setTaxAmount(e.target.value)}
+            />
+          </FormField>
+          <div className="col-span-2">
+            <FormField label={t('fields.invoiceOptional')}>
+              <Select value={taxReceiptId} onChange={(e) => setTaxReceiptId(e.target.value)}>
+                <option value="">{t('suppliers.noSpecificInvoice')}</option>
+                {allSupplierReceipts.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.documentNumber} — {r.receiptDate}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </div>
+          <div className="col-span-2">
+            <FormField label={t('table.description')}>
+              <Input value={taxNotes} onChange={(e) => setTaxNotes(e.target.value)} />
+            </FormField>
+          </div>
+          <div className="col-span-2 mt-2 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setTaxOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={taxMutation.isPending}>
               {t('common.save')}
             </Button>
           </div>

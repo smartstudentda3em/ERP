@@ -117,6 +117,7 @@
     "email": "البريد الإلكتروني",
     "address": "العنوان",
     "addressOptional": "العنوان (اختياري)",
+    "invoiceOptional": "الفاتورة (اختياري)",
     "contactPerson": "الشخص المسؤول",
     "companyName": "اسم الشركة",
     "sku": "رمز الصنف (SKU)",
@@ -235,6 +236,7 @@
     "addLinePress": "+ إضافة سطر جديد",
     "searchProduct": "ابحث عن صنف…",
     "recordPayment": "تسجيل دفعة",
+    "recordTax": "تسجيل ضريبة",
     "collectPayment": "سند قبض / تحصيل",
     "selectProduct": "اختر صنف…",
     "selectCustomer": "اختر عميل…",
@@ -911,7 +913,10 @@
     "totalCashPurchasesBase": "إجمالي الفواتير المشتراة بالسعر الأساسي",
     "netBalanceOwed": "الرصيد المتبقي الفعلي في ذمة الشركة",
     "cashPurchasesSection": "المشتريات النقدية",
-    "freeGoodsSection": "البضاعة المجانية / خصومات التوريد العينية"
+    "freeGoodsSection": "البضاعة المجانية / خصومات التوريد العينية",
+    "taxSavedSuccess": "تم حفظ الضريبة بنجاح",
+    "totalTaxForPeriod": "إجمالي الضرائب المدفوعة عن الفترة",
+    "noSpecificInvoice": "بدون فاتورة محددة"
   },
   "printingProducts": {
     "addNew": "إضافة منتج جديد",

@@ -30,6 +30,7 @@ import { InstallmentPlansModule } from './modules/sales/installment-plans/instal
 import { WhatsAppModule } from './modules/whatsapp/whatsapp.module';
 import { HrModule } from './modules/hr/hr.module';
 import { BackupsModule } from './modules/backups/backups.module';
+import { AcSupplierLedgerModule } from './modules/ac-supplier-ledger/ac-supplier-ledger.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { BackupsModule } from './modules/backups/backups.module';
     InstallmentPlansModule,
     HrModule,
     BackupsModule,
+    AcSupplierLedgerModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

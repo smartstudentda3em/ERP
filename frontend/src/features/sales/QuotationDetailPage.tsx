@@ -91,6 +91,11 @@ export function QuotationDetailPage() {
     try {
       const filename = buildPdfFileName('عرض سعر', q.customer?.name, q.documentNumber);
       const blob = await exportElementToPdfBlob(printRef.current, 'portrait');
+      // The off-screen/fixed-width positioning is only needed while html2canvas is actively
+      // reading the DOM above — leaving it on for the rest of this function (a share sheet, or an
+      // upload that can take several seconds on a slow connection) made the whole page appear to
+      // go blank and hang, with nothing on screen to show it was still working.
+      printRef.current.classList.remove('pdf-export-mode');
       const file = new File([blob], filename, { type: 'application/pdf' });
 
       // 1. Best case: this browser can share the PDF itself as an attached file.

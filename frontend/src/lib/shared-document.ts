@@ -19,6 +19,13 @@ export async function uploadSharedPdf(blob: Blob, filename: string): Promise<str
   // actual FormData contents. Setting the header manually without one produces a body the server
   // can't parse; some browsers silently patch in the boundary anyway (masking the bug in testing),
   // but not all of them do.
-  const { id } = await unwrap<{ id: string }>(apiClient.post('/shared-documents', formData));
+  //
+  // A bounded timeout matters here specifically: this call has no synchronous fallback like the
+  // canShare() checks around it — a stalled mobile connection would otherwise hang the "مشاركة"
+  // button (and, until a separate fix, the whole page's visible content) indefinitely, with no
+  // error ever surfacing to trigger the plain-download fallback in the caller's catch block.
+  const { id } = await unwrap<{ id: string }>(
+    apiClient.post('/shared-documents', formData, { timeout: 30000 }),
+  );
   return `${window.location.origin}/api/shared-documents/${id}`;
 }

@@ -11,7 +11,7 @@ import { Button } from '../../components/ui/Button';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdfBlob } from '../../lib/pdf-export';
-import { shareEngineHint } from '../../lib/browser-info';
+import { shareEngineHint, shareCapabilityHint } from '../../lib/browser-info';
 import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 import { DocumentFooter } from './DocumentFooter';
 import { useActiveCompany, useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
@@ -123,7 +123,7 @@ export function QuotationDetailPage() {
       // there's no way to tell from this side of the API whether Android handed this TWA to Chrome
       // (should support file sharing) or to Samsung Internet (historically weak/no support for it)
       // without asking the browser itself. Remove once that's confirmed.
-      toast.warning(`${t('actions.shareNotSupported')} (${shareEngineHint()})`);
+      toast.warning(`${t('actions.shareNotSupported')} (${shareEngineHint()}, ${shareCapabilityHint()})`);
     } catch (err) {
       toast.error(t('common.saveFailed'));
     } finally {

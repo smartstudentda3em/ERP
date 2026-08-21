@@ -30,6 +30,7 @@ const SEGMENT_LABEL_KEYS: Record<string, string> = {
   settings: 'nav.settings',
   partners: 'nav.partners',
   statement: 'nav.statement',
+  'ac-detail': 'nav.supplierDetail',
   hr: 'nav.hrGroup',
   employees: 'nav.employees',
   payroll: 'nav.payroll',

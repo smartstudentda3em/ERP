@@ -5,6 +5,7 @@ import { apiClient, unwrap } from '../../lib/api-client';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
 import { Input, FormField, Select } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { DataTable, Column } from '../../components/ui/DataTable';
@@ -81,6 +82,7 @@ interface PurchaseReceipt {
   unitCost: number;
   totalAmount: number;
   paidAmount: number;
+  isFreeGoods?: boolean;
   product?: Product;
   warehouse?: Warehouse;
   supplier?: Supplier;
@@ -98,6 +100,8 @@ const emptyForm = {
   paidAmount: '',
   // Printing Press only — every other company's payment always settles into BANK (see saveMutation).
   paymentAccount: 'CASH' as 'CASH' | 'BANK',
+  // Air Conditioning only — see the "بضاعة مجانية" checkbox below.
+  isFreeGoods: false,
 };
 
 /** Print/PDF are triggered from the parent's own top bar (the standalone PurchasingPage's
@@ -289,6 +293,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       // restore, so this always resets to the default and the required select forces a fresh,
       // explicit choice before the edit can be saved.
       paymentAccount: 'CASH',
+      isFreeGoods: receipt.isFreeGoods ?? false,
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -320,6 +325,9 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
         // form field below). Every other company keeps the prior fixed behavior — settled through
         // the bank account, with no cash-box option — since that was never user-selectable here.
         paymentAccount: paidAmount > 0 ? (requiresPaymentAccount ? form.paymentAccount : 'BANK') : undefined,
+        // Air Conditioning only — omitted entirely for every other company, matching the backend's
+        // own AC-only rejection in PurchaseReceiptsService.assertFreeGoodsAllowed.
+        isFreeGoods: isAirConditioning ? form.isFreeGoods : undefined,
       };
       return editingId
         ? apiClient.patch(`/inventory/purchase-receipts/${editingId}`, payload)
@@ -389,7 +397,22 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('common.date'), accessor: (r) => r.receiptDate },
     { header: t('fields.supplier'), accessor: (r) => r.supplier?.companyName ?? '—' },
-    { header: t('fields.product'), accessor: (r) => (r.product?.nameEn ? <bdi dir="ltr">{r.product.nameEn}</bdi> : '—') },
+    {
+      header: t('fields.product'),
+      accessor: (r) => (
+        <div className="flex items-center gap-2">
+          {r.product?.nameEn ? <bdi dir="ltr">{r.product.nameEn}</bdi> : '—'}
+          {/* Air Conditioning only — flags a "بضاعة مجانية" receipt right where it's entered, so
+              its 0 total isn't mistaken for a data-entry mistake when scanning this table. */}
+          {r.isFreeGoods && <Badge color="green">{t('purchasing.freeGoods')}</Badge>}
+        </div>
+      ),
+    },
+    // AC (Air Conditioning) company only — same underlying product.barcode field shown as "القدرة"
+    // on the Products screen (see ProductsPage.tsx); every other company's table is unaffected.
+    ...(isAirConditioning
+      ? [{ header: t('products.capacityLabel'), accessor: (r: PurchaseReceipt) => r.product?.barcode ?? '—' }]
+      : []),
     {
       header: t('fields.quantityPackages'),
       accessor: (r) => `${formatAmount(r.quantityPackages)} × ${formatQuantity(r.unitsPerPackage)}`,
@@ -637,6 +660,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               required
               type="number"
               step="0.01"
+              disabled={form.isFreeGoods}
               value={form.packagePurchasePrice}
               onChange={(e) => setForm({ ...form, packagePurchasePrice: e.target.value })}
             />
@@ -644,6 +668,30 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
           <FormField label={t('fields.unitCost')}>
             <Input disabled value={unitCost !== null ? unitCost.toFixed(4) : ''} placeholder="—" />
           </FormField>
+
+          {/* Air Conditioning only — a supplier's in-kind/target-discount goods: real quantity
+              enters stock as usual, but the price/paid-now fields above and below are forced to 0
+              (and disabled) so this receipt never affects what's owed to the supplier. See
+              PurchaseReceiptsService.assertFreeGoodsAllowed for the same rule enforced server-side. */}
+          {isAirConditioning && (
+            <div className="col-span-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.isFreeGoods}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      isFreeGoods: e.target.checked,
+                      packagePurchasePrice: e.target.checked ? '0' : form.packagePurchasePrice,
+                      paidAmount: e.target.checked ? '0' : form.paidAmount,
+                    })
+                  }
+                />
+                {t('purchasing.freeGoods')}
+              </label>
+            </div>
+          )}
 
           {!isPrintingPress && (
             <FormField label={t('purchasing.packageSellingPriceOptional')}>
@@ -674,6 +722,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
                 step="0.01"
                 min="0"
                 max={totalAmount ?? undefined}
+                disabled={form.isFreeGoods}
                 value={form.paidAmount}
                 onChange={(e) => setForm({ ...form, paidAmount: e.target.value })}
               />

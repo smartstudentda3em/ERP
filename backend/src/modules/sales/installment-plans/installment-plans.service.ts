@@ -54,7 +54,12 @@ export class InstallmentPlansService {
     private readonly cashMovementsService: CashMovementsService,
   ) {}
 
-  async create(dto: CreateInstallmentPlanDto, companyId: string, createdById: string): Promise<InstallmentPlan> {
+  async create(
+    dto: CreateInstallmentPlanDto,
+    companyId: string,
+    createdById: string,
+    branchId: string | null,
+  ): Promise<InstallmentPlan> {
     const customer = await this.customerRepo.findOne({ where: { id: dto.customerId } });
     if (!customer || customer.companyId !== companyId) throw new NotFoundException('Customer not found');
     if (customer.creditStatus === CustomerCreditStatus.BLOCKED) {
@@ -101,6 +106,11 @@ export class InstallmentPlansService {
       const plan = planRepo.create({
         documentNumber,
         companyId,
+        // No branch picker on this form (single-branch tenant today) — attributed to the creating
+        // user's own branch instead of going in unattributed, so the Installments screen's branch
+        // filter has something real to match against. See CashMovementsController for the same
+        // fallback on manually-recorded expenses.
+        branchId,
         customerId: dto.customerId,
         warehouseId: dto.warehouseId,
         purchaseDate: dto.purchaseDate,
@@ -180,6 +190,7 @@ export class InstallmentPlansService {
       return {
         id: plan.id,
         documentNumber: plan.documentNumber,
+        branchId: plan.branchId,
         customerId: plan.customerId,
         customerName: plan.customer?.name ?? '—',
         purchaseDate: plan.purchaseDate,

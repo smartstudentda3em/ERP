@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsNumber,
@@ -69,6 +70,9 @@ export class CreatePurchaseReceiptDto {
   @IsOptional() @IsEnum(CashMovementAccount) paymentAccount?: CashMovementAccount;
   /** Printing Press only: which branch this purchase targets. Ignored by every other company. */
   @IsOptional() @IsUUID() branchId?: string;
+  /** Air Conditioning company only — see PurchaseReceiptsService.assertFreeGoodsAllowed for the
+   * company gate and the packagePurchasePrice/paidAmount-must-be-0 enforcement. */
+  @IsOptional() @IsBoolean() isFreeGoods?: boolean;
 }
 
 // Deliberately not PartialType(CreatePurchaseReceiptDto): editing a receipt always resubmits the

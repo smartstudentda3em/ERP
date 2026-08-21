@@ -55,7 +55,7 @@ export class InstallmentPlansController {
   @Post()
   @Permissions('sales.installmentPlan.create')
   create(@Body() dto: CreateInstallmentPlanDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.create(dto, user.companyId!, user.userId);
+    return this.service.create(dto, user.companyId!, user.userId, user.branchId);
   }
 
   @Post(':id/schedule/:itemId/payments')

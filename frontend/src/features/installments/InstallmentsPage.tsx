@@ -20,6 +20,7 @@ type Tab = 'plans' | 'reports';
 interface InstallmentPlanRow {
   id: string;
   documentNumber: string;
+  branchId: string | null;
   customerId: string;
   customerName: string;
   purchaseDate: string;
@@ -38,6 +39,11 @@ interface Customer {
 interface Warehouse {
   id: string;
   nameEn: string;
+}
+interface Branch {
+  id: string;
+  nameEn: string;
+  nameAr?: string | null;
 }
 interface Product {
   id: string;
@@ -70,6 +76,8 @@ export function InstallmentsPage() {
   // Merges what used to be the separate "تقارير التقسيط" page into this one as a second tab — see
   // InstallmentsReportsTab.tsx's own doc comment. Air Conditioning only (this whole page is).
   const [tab, setTab] = useState<Tab>('plans');
+  // "plans" tab only — narrows the contracts table to one branch. Empty string means "الكل".
+  const [branchFilter, setBranchFilter] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [customerId, setCustomerId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
@@ -84,6 +92,12 @@ export function InstallmentsPage() {
   const plansQuery = useQuery({
     queryKey: ['installment-plans', companyId],
     queryFn: () => unwrap<InstallmentPlanRow[]>(apiClient.get('/installments', { params: { companyId } })),
+    enabled: !!companyId,
+  });
+  // Powers the "plans" tab's branch filter above the table.
+  const branchesQuery = useQuery({
+    queryKey: ['branches', companyId],
+    queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
     enabled: !!companyId,
   });
   const customersQuery = useQuery({
@@ -171,6 +185,11 @@ export function InstallmentsPage() {
     onError: (err: any) => setError(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
+  const filteredPlans = useMemo(
+    () => (branchFilter ? (plansQuery.data ?? []).filter((p) => p.branchId === branchFilter) : plansQuery.data ?? []),
+    [plansQuery.data, branchFilter],
+  );
+
   const columns: Column<InstallmentPlanRow>[] = [
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('nav.customers'), accessor: (r) => r.customerName },
@@ -194,19 +213,35 @@ export function InstallmentsPage() {
         actions={tab === 'plans' && <Button onClick={() => setModalOpen(true)}>+ {t('installments.newPlan')}</Button>}
       />
 
-      <div className="mb-4 flex gap-2 text-sm">
-        <button
-          className={`rounded-lg px-3 py-1.5 ${tab === 'plans' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
-          onClick={() => setTab('plans')}
-        >
-          {t('nav.installments')}
-        </button>
-        <button
-          className={`rounded-lg px-3 py-1.5 ${tab === 'reports' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
-          onClick={() => setTab('reports')}
-        >
-          {t('nav.installmentsReports')}
-        </button>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div className="flex gap-2">
+          <button
+            className={`rounded-lg px-3 py-1.5 ${tab === 'plans' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+            onClick={() => setTab('plans')}
+          >
+            {t('nav.installments')}
+          </button>
+          <button
+            className={`rounded-lg px-3 py-1.5 ${tab === 'reports' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+            onClick={() => setTab('reports')}
+          >
+            {t('nav.installmentsReports')}
+          </button>
+        </div>
+        {tab === 'plans' && (
+          <div className="w-56">
+            <FormField label={t('treasury.filterByBranch')}>
+              <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+                <option value="">{t('accounting.allBranches')}</option>
+                {(branchesQuery.data ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nameAr || b.nameEn}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </div>
+        )}
       </div>
 
       {tab === 'reports' && <InstallmentsReportsTab />}
@@ -214,7 +249,7 @@ export function InstallmentsPage() {
       {tab === 'plans' && (
         <DataTable
           columns={columns}
-          data={plansQuery.data ?? []}
+          data={filteredPlans}
           keyField={(r) => r.id}
           isLoading={plansQuery.isLoading}
           onRowClick={(r) => navigate(`/installments/${r.id}`)}

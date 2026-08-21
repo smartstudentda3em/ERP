@@ -95,6 +95,14 @@ export class PurchaseReceipt extends BaseEntity {
   @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
   unitSellingPrice: number | null;
 
+  /** Air Conditioning company only (see PurchaseReceiptsService.assertFreeGoodsAllowed) — a
+   * supplier's in-kind/target-discount goods: real quantity enters stock exactly like any other
+   * receipt, but packagePurchasePrice/totalAmount/paidAmount are always forced to 0 so it never
+   * affects what's owed to the supplier. Kept as its own flag (never inferred from totalAmount
+   * alone) so it stays reliably separable from a normal receipt for account reconciliation. */
+  @Column({ type: "boolean", default: false })
+  isFreeGoods: boolean;
+
   @Column("uuid")
   createdById: string;
 }

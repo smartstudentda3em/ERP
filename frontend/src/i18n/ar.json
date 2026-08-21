@@ -38,6 +38,7 @@
     "logout": "تسجيل الخروج",
     "profile": "إعدادات الحساب",
     "statement": "كشف حساب",
+    "supplierDetail": "تفاصيل المورد",
     "warehouseManagement": "المخازن",
     "stockAudit": "الجرد الشهري",
     "stockAuditAnnual": "الجرد السنوي",
@@ -734,6 +735,7 @@
     "searchProductPlaceholderPress": "ابحث بالاسم أو الفئة",
     "noProductSelected": "لم يتم اختيار صنف",
     "changeItem": "تغيير",
+    "freeGoods": "بضاعة مجانية / عينية (خصم تارجت)",
     "unitSellingPriceOptional": "سعر بيع الوحدة (اختياري)",
     "packageSellingPriceOptional": "سعر بيع العبوة (اختياري)",
     "paidAmountNow": "المبلغ المدفوع الآن",
@@ -866,6 +868,7 @@
     "distributedProfitsToPartners": "الأرباح الموزعة على الشركاء",
     "cogsRecords": "سجلات تكلفة البضاعة المباعة",
     "expensesGrandTotal": "إجمالي المصروفات الكلي",
+    "companyWideTotal": "إجمالي الشركة ككل",
     "filterByBranch": "تصفية حسب الفرع",
     "operatingExpensesTotal": "إجمالي المصروفات التشغيلية",
     "reportTitle": "تقرير حركة الخزينة",
@@ -902,7 +905,13 @@
     "pendingInvoicesSection": "الفواتير المستحقة",
     "totalPendingInvoicesLabel": "إجمالي الفواتير المستحقة",
     "payOutstanding": "سداد المتبقي",
-    "paymentSavedSuccess": "تم حفظ سند الدفع بنجاح"
+    "paymentSavedSuccess": "تم حفظ سند الدفع بنجاح",
+    "supplierPaymentsTab": "دفعات المورد",
+    "salesTaxTab": "ضريبة المبيعات",
+    "totalCashPurchasesBase": "إجمالي الفواتير المشتراة بالسعر الأساسي",
+    "netBalanceOwed": "الرصيد المتبقي الفعلي في ذمة الشركة",
+    "cashPurchasesSection": "المشتريات النقدية",
+    "freeGoodsSection": "البضاعة المجانية / خصومات التوريد العينية"
   },
   "printingProducts": {
     "addNew": "إضافة منتج جديد",

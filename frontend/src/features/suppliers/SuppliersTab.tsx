@@ -47,7 +47,7 @@ const emptyForm = { companyName: '', contactPerson: '', phone: '', currencyId: '
 export function SuppliersTab() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isAirConditioning } = useActiveCompany();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const companyId = useAuthStore((s) => s.user?.companyId);
@@ -137,7 +137,26 @@ export function SuppliersTab() {
   }
 
   const columns: Column<Supplier>[] = [
-    { header: t('common.name'), accessor: (r) => r.companyName },
+    {
+      header: t('common.name'),
+      // Air Conditioning only — opens the standalone AcSupplierDetailPage for this supplier; every
+      // other company's name cell stays plain text, unchanged.
+      accessor: (r) =>
+        isAirConditioning ? (
+          <button
+            type="button"
+            className="text-primary-600 underline-offset-2 hover:underline"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/suppliers/${r.id}/ac-detail`);
+            }}
+          >
+            {r.companyName}
+          </button>
+        ) : (
+          r.companyName
+        ),
+    },
     { header: t('fields.contactPerson'), accessor: (r) => r.contactPerson ?? '—' },
     { header: t('fields.phone'), accessor: (r) => r.phone ?? '—' },
     { header: t('fields.currency'), accessor: (r) => currencyLabel(r.currency) },

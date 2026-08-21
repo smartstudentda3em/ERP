@@ -14,13 +14,18 @@ export class CashMovementsController {
   @Post('cash-movements')
   @Permissions('treasury.cash-box.create')
   async create(@Body() dto: CreateManualCashMovementDto, @CurrentUser() user: AuthenticatedUser) {
+    // Printing Press explicitly picks a branch on this form (required there); every other company
+    // has no branch picker at all, so this falls back to the creating user's own branch instead of
+    // going in as unattributed (null) — otherwise a company's own branch filter on the Expenses
+    // screen would never match any of its expenses.
+    const branchId = dto.branchId ?? user.branchId ?? null;
     if (dto.type === CashMovementType.EXPENSE) {
-      await this.service.assertSufficientBalance(user.companyId!, dto.account, dto.amount, dto.branchId ?? null);
+      await this.service.assertSufficientBalance(user.companyId!, dto.account, dto.amount, branchId);
     }
     return this.service.record(
       {
         companyId: user.companyId!,
-        branchId: dto.branchId ?? null,
+        branchId,
         movementDate: dto.movementDate,
         type: dto.type,
         account: dto.account,
@@ -102,10 +107,12 @@ export class CashMovementsController {
   @Permissions('treasury.expense.edit')
   updateExpense(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser('companyId') companyId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateManualExpenseDto,
   ) {
-    return this.service.updateManualExpense(companyId, id, { ...dto, branchId: dto.branchId ?? null });
+    // Same fallback as create() — every company except Printing Press has no branch picker on this
+    // form, so an edit re-attributes to the editing user's own branch instead of wiping it to null.
+    return this.service.updateManualExpense(user.companyId!, id, { ...dto, branchId: dto.branchId ?? user.branchId ?? null });
   }
 
   @Delete('expenses/:id')

@@ -200,7 +200,9 @@
       "Bash(bash /tmp/verify_dup3.sh)",
       "Bash(bash /tmp/verify_dup4.sh)",
       "Bash(bash /tmp/verify_dup5.sh)",
-      "Bash(bash /tmp/final_cleanup3.sh)"
+      "Bash(bash /tmp/final_cleanup3.sh)",
+      "Bash(bash /tmp/verify_capacity_col.sh)",
+      "Bash(awk -F: '$1+0 < 991')"
     ]
   }
 }

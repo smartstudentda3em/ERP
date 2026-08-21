@@ -38,6 +38,7 @@
     "logout": "Logout",
     "profile": "Account Settings",
     "statement": "Statement",
+    "supplierDetail": "Supplier Detail",
     "warehouseManagement": "Warehouse",
     "stockAudit": "Monthly Stock Audit",
     "stockAuditAnnual": "Annual Stock Audit",
@@ -734,6 +735,7 @@
     "searchProductPlaceholderPress": "Search by name or category",
     "noProductSelected": "No item selected",
     "changeItem": "Change",
+    "freeGoods": "Free / In-Kind Goods (Target Discount)",
     "unitSellingPriceOptional": "Unit Selling Price (optional)",
     "packageSellingPriceOptional": "Package Selling Price (optional)",
     "paidAmountNow": "Amount Paid Now",
@@ -866,6 +868,7 @@
     "distributedProfitsToPartners": "Profits Distributed to Partners",
     "cogsRecords": "Cost of Goods Sold Records",
     "expensesGrandTotal": "Grand Total of Expenses",
+    "companyWideTotal": "Company-Wide Total",
     "filterByBranch": "Filter by Branch",
     "operatingExpensesTotal": "Total Operating Expenses",
     "reportTitle": "Treasury Transactions Report",
@@ -902,7 +905,13 @@
     "pendingInvoicesSection": "Pending Invoices",
     "totalPendingInvoicesLabel": "Total Pending Invoices",
     "payOutstanding": "Pay Outstanding Balance",
-    "paymentSavedSuccess": "Payment voucher saved successfully"
+    "paymentSavedSuccess": "Payment voucher saved successfully",
+    "supplierPaymentsTab": "Supplier Payments",
+    "salesTaxTab": "Sales Tax",
+    "totalCashPurchasesBase": "Total Invoices Purchased at Base Price",
+    "netBalanceOwed": "Actual Remaining Balance Owed",
+    "cashPurchasesSection": "Cash Purchases",
+    "freeGoodsSection": "Free / In-Kind Goods (Target Discounts)"
   },
   "printingProducts": {
     "addNew": "Add New Product",

@@ -8,6 +8,7 @@ import { CreatePurchaseReceiptDto, UpdatePurchaseReceiptDto } from './dto/stock.
 import { Product } from '../products/entities/product.entity';
 import { Warehouse } from '../../settings/entities/warehouse.entity';
 import { Supplier } from '../../parties/suppliers/entities/supplier.entity';
+import { Company } from '../../settings/entities/company.entity';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
 
@@ -15,11 +16,34 @@ import { CashMovementsService } from '../../treasury/cash-movements.service';
 export class PurchaseReceiptsService {
   constructor(
     @InjectRepository(PurchaseReceipt) private readonly repo: Repository<PurchaseReceipt>,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly stockService: StockService,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly cashMovementsService: CashMovementsService,
   ) {}
+
+  /** Air Conditioning company only — a supplier's in-kind/target-discount goods enter stock at
+   * their real quantity but must carry zero financial value, so they never affect what's owed to
+   * the supplier. Rejects the field outright for any other company, and rejects a nonzero
+   * packagePurchasePrice/paidAmount whenever it's set — this is a hard financial guarantee, not a
+   * default, so it's enforced by rejection rather than silently overwritten. */
+  private async assertFreeGoodsAllowed(
+    companyId: string,
+    dto: { isFreeGoods?: boolean; packagePurchasePrice: number; paidAmount?: number },
+  ): Promise<void> {
+    if (!dto.isFreeGoods) return;
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code !== 'AC') {
+      throw new BadRequestException('Free goods receipts are only supported for the Air Conditioning company');
+    }
+    if (dto.packagePurchasePrice !== 0) {
+      throw new BadRequestException('A free goods receipt must have a package purchase price of exactly 0');
+    }
+    if (dto.paidAmount) {
+      throw new BadRequestException('A free goods receipt cannot have a paid amount');
+    }
+  }
 
   findAll(companyId: string, productId?: string, warehouseId?: string) {
     return this.repo.find({
@@ -64,6 +88,8 @@ export class PurchaseReceiptsService {
 
       const supplier = await manager.getRepository(Supplier).findOne({ where: { id: dto.supplierId, companyId } });
       if (!supplier) throw new NotFoundException('Supplier not found');
+
+      await this.assertFreeGoodsAllowed(companyId, dto);
 
       const unitsPerPackage = Number(product.unitsPerPackage);
       // Guards the unitCost/totalUnits division below — a product saved without this conversion
@@ -115,9 +141,11 @@ export class PurchaseReceiptsService {
         manager,
       );
 
+      // A free goods receipt's price is 0 by definition — it must never overwrite the product's
+      // own reference purchase price with that 0 (averageCost still updates normally via
+      // stockService.receive() above, which is the correct place for a free batch to lower it).
       await manager.getRepository(Product).update(dto.productId, {
-        packagePurchasePrice: dto.packagePurchasePrice,
-        purchasePrice: unitCost,
+        ...(dto.isFreeGoods ? {} : { packagePurchasePrice: dto.packagePurchasePrice, purchasePrice: unitCost }),
         ...(dto.packageSellingPrice != null ? { packageSellingPrice: dto.packageSellingPrice } : {}),
         ...(dto.unitSellingPrice != null ? { sellingPrice: dto.unitSellingPrice } : {}),
       });
@@ -139,6 +167,7 @@ export class PurchaseReceiptsService {
         paidAmount,
         packageSellingPrice: dto.packageSellingPrice ?? null,
         unitSellingPrice: dto.unitSellingPrice ?? null,
+        isFreeGoods: dto.isFreeGoods ?? false,
         createdById,
       });
       const savedReceipt = await manager.getRepository(PurchaseReceipt).save(receipt);
@@ -200,6 +229,8 @@ export class PurchaseReceiptsService {
 
       const supplier = await manager.getRepository(Supplier).findOne({ where: { id: dto.supplierId, companyId } });
       if (!supplier) throw new NotFoundException('Supplier not found');
+
+      await this.assertFreeGoodsAllowed(companyId, dto);
 
       const unitsPerPackage = Number(product.unitsPerPackage);
       // Guards the unitCost/totalUnits division below — a product saved without this conversion
@@ -269,9 +300,10 @@ export class PurchaseReceiptsService {
         manager,
       );
 
+      // Same free-goods exception as create() — never let a 0 free-goods price overwrite the
+      // product's own reference purchase price.
       await manager.getRepository(Product).update(dto.productId, {
-        packagePurchasePrice: dto.packagePurchasePrice,
-        purchasePrice: unitCost,
+        ...(dto.isFreeGoods ? {} : { packagePurchasePrice: dto.packagePurchasePrice, purchasePrice: unitCost }),
         ...(dto.packageSellingPrice != null ? { packageSellingPrice: dto.packageSellingPrice } : {}),
         ...(dto.unitSellingPrice != null ? { sellingPrice: dto.unitSellingPrice } : {}),
       });
@@ -291,6 +323,7 @@ export class PurchaseReceiptsService {
         paidAmount,
         packageSellingPrice: dto.packageSellingPrice ?? null,
         unitSellingPrice: dto.unitSellingPrice ?? null,
+        isFreeGoods: dto.isFreeGoods ?? false,
       });
       const savedReceipt = await manager.getRepository(PurchaseReceipt).save(existing);
 

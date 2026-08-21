@@ -138,8 +138,9 @@ export function ExpensesPage() {
   const companyId = useAuthStore((s) => s.user?.companyId);
   const [tab, setTab] = useState<Tab>('operating');
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
-  // Printing Press only — narrows all three tabs (operating/raw materials/salaries) and every
-  // total shown on this screen to one branch. Empty string means "الكل" (every branch combined).
+  // Every company — narrows every tab and the top-right "grand total" card to one branch. Empty
+  // string means "الكل" (every branch combined). The separate "إجمالي الشركة ككل" card next to it
+  // deliberately ignores this filter — see companyWideTotal below.
   const [branchFilter, setBranchFilter] = useState('');
   // Stationery only — "الأرباح المصروفة" tab's two independent per-section filters (a specific
   // partner narrows only the partners table below; a specific مندوب narrows only the reps table).
@@ -173,12 +174,13 @@ export function ExpensesPage() {
   });
   const activeCategories = (categoriesQuery.data ?? []).filter((c) => c.isActive);
 
-  // Printing Press only — lets a manually-recorded expense be attributed to one branch, the same
-  // way the Purchasing form's Branch field works.
+  // Every company — powers both the branch filter above the table and (Printing Press only, for
+  // now the only tenant where a manually-recorded expense picks its own branch) the add/edit form's
+  // Branch field.
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
-    enabled: isPrintingPress && !!companyId,
+    enabled: !!companyId,
   });
 
   const expensesQuery = useQuery({
@@ -474,12 +476,31 @@ export function ExpensesPage() {
   const secondTabTotal = isPrintingPress ? totalRawMaterialPurchases : totalCogs;
   // Grand total across all expense types shown on this screen: operating + raw materials/COGS +
   // salaries + (Printing Press only) manager/partner profit payouts + (Stationery only) مندوب
-  // commission payouts.
+  // commission payouts. Moves with the branch filter — this is the "sub-total" the request refers
+  // to, shown next to the branch-independent companyWideTotal below.
   const grandTotal =
     totalExpenses +
     secondTabTotal +
     totalSalaries +
     (isPrintingPress ? totalProfitsPaidOut : 0) +
+    (isStationery || isAirConditioning ? totalCommissionPayouts : 0);
+
+  // Same formula as grandTotal, but deliberately sourced from every branch (ignores branchFilter —
+  // only the date range still applies) — "إجمالي الشركة ككل" stays fixed as the branch filter above
+  // changes, so it's always a true whole-company figure to compare the moving sub-total against.
+  // commissionPayoutsQuery/cogsQuery carry no branch dimension at all, so they're reused as-is.
+  const totalRawMaterialPurchasesAllBranches = (rawMaterialPurchasesQuery.data ?? [])
+    .filter((r) => inDateRange(r.receiptDate, dateRange))
+    .reduce((sum, r) => sum + Number(r.totalAmount ?? 0), 0);
+  const totalExpensesAllBranches = (expensesQuery.data ?? []).reduce((sum, e) => sum + e.amount, 0);
+  const totalSalariesAllBranches = (salariesQuery.data ?? []).reduce((sum, s) => sum + s.amount, 0);
+  const totalProfitsAllBranches = (profitsQuery.data?.rows ?? []).reduce((sum, p) => sum + p.amount, 0);
+  const secondTabTotalAllBranches = isPrintingPress ? totalRawMaterialPurchasesAllBranches : totalCogs;
+  const companyWideTotal =
+    totalExpensesAllBranches +
+    secondTabTotalAllBranches +
+    totalSalariesAllBranches +
+    (isPrintingPress ? totalProfitsAllBranches : 0) +
     (isStationery || isAirConditioning ? totalCommissionPayouts : 0);
 
   const secondTabCount = isPrintingPress ? dateFilteredRawMaterialPurchases.length : (cogsQuery.data ?? []).length;
@@ -661,23 +682,30 @@ export function ExpensesPage() {
           <h1 className="text-xl font-semibold">{t('nav.expenses')}</h1>
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <DateRangeFilter value={dateRange} onChange={setDateRange} />
-            {isPrintingPress && (
-              <FormField label={t('treasury.filterByBranch')}>
-                <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-                  <option value="">{t('accounting.allBranches')}</option>
-                  {(branchesQuery.data ?? []).map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.nameAr || b.nameEn}
-                    </option>
-                  ))}
-                </Select>
-              </FormField>
-            )}
+            <FormField label={t('treasury.filterByBranch')}>
+              <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+                <option value="">{t('accounting.allBranches')}</option>
+                {(branchesQuery.data ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nameAr || b.nameEn}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
           </div>
         </div>
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-          <div className="text-xs text-[var(--text-muted)]">{t('treasury.expensesGrandTotal')}</div>
-          <div className="mt-1 text-xl font-semibold">{money(grandTotal)}</div>
+        <div className="flex flex-wrap gap-3">
+          {/* Always the whole company across every branch, regardless of the branch filter above —
+              see companyWideTotal. The card next to it is the filtered sub-total, which does move
+              with the branch filter (and every per-tab total below it). */}
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <div className="text-xs text-[var(--text-muted)]">{t('treasury.companyWideTotal')}</div>
+            <div className="mt-1 text-xl font-semibold">{money(companyWideTotal)}</div>
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <div className="text-xs text-[var(--text-muted)]">{t('treasury.expensesGrandTotal')}</div>
+            <div className="mt-1 text-xl font-semibold">{money(grandTotal)}</div>
+          </div>
         </div>
       </div>
 

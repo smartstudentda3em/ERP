@@ -13,6 +13,10 @@ export interface Column<T> {
    * the user needs to spot at a glance while scanning a wide table — applies to both the header and
    * every data cell via the shared `.col-highlight` rule in index.css. */
   highlight?: boolean;
+  /** Marks this column as the row's action buttons (edit/delete/print/etc.). On the phone card
+   * layout it renders as its own full-width strip below the other fields instead of being squeezed
+   * into a label/value line, where a handful of buttons had no room and wrapped mid-word. */
+  isActions?: boolean;
 }
 
 export interface ServerPagination {
@@ -171,6 +175,8 @@ export function DataTable<T>({
         ) : (
           paged.map((row) => {
             const [titleCol, ...restCols] = columns;
+            const actionsCol = restCols.find((col) => col.isActions);
+            const fieldCols = restCols.filter((col) => !col.isActions);
             return (
               <div
                 key={keyField(row)}
@@ -179,7 +185,7 @@ export function DataTable<T>({
               >
                 <div className="mb-2.5 text-base font-semibold">{titleCol.accessor(row)}</div>
                 <div className="flex flex-col gap-2">
-                  {restCols.map((col, i) => (
+                  {fieldCols.map((col, i) => (
                     <div key={i} className="flex items-start justify-between gap-3 text-sm">
                       <span className="shrink-0 text-[var(--text-muted)]">{col.header}</span>
                       <span className={`text-end font-medium ${col.highlight ? 'text-[var(--accent,var(--primary-600))]' : ''}`}>
@@ -188,6 +194,11 @@ export function DataTable<T>({
                     </div>
                   ))}
                 </div>
+                {actionsCol && (
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--border)] pt-3 text-sm">
+                    {actionsCol.accessor(row)}
+                  </div>
+                )}
               </div>
             );
           })

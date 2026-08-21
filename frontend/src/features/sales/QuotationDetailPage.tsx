@@ -10,10 +10,11 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { buildPdfFileName } from '../../lib/pdf-filename';
-import { exportElementToPdf } from '../../lib/pdf-export';
+import { exportElementToPdfBlob } from '../../lib/pdf-export';
 import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 import { DocumentFooter } from './DocumentFooter';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
+import { useToast } from '../../components/ui/Toast';
 
 interface QuotationLine {
   id: string;
@@ -55,7 +56,11 @@ export function QuotationDetailPage() {
   const { t } = useTranslation();
   const { isPrintingPress } = useActiveCompany();
   const companyId = useAuthStore((s) => s.user?.companyId);
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const toast = useToast();
+  // Same as the invoice detail page: no printer attached to a phone, so مندوب/مدير فرع never get a
+  // "طباعة" button here — Print stays for every other role, on desktop.
+  const isMobileRestrictedRole = useIsSalesRep() || useIsBranchManager();
+  const [shareLoading, setShareLoading] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
   const quotationQuery = useQuery({
@@ -73,30 +78,44 @@ export function QuotationDetailPage() {
   const company =
     companiesQuery.data?.find((c) => c.id === (q?.companyId ?? companyId)) ?? companiesQuery.data?.[0];
 
-  async function handleDownloadPdf() {
+  // Same share-with-download-fallback flow as the invoice detail page: hand the PDF straight to
+  // the OS share sheet, and only fall back to a plain download when the browser has no file-sharing
+  // support — reusing the already-captured blob instead of re-running html2canvas a second time.
+  async function handleShareQuotation() {
     if (!printRef.current || !q) return;
-    setPdfLoading(true);
+    setShareLoading(true);
     printRef.current.classList.add('pdf-export-mode');
     try {
-      await exportElementToPdf(
-        printRef.current,
-        buildPdfFileName('عرض سعر', q.customer?.name, q.documentNumber),
-        'portrait',
-      );
+      const filename = buildPdfFileName('عرض سعر', q.customer?.name, q.documentNumber);
+      const blob = await exportElementToPdfBlob(printRef.current, 'portrait');
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast.warning(t('actions.shareNotSupported'));
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') toast.error(t('common.saveFailed'));
     } finally {
       printRef.current?.classList.remove('pdf-export-mode');
-      setPdfLoading(false);
+      setShareLoading(false);
     }
   }
 
-  // The table's row-level طباعة/تصدير PDF buttons navigate here with ?autoprint=1 / ?autopdf=1 so
-  // the action happens immediately once the document is loaded, instead of requiring a second click.
+  // The table's row-level طباعة/مشاركة buttons navigate here with ?autoprint=1 / ?autopdf=1 so the
+  // action happens immediately once the document is loaded, instead of requiring a second click.
   useEffect(() => {
     if (!q) return;
-    if (searchParams.get('autoprint') === '1') {
+    if (searchParams.get('autoprint') === '1' && !isMobileRestrictedRole) {
       window.print();
     } else if (searchParams.get('autopdf') === '1') {
-      handleDownloadPdf();
+      handleShareQuotation();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
@@ -107,12 +126,14 @@ export function QuotationDetailPage() {
         title={`${t('nav.quotations')} — ${q?.documentNumber ?? ''}`}
         actions={
           q ? (
-            <div className="flex gap-2 print:hidden">
-              <Button variant="secondary" onClick={() => window.print()}>
-                {t('common.print')}
-              </Button>
-              <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
-                {t('actions.downloadPdf')}
+            <div className="flex flex-wrap gap-2 print:hidden">
+              {!isMobileRestrictedRole && (
+                <Button variant="secondary" onClick={() => window.print()}>
+                  {t('common.print')}
+                </Button>
+              )}
+              <Button variant="secondary" onClick={handleShareQuotation} loading={shareLoading}>
+                {t('actions.shareInvoice')}
               </Button>
             </div>
           ) : undefined

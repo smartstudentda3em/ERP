@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount, roundTo } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -74,6 +74,10 @@ export function QuotationsPage() {
   const canEditQuotation = hasPermission('sales.quotation.edit');
   const canDeleteQuotation = hasPermission('sales.quotation.delete');
   const canApproveQuotation = hasPermission('sales.quotation.approve');
+  // مندوب/مدير فرع on their mobile app: no Print (no printer on a phone) and no Convert-to-Invoice
+  // row-shortcut (that's an app-owner/admin workflow decision, not a quick field action) — both
+  // stay for every other role, on desktop, matching the same restriction on the invoice pages.
+  const isMobileRestrictedRole = useIsSalesRep() || useIsBranchManager();
   const [modalOpen, setModalOpen] = useState(false);
   const [customerId, setCustomerId] = useState('');
   const [salesRepresentativeId, setSalesRepresentativeId] = useState('');
@@ -244,6 +248,7 @@ export function QuotationsPage() {
     { header: t('common.total'), accessor: (r) => formatAmount(r.grandTotal), align: 'right' },
     {
       header: t('common.actions'),
+      isActions: true,
       accessor: (r) => {
         // Once a quotation is past DRAFT, only a true Administrator may still edit/delete it —
         // mirrors QuotationsService.assertMayModify(), the actual server-side enforcement. That
@@ -251,9 +256,9 @@ export function QuotationsPage() {
         const statusAllowsModify = FREELY_EDITABLE_STATUSES.includes(r.status) || isSystemRole;
         const canEdit = statusAllowsModify && canEditQuotation;
         const canDelete = statusAllowsModify && canDeleteQuotation;
-        const canConvert = !NON_CONVERTIBLE_STATUSES.includes(r.status) && canApproveQuotation;
+        const canConvert = !NON_CONVERTIBLE_STATUSES.includes(r.status) && canApproveQuotation && !isMobileRestrictedRole;
         return (
-          <div className="flex justify-center gap-3">
+          <div className="flex flex-wrap justify-center gap-3">
             {canEdit && (
               <button
                 type="button"
@@ -289,27 +294,29 @@ export function QuotationsPage() {
                 🧾 {t('quotations.convertToInvoice')}
               </button>
             )}
+            {!isMobileRestrictedRole && (
+              <button
+                type="button"
+                className="text-primary-600 hover:underline"
+                title={t('common.print')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/sales/quotations/${r.id}?autoprint=1`);
+                }}
+              >
+                🖨️ {t('common.print')}
+              </button>
+            )}
             <button
               type="button"
               className="text-primary-600 hover:underline"
-              title={t('common.print')}
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/sales/quotations/${r.id}?autoprint=1`);
-              }}
-            >
-              🖨️ {t('common.print')}
-            </button>
-            <button
-              type="button"
-              className="text-primary-600 hover:underline"
-              title={t('actions.downloadPdf')}
+              title={t('actions.shareInvoice')}
               onClick={(e) => {
                 e.stopPropagation();
                 navigate(`/sales/quotations/${r.id}?autopdf=1`);
               }}
             >
-              📥 {t('actions.downloadPdf')}
+              📤 {t('actions.shareInvoice')}
             </button>
           </div>
         );

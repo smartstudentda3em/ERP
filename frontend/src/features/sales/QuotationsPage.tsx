@@ -67,6 +67,13 @@ export function QuotationsPage() {
   const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const isSystemRole = useAuthStore((s) => s.user?.isSystemRole) ?? false;
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  // مدير فرع only holds sales.quotation.view/create (no edit/delete/approve) — the status-based
+  // canModify/canConvert rules below decide WHEN a modification is allowed in principle, but a role
+  // lacking the underlying permission must never see the button at all, or it 403s on click.
+  const canEditQuotation = hasPermission('sales.quotation.edit');
+  const canDeleteQuotation = hasPermission('sales.quotation.delete');
+  const canApproveQuotation = hasPermission('sales.quotation.approve');
   const [modalOpen, setModalOpen] = useState(false);
   const [customerId, setCustomerId] = useState('');
   const [salesRepresentativeId, setSalesRepresentativeId] = useState('');
@@ -239,12 +246,15 @@ export function QuotationsPage() {
       header: t('common.actions'),
       accessor: (r) => {
         // Once a quotation is past DRAFT, only a true Administrator may still edit/delete it —
-        // mirrors QuotationsService.assertMayModify(), the actual server-side enforcement.
-        const canModify = FREELY_EDITABLE_STATUSES.includes(r.status) || isSystemRole;
-        const canConvert = !NON_CONVERTIBLE_STATUSES.includes(r.status);
+        // mirrors QuotationsService.assertMayModify(), the actual server-side enforcement. That
+        // status rule is independent from (and applied on top of) the caller's actual permissions.
+        const statusAllowsModify = FREELY_EDITABLE_STATUSES.includes(r.status) || isSystemRole;
+        const canEdit = statusAllowsModify && canEditQuotation;
+        const canDelete = statusAllowsModify && canDeleteQuotation;
+        const canConvert = !NON_CONVERTIBLE_STATUSES.includes(r.status) && canApproveQuotation;
         return (
           <div className="flex justify-center gap-3">
-            {canModify && (
+            {canEdit && (
               <button
                 type="button"
                 className="text-primary-600 hover:underline"
@@ -257,7 +267,7 @@ export function QuotationsPage() {
                 ✏️ {t('common.edit')}
               </button>
             )}
-            {canModify && (
+            {canDelete && (
               <button
                 type="button"
                 className="text-red-600 hover:underline"

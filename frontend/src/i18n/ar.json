@@ -251,6 +251,7 @@
     "balanceDue": "الرصيد المستحق",
     "downloadPdf": "تحميل PDF",
     "shareInvoice": "مشاركة",
+    "confirmShare": "شارك الآن 📤",
     "shareNotSupported": "المتصفح لا يدعم المشاركة المباشرة، تم تحميل الملف — افتحه من الملفات وشاركه من هناك"
   },
   "paymentMethod": {

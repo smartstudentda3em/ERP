@@ -63,6 +63,16 @@ export function QuotationDetailPage() {
   // "طباعة" button here — Print stays for every other role, on desktop.
   const isMobileRestrictedRole = useIsSalesRep() || useIsBranchManager();
   const [shareLoading, setShareLoading] = useState(false);
+  // Set only on the "upload a link, then share it" path (canShare({files}) is false but
+  // canShare({url}) is true — Samsung Internet on an installed TWA is the confirmed real case).
+  // navigator.share() is deliberately NOT called at the end of the upload — by then, the original
+  // tap's "user gesture" has expired (confirmed live: real devices throw NotAllowedError, "Must be
+  // handling a user gesture to perform a share request"), since generating + uploading the PDF
+  // takes long enough that Chromium no longer treats it as a direct response to that first click.
+  // Arming this instead swaps the button to a second, explicit "شارك الآن" tap — a genuinely fresh
+  // click event — which calls navigator.share() synchronously in its own handler with nothing
+  // async ahead of it, satisfying the gesture requirement for real this time.
+  const [pendingShare, setPendingShare] = useState<{ url: string; title: string } | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
   const quotationQuery = useQuery({
@@ -119,15 +129,16 @@ export function QuotationDetailPage() {
       if (canShareUrl) {
         try {
           const sharedUrl = await uploadSharedPdf(blob, filename);
-          await navigator.share({ title: filename, url: sharedUrl });
+          // Deliberately NOT calling navigator.share() here — see the pendingShare state comment.
+          // Arms the "شارك الآن" confirm button instead, so the actual share() call happens
+          // synchronously inside a fresh click handler rather than after this async upload.
+          setPendingShare({ url: sharedUrl, title: filename });
           return;
         } catch (err: any) {
           if (err?.name === 'AbortError') return;
-          // Upload failure or share-of-a-link failure — falls through to the plain download below.
-          // Recorded (temporarily) for the diagnostic toast: distinguishes "the upload request
-          // itself failed" (name/message from axios — a network error, a timeout, a 4xx/5xx status
-          // in err.response.status) from "the link upload worked but navigator.share(url) itself
-          // then failed" (name/message from the Web Share API).
+          // Upload failure — falls through to the plain download below. Recorded (temporarily) for
+          // the diagnostic toast: axios's name/message (a network error, a timeout, a 4xx/5xx
+          // status in err.response.status).
           const status = err?.response?.status;
           step2ErrorDetail = `${err?.name || 'Error'}${status ? ` ${status}` : ''}: ${String(err?.message || '').slice(0, 80)}`;
         }
@@ -157,6 +168,18 @@ export function QuotationDetailPage() {
     }
   }
 
+  /** The second, explicit tap after handleShareQuotation() has armed pendingShare — called
+   * directly from a button's onClick with nothing async ahead of it, so this is a genuinely fresh
+   * user gesture as far as the browser's Web Share API gesture check is concerned. */
+  function handleConfirmShare() {
+    if (!pendingShare) return;
+    const { url, title } = pendingShare;
+    setPendingShare(null);
+    navigator.share({ title, url }).catch((err: any) => {
+      if (err?.name !== 'AbortError') toast.error(t('common.saveFailed'));
+    });
+  }
+
   // The table's row-level طباعة/مشاركة buttons navigate here with ?autoprint=1 / ?autopdf=1 so the
   // action happens immediately once the document is loaded, instead of requiring a second click.
   useEffect(() => {
@@ -181,9 +204,13 @@ export function QuotationDetailPage() {
                   {t('common.print')}
                 </Button>
               )}
-              <Button variant="secondary" onClick={handleShareQuotation} loading={shareLoading}>
-                {t('actions.shareInvoice')}
-              </Button>
+              {pendingShare ? (
+                <Button onClick={handleConfirmShare}>{t('actions.confirmShare')}</Button>
+              ) : (
+                <Button variant="secondary" onClick={handleShareQuotation} loading={shareLoading}>
+                  {t('actions.shareInvoice')}
+                </Button>
+              )}
             </div>
           ) : undefined
         }

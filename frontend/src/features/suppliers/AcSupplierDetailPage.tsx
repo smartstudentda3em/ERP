@@ -25,10 +25,14 @@ import { localToday } from '../../lib/date-utils';
  * to that system. /ac-supplier-payments and /ac-supplier-tax-payments are new, AC-only, standalone
  * endpoints (ac-supplier-ledger module) with no CashMovementsService/treasury dependency at all —
  * this is where the page's own "+ تسجيل دفعة"/"+ تسجيل ضريبة" actions write. Nothing here is
- * imported by, or affects, any other screen.
+ * imported by, or affects, any other screen. The "دفعات المورد" tab and its own total show ONLY
+ * these standalone AcSupplierPayment rows (never the legacy treasury-tied SupplierPayment ones) —
+ * full decoupling, see filteredPayments/totalIndependentPaymentsAllTime below. The top reconciliation
+ * cards still fold legacy money into totalPaidAllTime for an accurate debt balance; see that memo's
+ * comment for why that's a separate concern from this tab's independence.
  */
 
-type Tab = 'payments' | 'purchases' | 'tax';
+type Tab = 'payments' | 'purchases' | 'tax' | 'difference';
 type Quarter = 'ALL' | 'Q1' | 'Q2' | 'Q3' | 'Q4';
 
 interface Supplier {
@@ -72,20 +76,6 @@ interface AcSupplierPayment {
   amount: number;
   notes?: string | null;
   createdByName: string;
-}
-
-/** Unified row shape merging legacy (treasury-linked) SupplierPayment rows with the new
- * standalone AcSupplierPayment rows, so "دفعات المورد" shows every payment ever recorded for this
- * supplier regardless of which mechanism wrote it. */
-interface UnifiedPaymentRow {
-  id: string;
-  source: 'legacy' | 'standalone';
-  paymentDate: string;
-  amount: number;
-  method: string | null;
-  notes: string | null;
-  createdByName: string;
-  documentNumber: string | null;
 }
 
 interface AcSupplierTaxPayment {
@@ -202,37 +192,15 @@ export function AcSupplierDetailPage() {
     [cashReceipts],
   );
 
-  // "دفعات المورد" shows every payment ever recorded for this supplier, merging the legacy
-  // treasury-linked SupplierPayment rows with the new standalone AcSupplierPayment rows — the
-  // legacy rows are historical fact (real money that left the business via Cash/Bank) and stay
-  // visible even though new payments no longer use that mechanism.
-  const unifiedPayments = useMemo<UnifiedPaymentRow[]>(() => {
-    const legacy: UnifiedPaymentRow[] = (paymentsQuery.data ?? []).map((p) => ({
-      id: p.id,
-      source: 'legacy',
-      paymentDate: p.paymentDate,
-      amount: Number(p.amount),
-      method: t(`paymentMethod.${p.method}`),
-      notes: p.notes ?? null,
-      createdByName: p.createdByName,
-      documentNumber: p.documentNumber,
-    }));
-    const standalone: UnifiedPaymentRow[] = (acPaymentsQuery.data ?? []).map((p) => ({
-      id: p.id,
-      source: 'standalone',
-      paymentDate: p.paymentDate,
-      amount: Number(p.amount),
-      method: null,
-      notes: p.notes ?? null,
-      createdByName: p.createdByName,
-      documentNumber: null,
-    }));
-    return [...legacy, ...standalone].sort((a, b) => (a.paymentDate < b.paymentDate ? 1 : -1));
-  }, [paymentsQuery.data, acPaymentsQuery.data, t]);
-
+  // "دفعات المورد" is deliberately fully decoupled: this tab shows ONLY the standalone,
+  // non-treasury-linked AcSupplierPayment log — never the legacy treasury-tied SupplierPayment
+  // rows (those carry a real Cash/Bank method and cashMovementId, so mixing them in here would
+  // contradict "مسجلة بشكل مستقل تماماً خاص بالمورد فقط"). Legacy money is still counted in the
+  // reconciliation cards above (totalPaidAllTime) for an accurate debt balance, just not surfaced
+  // in this specific tab/list.
   const filteredPayments = useMemo(
-    () => unifiedPayments.filter((p) => inDateRange(p.paymentDate, dateRange)),
-    [unifiedPayments, dateRange],
+    () => (acPaymentsQuery.data ?? []).filter((p) => inDateRange(p.paymentDate, dateRange)),
+    [acPaymentsQuery.data, dateRange],
   );
   const totalPayments = useMemo(
     () => filteredPayments.reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
@@ -290,6 +258,20 @@ export function AcSupplierDetailPage() {
   }, [allSupplierReceipts, tiedAmountByReceiptAllTime, paymentsQuery.data, acPaymentsQuery.data]);
   const netBalanceOwed = totalCashPurchasesAllTime - totalPaidAllTime;
 
+  /**
+   * "الفرق" tab (point 2): إجمالي دفعات المورد المسجلة (= only what's logged through this page's
+   * own independent AcSupplierPayment mechanism, never the legacy treasury-tied total) ناقص
+   * إجمالي الفواتير المشتراة بالسعر الأساسي. Deliberately a DIFFERENT figure from netBalanceOwed
+   * above (which includes legacy money) — this one answers "how far does what I've logged through
+   * the new independent tracker alone go towards covering total purchases," all-time like the
+   * other reconciliation figures (not scoped to the year/quarter filter).
+   */
+  const totalIndependentPaymentsAllTime = useMemo(
+    () => (acPaymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
+    [acPaymentsQuery.data],
+  );
+  const paymentsVsPurchasesDifference = totalIndependentPaymentsAllTime - totalCashPurchasesAllTime;
+
   function invalidatePayments() {
     queryClient.invalidateQueries({ queryKey: ['supplier-payments', companyId, id] });
     queryClient.invalidateQueries({ queryKey: ['ac-supplier-payments', companyId, id] });
@@ -321,10 +303,7 @@ export function AcSupplierDetailPage() {
   });
 
   const deletePaymentMutation = useMutation({
-    mutationFn: (p: UnifiedPaymentRow) =>
-      p.source === 'legacy'
-        ? apiClient.delete(`/supplier-payments/${p.id}`)
-        : apiClient.delete(`/ac-supplier-payments/${p.id}`),
+    mutationFn: (paymentId: string) => apiClient.delete(`/ac-supplier-payments/${paymentId}`),
     onSuccess: () => {
       invalidatePayments();
       toast.success(t('common.deletedSuccessfully'));
@@ -332,9 +311,9 @@ export function AcSupplierDetailPage() {
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
-  async function handleDeletePayment(p: UnifiedPaymentRow) {
-    const ok = await confirm({ message: t('common.confirmDelete', { name: p.documentNumber ?? p.paymentDate }) });
-    if (ok) deletePaymentMutation.mutate(p);
+  async function handleDeletePayment(p: AcSupplierPayment) {
+    const ok = await confirm({ message: t('common.confirmDelete', { name: money(Number(p.amount)) }) });
+    if (ok) deletePaymentMutation.mutate(p.id);
   }
 
   const taxMutation = useMutation({
@@ -372,11 +351,9 @@ export function AcSupplierDetailPage() {
     if (ok) deleteTaxMutation.mutate(p.id);
   }
 
-  const paymentColumns: Column<UnifiedPaymentRow>[] = [
-    { header: t('table.documentNumber'), accessor: (r) => r.documentNumber ?? '—' },
+  const paymentColumns: Column<AcSupplierPayment>[] = [
     { header: t('common.date'), accessor: (r) => r.paymentDate },
-    { header: t('fields.amount'), accessor: (r) => money(r.amount), align: 'right' },
-    { header: t('fields.method'), accessor: (r) => r.method ?? '—' },
+    { header: t('fields.amount'), accessor: (r) => money(Number(r.amount)), align: 'right' },
     { header: t('table.description'), accessor: (r) => r.notes ?? '—' },
     { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
     {
@@ -479,7 +456,7 @@ export function AcSupplierDetailPage() {
         </div>
       </div>
 
-      <div className="mb-4 flex gap-2 text-sm">
+      <div className="mb-4 flex flex-wrap gap-2 text-sm">
         <button
           className={`rounded-lg px-3 py-1.5 ${tab === 'payments' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
           onClick={() => setTab('payments')}
@@ -498,13 +475,20 @@ export function AcSupplierDetailPage() {
         >
           {t('suppliers.salesTaxTab')}
         </button>
+        <button
+          className={`rounded-lg px-3 py-1.5 ${tab === 'difference' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+          onClick={() => setTab('difference')}
+        >
+          {t('suppliers.differenceTab')}
+        </button>
       </div>
 
       {tab === 'payments' && (
         <>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="rounded-lg bg-[var(--table-header-bg)] px-3 py-1.5 text-sm font-medium">
-              {t('suppliers.totalPaymentsLabel')}: <span className="font-semibold">{money(totalPayments)}</span>
+              {t('suppliers.totalIndependentPayments')}:{' '}
+              <span className="font-semibold">{money(totalPayments)}</span>
             </div>
             <Button onClick={() => setPayOpen(true)}>+ {t('actions.recordPayment')}</Button>
           </div>
@@ -512,7 +496,7 @@ export function AcSupplierDetailPage() {
             columns={paymentColumns}
             data={filteredPayments}
             keyField={(r) => r.id}
-            isLoading={paymentsQuery.isLoading || acPaymentsQuery.isLoading}
+            isLoading={acPaymentsQuery.isLoading}
           />
         </>
       )}
@@ -566,6 +550,26 @@ export function AcSupplierDetailPage() {
             isLoading={taxQuery.isLoading}
           />
         </>
+      )}
+
+      {tab === 'difference' && (
+        <div>
+          <h3 className="mb-3 font-semibold">{t('suppliers.differenceTabFull')}</h3>
+          <div className="max-w-sm rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalIndependentPayments')}</div>
+            <div className="mt-1 text-lg font-semibold">{money(totalIndependentPaymentsAllTime)}</div>
+            <div className="mt-3 text-xs text-[var(--text-muted)]">{t('suppliers.totalCashPurchasesBase')}</div>
+            <div className="mt-1 text-lg font-semibold">{money(totalCashPurchasesAllTime)}</div>
+            <div className="mt-3 border-t border-[var(--border)] pt-3 text-xs text-[var(--text-muted)]">
+              {t('suppliers.differenceTabFull')}
+            </div>
+            <div
+              className={`mt-1 text-xl font-semibold ${paymentsVsPurchasesDifference < 0 ? 'text-red-600' : 'text-green-600'}`}
+            >
+              {money(paymentsVsPurchasesDifference)}
+            </div>
+          </div>
+        </div>
       )}
 
       <Modal open={payOpen} onClose={() => setPayOpen(false)} title={t('actions.recordPayment')}>

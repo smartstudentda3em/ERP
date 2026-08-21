@@ -204,7 +204,17 @@
       "Bash(bash /tmp/verify_capacity_col.sh)",
       "Bash(awk -F: '$1+0 < 991')",
       "Bash(grep -n \"^\\\\s*[A-Za-z]*Module,\\\\?$\" src/app.module.ts)",
-      "Bash(python3 -c \"import sys,json; print\\(json.load\\(sys.stdin\\)['data']['accessToken']\\)\")"
+      "Bash(python3 -c \"import sys,json; print\\(json.load\\(sys.stdin\\)['data']['accessToken']\\)\")",
+      "Bash(awk '{print $1}' ~/.ssh/known_hosts)",
+      "Bash(which plink.exe plink 2>&1; echo \"---\"; ls \"/c/Program Files/PuTTY\" 2>/dev/null; ls \"/c/Program Files \\(x86\\)/PuTTY\" 2>/dev/null)",
+      "Bash(pip show *)",
+      "Bash(npm --version)",
+      "Bash(winget search *)",
+      "Bash(ssh-keygen -t ed25519 -f ~/.ssh/erp_vps_deploy -N \"\" -C \"claude-code-erp-deploy\")",
+      "Bash(ssh -i ~/.ssh/erp_vps_deploy -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@186.240.145.60 \"whoami && hostname && echo CONNECTED_OK\")",
+      "Bash(touch ~/.ssh/config)",
+      "Bash(ssh erp-vps *)",
+      "Bash(ls \"C:\\\\Users\\\\surface\\\\.claude\\\\projects\\\\E--ERP\\\\memory\\\\\" 2>&1)"
     ]
   }
 }

@@ -80,7 +80,8 @@ export function QuotationDetailPage() {
 
   // Same share-with-download-fallback flow as the invoice detail page: hand the PDF straight to
   // the OS share sheet, and only fall back to a plain download when the browser has no file-sharing
-  // support — reusing the already-captured blob instead of re-running html2canvas a second time.
+  // support (or the share attempt itself fails) — reusing the already-captured blob instead of
+  // re-running html2canvas a second time.
   async function handleShareQuotation() {
     if (!printRef.current || !q) return;
     setShareLoading(true);
@@ -89,19 +90,29 @@ export function QuotationDetailPage() {
       const filename = buildPdfFileName('عرض سعر', q.customer?.name, q.documentNumber);
       const blob = await exportElementToPdfBlob(printRef.current, 'portrait');
       const file = new File([blob], filename, { type: 'application/pdf' });
+
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: filename });
-      } else {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(url);
-        toast.warning(t('actions.shareNotSupported'));
+        try {
+          await navigator.share({ files: [file], title: filename });
+          return;
+        } catch (err: any) {
+          // AbortError = user closed the share sheet without picking anything, leave it at that.
+          // Any other failure (e.g. a real device throwing NotAllowedError because the async PDF
+          // capture above pushed the share call outside the browser's "user gesture" window) falls
+          // through to the download below instead of showing an error.
+          if (err?.name === 'AbortError') return;
+        }
       }
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') toast.error(t('common.saveFailed'));
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.warning(t('actions.shareNotSupported'));
+    } catch (err) {
+      toast.error(t('common.saveFailed'));
     } finally {
       printRef.current?.classList.remove('pdf-export-mode');
       setShareLoading(false);

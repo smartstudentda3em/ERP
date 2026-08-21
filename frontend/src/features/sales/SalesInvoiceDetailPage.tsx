@@ -166,24 +166,35 @@ export function SalesInvoiceDetailPage() {
       const filename = buildPdfFileName('فاتورة بيع', inv.customer?.name, inv.documentNumber);
       const blob = await exportElementToPdfBlob(printRef.current, 'portrait');
       const file = new File([blob], filename, { type: 'application/pdf' });
+
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: filename });
-      } else {
-        // Reuses the blob already captured above instead of re-running html2canvas, since the
-        // browser's own <a download> is enough to save it — no need to render the DOM twice just
-        // because this browser doesn't support navigator.share's file mode.
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(url);
-        toast.warning(t('actions.shareNotSupported'));
+        try {
+          await navigator.share({ files: [file], title: filename });
+          return; // shared successfully — nothing left to do
+        } catch (err: any) {
+          // AbortError just means the user closed the share sheet without picking anything — leave
+          // it at that, don't force a download they didn't ask for. Any OTHER failure (a real
+          // Android device throws things like NotAllowedError when the share call ends up outside
+          // the browser's "user gesture" window — easy to hit here since the PDF capture above is
+          // async — or a WebView quirk) falls through to the download below instead of erroring out.
+          if (err?.name === 'AbortError') return;
+        }
       }
-    } catch (err: any) {
-      // AbortError just means the user closed the share sheet without picking anything — not a
-      // real failure, so it stays silent rather than showing an error toast for a non-error.
-      if (err?.name !== 'AbortError') toast.error(t('common.saveFailed'));
+
+      // Reuses the blob already captured above instead of re-running html2canvas, since the
+      // browser's own <a download> is enough to save it — covers both "this browser has no
+      // navigator.share file support" and "it has it, but the share attempt itself failed".
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.warning(t('actions.shareNotSupported'));
+    } catch (err) {
+      // Only a genuine failure to generate the PDF itself (before any share/download attempt) ends
+      // up here.
+      toast.error(t('common.saveFailed'));
     } finally {
       printRef.current?.classList.remove('pdf-export-mode');
       setShareLoading(false);

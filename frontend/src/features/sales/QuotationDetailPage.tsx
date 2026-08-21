@@ -104,29 +104,20 @@ export function QuotationDetailPage() {
         }
       }
 
-      // No native share support (or the attempt above failed) — tries opening it as a normal page
-      // view first: browsers generally render a PDF viewed this way in their own built-in viewer
-      // (with its own share/print icons) with no extra prompt, whereas an explicit <a download>
-      // forces a "save this file?" confirmation on some mobile browsers (Samsung Internet in
-      // particular). window.open() is wrapped in its own try/catch and treated as failed on EITHER
-      // a null return (the usual popup-blocked signal — a real possibility here since this call is
-      // already several `await`s removed from the original click) OR a thrown exception —
-      // confirmed on a real device this can throw instead of returning null for a blob: URL. Either
-      // way this falls back to the forced download, the one path proven to actually work everywhere.
+      // No native share support (or the attempt above failed) — a plain forced download, and
+      // nothing fancier: this app runs inside an installed TWA (a single-activity Android wrapper,
+      // not a normal tabbed browser) on the phones that actually hit this path, and
+      // window.open()-based "view it first" attempts were tried and abandoned here — one threw
+      // outright, the other silently opened a window with no visible content, since a TWA has
+      // nowhere to render a second window/tab. The browser's own "save file?" confirmation
+      // (unavoidable — no page can suppress it) is the trade-off for a path that reliably puts the
+      // file on the device at all.
       const url = URL.createObjectURL(blob);
-      let opened: Window | null = null;
-      try {
-        opened = window.open(url, '_blank');
-      } catch {
-        opened = null;
-      }
-      if (!opened) {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
       toast.warning(t('actions.shareNotSupported'));
     } catch (err) {
       toast.error(t('common.saveFailed'));

@@ -419,6 +419,11 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       align: 'right',
     },
     {
+      header: t('fields.packagePurchasePrice'),
+      accessor: (r) => formatAmount(r.packagePurchasePrice),
+      align: 'right',
+    },
+    {
       header: t('fields.totalAmount'),
       // quantityPackages × packagePurchasePrice — mirrors PurchaseReceiptsService.create()'s
       // totalAmount on the backend, so this column never has to recompute anything itself.

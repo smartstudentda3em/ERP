@@ -3,6 +3,7 @@
   "errorBoundary": {
     "title": "An unexpected error occurred",
     "description": "The app ran into a problem while showing this page. You can reload the page or go back to the dashboard.",
+    "descriptionAutoRecover": "The app ran into a brief glitch while showing this page. Refreshing automatically in a moment…",
     "reload": "Reload",
     "goHome": "Go to Dashboard",
     "goBack": "Go Back"

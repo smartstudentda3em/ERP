@@ -181,6 +181,22 @@ body {
   display: block !important;
 }
 
+/* Forces a fixed, desktop-proportioned width during capture regardless of the device's actual
+   viewport — without this, html2canvas snapshots whatever narrow phone-width reflow is currently
+   on screen (this app also runs as a phone-width Android app now) and the PDF stretches that
+   low-resolution, awkwardly-wrapped capture up to a full A4 page, which is what made an invoice
+   PDF generated from a phone look badly formatted and blurry compared to the same export from a
+   desktop screen. Positioned off-screen (not display:none — html2canvas needs real layout) so
+   this never visibly disrupts what the user is looking at; the class is only on for the instant
+   of the capture itself. Applies to every letterhead-style document (Sales Invoice, Quotation,
+   Customer Statement) since they all share .printable-document. */
+.printable-document.pdf-export-mode {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 794px;
+}
+
 /* Raw Materials report (المواد الخام) print/PDF — unlike invoices/statements, this export shows
    only a plain title and the table, nothing else (no company letterhead, no stats cards, no
    footer), per the raw-materials print spec. */

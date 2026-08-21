@@ -29,6 +29,18 @@ async function buildPdf(element: HTMLElement, orientation: PdfOrientation) {
     import('jspdf'),
   ]);
 
+  // html2canvas paints with whatever font is *currently* available, not whichever one CSS asks
+  // for — if the Cairo webfont hasn't finished downloading/parsing yet (very plausible right after
+  // a fresh page load, and there's no earlier point in this flow that would have already forced
+  // it), the capture silently falls back to a generic system font, which is what made an exported
+  // invoice's Arabic text look wrong. `document.fonts.ready` guarantees every requested font face
+  // has resolved before the snapshot. The two animation-frame waits after it give the browser a
+  // chance to actually paint the layout this call's caller just switched into (e.g. the fixed-width
+  // .pdf-export-mode override in index.css) — classList.add() alone doesn't guarantee a paint has
+  // happened yet, and html2canvas reads computed layout, not the DOM's intent.
+  await document.fonts.ready;
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
   const scale = 2;
   const canvas = await html2canvas(element, { scale, useCORS: true });
 

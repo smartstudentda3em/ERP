@@ -209,7 +209,7 @@ export function SalesInvoiceDetailPage() {
         title={`${t('nav.salesInvoices')} — ${inv?.documentNumber ?? ''}`}
         actions={
           inv ? (
-            <div className="flex gap-2 print:hidden">
+            <div className="flex flex-wrap gap-2 print:hidden">
               <Button variant="secondary" onClick={() => window.print()}>
                 {t('common.print')}
               </Button>

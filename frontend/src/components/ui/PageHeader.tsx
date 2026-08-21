@@ -11,7 +11,10 @@ export function PageHeader({
   return (
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3 print:hidden">
       <h1 className="text-xl font-semibold">{title}</h1>
-      {actions && <div className="flex gap-2">{actions}</div>}
+      {/* flex-wrap here too (not just the outer row) — a page with several action buttons (print/
+          PDF/WhatsApp/record payment, etc.) would otherwise force horizontal overflow on a phone
+          instead of wrapping onto a second line. */}
+      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
   );
 }

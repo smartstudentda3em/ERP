@@ -12,6 +12,7 @@ import { Badge, statusColor } from '../../components/ui/Badge';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdfBlob } from '../../lib/pdf-export';
 import { shareEngineHint, shareCapabilityHint } from '../../lib/browser-info';
+import { uploadSharedPdf } from '../../lib/shared-document';
 import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 import { DocumentFooter } from './DocumentFooter';
 import { useActiveCompany, useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
@@ -92,37 +93,48 @@ export function QuotationDetailPage() {
       const blob = await exportElementToPdfBlob(printRef.current, 'portrait');
       const file = new File([blob], filename, { type: 'application/pdf' });
 
+      // 1. Best case: this browser can share the PDF itself as an attached file.
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
           await navigator.share({ files: [file], title: filename });
           return;
         } catch (err: any) {
           // AbortError = user closed the share sheet without picking anything, leave it at that.
-          // Any other failure (e.g. a real device throwing NotAllowedError because the async PDF
-          // capture above pushed the share call outside the browser's "user gesture" window) falls
-          // through to the download below instead of showing an error.
+          // Any other failure falls through to the next tier instead of showing an error.
           if (err?.name === 'AbortError') return;
         }
       }
 
-      // No native share support (or the attempt above failed) — a plain forced download, and
-      // nothing fancier: this app runs inside an installed TWA (a single-activity Android wrapper,
-      // not a normal tabbed browser) on the phones that actually hit this path, and
-      // window.open()-based "view it first" attempts were tried and abandoned here — one threw
-      // outright, the other silently opened a window with no visible content, since a TWA has
-      // nowhere to render a second window/tab. The browser's own "save file?" confirmation
-      // (unavoidable — no page can suppress it) is the trade-off for a path that reliably puts the
-      // file on the device at all.
-      const url = URL.createObjectURL(blob);
+      // 2. Confirmed real-world case (Samsung Internet hosting an installed TWA): the browser
+      // can't share a file at all, but CAN share a plain link (Level 1 Web Share — much more
+      // broadly supported than Level 2 file sharing). Upload the already-captured PDF so it has a
+      // real public URL, then share that link instead of the file itself.
+      const canShareUrl = navigator.canShare ? navigator.canShare({ url: window.location.origin }) : !!navigator.share;
+      if (canShareUrl) {
+        try {
+          const sharedUrl = await uploadSharedPdf(blob, filename);
+          await navigator.share({ title: filename, url: sharedUrl });
+          return;
+        } catch (err: any) {
+          if (err?.name === 'AbortError') return;
+          // Upload failure or share-of-a-link failure — falls through to the plain download below.
+        }
+      }
+
+      // 3. Last resort — neither file nor link sharing worked (or navigator.share doesn't exist at
+      // all). Reuses the blob already captured instead of re-running html2canvas. This app runs
+      // inside an installed TWA (a single-activity Android wrapper, not a normal tabbed browser) on
+      // the phones that actually hit this path, and window.open()-based "view it first" attempts
+      // were tried and abandoned here — one threw outright, the other silently opened a window with
+      // no visible content, since a TWA has nowhere to render a second window/tab. The browser's
+      // own "save file?" confirmation (unavoidable — no page can suppress it) is the trade-off for
+      // a path that reliably puts the file on the device at all.
+      const downloadUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
+      link.href = downloadUrl;
       link.download = filename;
       link.click();
-      URL.revokeObjectURL(url);
-      // Engine name appended temporarily — canShare({files}) came back false/undefined here, and
-      // there's no way to tell from this side of the API whether Android handed this TWA to Chrome
-      // (should support file sharing) or to Samsung Internet (historically weak/no support for it)
-      // without asking the browser itself. Remove once that's confirmed.
+      URL.revokeObjectURL(downloadUrl);
       toast.warning(`${t('actions.shareNotSupported')} (${shareEngineHint()}, ${shareCapabilityHint()})`);
     } catch (err) {
       toast.error(t('common.saveFailed'));

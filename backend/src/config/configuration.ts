@@ -19,6 +19,10 @@ export default () => ({
     adminEmail: process.env.SEED_ADMIN_EMAIL || 'aymanmakroum83@gmail.com',
     adminPassword: process.env.SEED_ADMIN_PASSWORD || 'Ayman987654#',
   },
+  sharedDocuments: {
+    storageDir: process.env.SHARED_DOCUMENTS_STORAGE_DIR || './uploads/shared-documents',
+    retentionDays: parseInt(process.env.SHARED_DOCUMENTS_RETENTION_DAYS || '14', 10),
+  },
   backup: {
     storageDir: process.env.BACKUP_STORAGE_DIR || './backups',
     encryptionKey: process.env.BACKUP_ENCRYPTION_KEY || '',

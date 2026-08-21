@@ -41,13 +41,13 @@ export class QuotationsController {
     @Body() dto: UpdateQuotationDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.service.update(id, dto, user.companyId!, user.isSystemRole);
+    return this.service.update(id, dto, user.companyId!, user.isSystemRole, user.userId);
   }
 
   @Delete(':id')
   @Permissions('sales.quotation.delete')
   remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.remove(id, user.companyId!, user.isSystemRole);
+    return this.service.remove(id, user.companyId!, user.isSystemRole, user.userId);
   }
 
   @Post(':id/convert-to-invoice')

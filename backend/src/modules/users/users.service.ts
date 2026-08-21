@@ -485,7 +485,7 @@ export class UsersService {
 
     const quotations = await this.dataSource.getRepository(Quotation).find({ where: { createdById: id } });
     for (const q of quotations) {
-      await this.quotationsService.remove(q.id, q.companyId, true);
+      await this.quotationsService.remove(q.id, q.companyId, true, callerId);
     }
 
     // Reverses stock (SALES_RETURN) and deletes each invoice's own SalesPayment + CashMovement rows.

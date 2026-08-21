@@ -115,13 +115,35 @@ export class QuotationsService {
     }
   }
 
-  async update(id: string, dto: UpdateQuotationDto, companyId: string, isSystemRole: boolean): Promise<Quotation> {
+  /** findAll() already pins a branch-locked caller (e.g. مدير فرع) to their own branch, but that's
+   * a read-side filter only — update()/remove() look a quotation up directly by id, so without this
+   * a branch manager who holds sales.quotation.edit/delete could still act on another branch's
+   * quotation by id alone. Re-derives the caller's own branch from the DB (never trusts a
+   * client-supplied value) exactly like resolveBranchId()'s other callers. Skipped for isSystemRole,
+   * same as assertMayModify — and for the account-deletion cascade in UsersService.remove(), which
+   * deletes every quotation a removed user ever created regardless of branch. */
+  private async assertOwnBranch(quotation: Quotation, companyId: string, isSystemRole: boolean, userId: string): Promise<void> {
+    if (isSystemRole) return;
+    const callerBranchId = await this.salesRepAccess.resolveBranchId(userId, undefined, companyId);
+    if (callerBranchId && quotation.branchId !== callerBranchId) {
+      throw new ForbiddenException('This quotation belongs to a different branch');
+    }
+  }
+
+  async update(
+    id: string,
+    dto: UpdateQuotationDto,
+    companyId: string,
+    isSystemRole: boolean,
+    userId: string,
+  ): Promise<Quotation> {
     return this.dataSource.transaction(async (manager) => {
       const quotationRepo = manager.getRepository(Quotation);
       const lineRepo = manager.getRepository(QuotationLine);
       const quotation = await quotationRepo.findOne({ where: { id, companyId }, relations: ['lines'] });
       if (!quotation) throw new NotFoundException('Quotation not found');
       this.assertMayModify(quotation, isSystemRole);
+      await this.assertOwnBranch(quotation, companyId, isSystemRole, userId);
 
       if (dto.quotationDate !== undefined) quotation.quotationDate = dto.quotationDate;
       if (dto.validUntil !== undefined) quotation.validUntil = dto.validUntil ?? null;
@@ -155,9 +177,10 @@ export class QuotationsService {
     });
   }
 
-  async remove(id: string, companyId: string, isSystemRole: boolean): Promise<void> {
+  async remove(id: string, companyId: string, isSystemRole: boolean, userId: string): Promise<void> {
     const quotation = await this.findOne(id, companyId);
     this.assertMayModify(quotation, isSystemRole);
+    await this.assertOwnBranch(quotation, companyId, isSystemRole, userId);
     await this.repo.remove(quotation);
   }
 

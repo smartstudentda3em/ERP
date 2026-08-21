@@ -257,66 +257,76 @@ export function QuotationsPage() {
         const canEdit = statusAllowsModify && canEditQuotation;
         const canDelete = statusAllowsModify && canDeleteQuotation;
         const canConvert = !NON_CONVERTIBLE_STATUSES.includes(r.status) && canApproveQuotation && !isMobileRestrictedRole;
+        // Icon-only — this row can hold up to 5 actions, and on the mobile card layout each one
+        // used to carry its own text label ("Convert to Invoice", "Download PDF"...), which is what
+        // forced the wrapping/crowding the icon-only style below avoids; `title` still carries the
+        // full label for a tooltip and for screen readers via aria-label.
+        const iconButtonClass = 'rounded-lg p-2 text-lg leading-none hover:bg-black/5 dark:hover:bg-white/5';
         return (
-          <div className="flex flex-wrap justify-center gap-3">
+          <div className="flex flex-wrap justify-center gap-1">
             {canEdit && (
               <button
                 type="button"
-                className="text-primary-600 hover:underline"
+                className={iconButtonClass}
                 title={t('common.edit')}
+                aria-label={t('common.edit')}
                 onClick={(e) => {
                   e.stopPropagation();
                   setEditingQuotationId(r.id);
                 }}
               >
-                ✏️ {t('common.edit')}
+                ✏️
               </button>
             )}
             {canDelete && (
               <button
                 type="button"
-                className="text-red-600 hover:underline"
+                className={iconButtonClass}
                 title={t('common.delete')}
+                aria-label={t('common.delete')}
                 onClick={(e) => handleDelete(e, r)}
                 disabled={deleteMutation.isPending}
               >
-                🗑️ {t('common.delete')}
+                🗑️
               </button>
             )}
             {canConvert && (
               <button
                 type="button"
-                className="text-green-600 hover:underline"
+                className={iconButtonClass}
                 title={t('quotations.convertToInvoice')}
+                aria-label={t('quotations.convertToInvoice')}
                 onClick={(e) => handleConvert(e, r)}
                 disabled={convertMutation.isPending}
               >
-                🧾 {t('quotations.convertToInvoice')}
+                🧾
               </button>
             )}
             {!isMobileRestrictedRole && (
               <button
                 type="button"
-                className="text-primary-600 hover:underline"
+                className={iconButtonClass}
                 title={t('common.print')}
+                aria-label={t('common.print')}
                 onClick={(e) => {
                   e.stopPropagation();
                   navigate(`/sales/quotations/${r.id}?autoprint=1`);
                 }}
               >
-                🖨️ {t('common.print')}
+                🖨️
               </button>
             )}
             <button
               type="button"
-              className="text-primary-600 hover:underline"
+              className={iconButtonClass}
               title={t('actions.shareInvoice')}
+              aria-label={t('actions.shareInvoice')}
               onClick={(e) => {
                 e.stopPropagation();
                 navigate(`/sales/quotations/${r.id}?autopdf=1`);
               }}
             >
-              📤 {t('actions.shareInvoice')}
+              📤
             </button>
           </div>
         );

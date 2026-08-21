@@ -613,15 +613,20 @@ async function main() {
   // form's conditional branch select, which also auto-provisions a SalesRepresentative row for that
   // user/branch (see UsersService.syncBranchManagerRepresentative()) so they immediately appear
   // under "مدراء الأفرع" for an admin to finish their commission/target data. A distinct, narrower
-  // role from the generic "Manager" above: Quotations (view+create only, no edit), Products (view
-  // only), Sales Invoices (full — view/create/receive payments, already scoped to their own branch
-  // by SalesRepAccessService), Sales (covered by sales.invoice.view). No Dashboard and no Treasury
-  // cash movements, removed by explicit request so a branch manager only ever sees their own
-  // branch's sales, never the company-wide dashboard/cash position (DefaultRedirect.tsx and
-  // RequirePermission.tsx already fall back to /sales/invoices for any role without dashboard.view,
-  // the same mechanism مندوب already relies on). Every other module is deliberately excluded.
+  // role from the generic "Manager" above: Quotations (view/create/edit/delete of their own branch's
+  // DRAFT quotations only — QuotationsService.assertMayModify() still blocks anyone non-admin from
+  // touching a quotation once it's past DRAFT, and update()/remove() additionally reject a quotation
+  // outside the caller's own branch), Products (view only), Sales Invoices (full — view/create/
+  // receive payments, already scoped to their own branch by SalesRepAccessService), Sales (covered
+  // by sales.invoice.view). No Dashboard and no Treasury cash movements, removed by explicit request
+  // so a branch manager only ever sees their own branch's sales, never the company-wide dashboard/
+  // cash position (DefaultRedirect.tsx and RequirePermission.tsx already fall back to
+  // /sales/invoices for any role without dashboard.view, the same mechanism مندوب already relies
+  // on). Every other module is deliberately excluded.
   const BRANCH_MANAGER_PERMISSION_CODES = [
     'sales.quotation.view',
+    'sales.quotation.edit',
+    'sales.quotation.delete',
     'sales.quotation.create',
     'inventory.product.view',
     'sales.invoice.view',

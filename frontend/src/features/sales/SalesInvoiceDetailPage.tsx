@@ -186,11 +186,18 @@ export function SalesInvoiceDetailPage() {
       // generally render a PDF viewed this way in their own built-in viewer (with its own
       // share/print icons) with no extra prompt, whereas an explicit <a download> forces a "save
       // this file?" confirmation dialog on some mobile browsers (Samsung Internet in particular).
-      // window.open() can come back null if a popup blocker steps in — since this call is already
-      // several `await`s removed from the original click, that's a real possibility here — so this
-      // only falls back to the guaranteed-working forced download when the view attempt didn't open.
+      // window.open() is wrapped in its own try/catch and treated as failed on EITHER a null return
+      // (the usual popup-blocked signal — a real possibility here since this call is already
+      // several `await`s removed from the original click) OR a thrown exception — confirmed on a
+      // real device this can throw instead of returning null for a blob: URL. Either way this falls
+      // back to the forced download, which is the one path proven to actually work everywhere.
       const url = URL.createObjectURL(blob);
-      const opened = window.open(url, '_blank');
+      let opened: Window | null = null;
+      try {
+        opened = window.open(url, '_blank');
+      } catch {
+        opened = null;
+      }
       if (!opened) {
         const link = document.createElement('a');
         link.href = url;

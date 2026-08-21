@@ -27,12 +27,14 @@ import { localToday } from '../../lib/date-utils';
  * this is where the page's own "+ تسجيل دفعة"/"+ تسجيل ضريبة" actions write. Nothing here is
  * imported by, or affects, any other screen. The "دفعات المورد" tab and its own total show ONLY
  * these standalone AcSupplierPayment rows (never the legacy treasury-tied SupplierPayment ones) —
- * full decoupling, see filteredPayments/totalIndependentPaymentsAllTime below. The top reconciliation
- * cards still fold legacy money into totalPaidAllTime for an accurate debt balance; see that memo's
- * comment for why that's a separate concern from this tab's independence.
+ * full decoupling, see filteredPayments/totalIndependentPaymentsAllTime below. The 4-card
+ * reconciliation row's "إجمالي المدفوعات"/"الرصيد المتبقي الفعلي" cards deliberately EXCLUDE this
+ * standalone log entirely (totalPaidAllTime only reads legacy sources) — per explicit instruction,
+ * the independent tracker must never affect those cards or the treasury. Its own comparison against
+ * purchases lives only in the 4th card ("الفرق بين دفعات المورد وإجمالي المشتراة").
  */
 
-type Tab = 'payments' | 'purchases' | 'tax' | 'difference';
+type Tab = 'payments' | 'purchases' | 'tax';
 type Quarter = 'ALL' | 'Q1' | 'Q2' | 'Q3' | 'Q4';
 
 interface Supplier {
@@ -217,22 +219,21 @@ export function AcSupplierDetailPage() {
   );
 
   /**
-   * Account reconciliation (point 2): إجمالي الفواتير المشتراة بالسعر الأساسي - إجمالي الدفعات
-   * النقدية المسددة = الرصيد المتبقي الفعلي. Always computed from the supplier's FULL history
-   * (never the year/quarter filter above) since a debt balance is cumulative by nature — scoping
-   * it to one period would misreport it whenever a purchase and its payment land in different
-   * periods. Free-goods receipts are excluded from "الفواتير المشتراة بالسعر الأساسي" by
-   * construction (their totalAmount is always 0), matching point 3's required separation.
+   * Account reconciliation (top 3 cards): إجمالي الفواتير المشتراة بالسعر الأساسي - إجمالي
+   * المدفوعات = الرصيد المتبقي الفعلي. Always computed from the supplier's FULL history (never the
+   * year/quarter filter above) since a debt balance is cumulative by nature — scoping it to one
+   * period would misreport it whenever a purchase and its payment land in different periods.
+   * Free-goods receipts are excluded from "الفواتير المشتراة بالسعر الأساسي" by construction
+   * (their totalAmount is always 0), matching point 3's required separation.
    *
-   * "Total paid" must count money paid three different ways without double-counting: (a) paidAmount
+   * IMPORTANT: "إجمالي المدفوعات" here counts ONLY the legacy, treasury-linked money — (a) paidAmount
    * recorded directly on a receipt (at creation, or via a later per-receipt "دفع المتبقي" action,
-   * which increments the receipt's own paidAmount AND writes a tied SupplierPayment row for the
-   * same money), (b) a general/untied SupplierPayment (the "سداد المتبقي" bulk action — legacy,
-   * treasury-linked, real money that already left the business), and (c) the new standalone
-   * AcSupplierPayment log this page's own "+ تسجيل دفعة" modal now writes to. (a)+(b) mirror
-   * SupplierStatementPage.tsx's own proven legacyVoucherRows/tiedAmountByReceipt logic exactly, so
-   * this never disagrees with that page's totals for the same underlying data; (c) is summed on top
-   * unconditionally since it's a disjoint, independently-tracked payment source.
+   * which increments the receipt's own paidAmount AND writes a tied SupplierPayment row for the same
+   * money) and (b) a general/untied SupplierPayment (the "سداد المتبقي" bulk action). It deliberately
+   * EXCLUDES the standalone AcSupplierPayment log ("دفعات المورد" tab) — per explicit instruction,
+   * these upper cards/the treasury must never be affected by that independent tracker at all. (a)+(b)
+   * mirror SupplierStatementPage.tsx's own proven legacyVoucherRows/tiedAmountByReceipt logic exactly,
+   * so this never disagrees with that page's totals for the same underlying data.
    */
   const allCashReceipts = useMemo(() => allSupplierReceipts.filter((r) => !r.isFreeGoods), [allSupplierReceipts]);
   const totalCashPurchasesAllTime = useMemo(
@@ -253,18 +254,15 @@ export function AcSupplierDetailPage() {
       return sum + Math.max(0, amount);
     }, 0);
     const real = (paymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
-    const standalone = (acPaymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
-    return legacy + real + standalone;
-  }, [allSupplierReceipts, tiedAmountByReceiptAllTime, paymentsQuery.data, acPaymentsQuery.data]);
+    return legacy + real;
+  }, [allSupplierReceipts, tiedAmountByReceiptAllTime, paymentsQuery.data]);
   const netBalanceOwed = totalCashPurchasesAllTime - totalPaidAllTime;
 
   /**
-   * "الفرق" tab (point 2): إجمالي دفعات المورد المسجلة (= only what's logged through this page's
-   * own independent AcSupplierPayment mechanism, never the legacy treasury-tied total) ناقص
-   * إجمالي الفواتير المشتراة بالسعر الأساسي. Deliberately a DIFFERENT figure from netBalanceOwed
-   * above (which includes legacy money) — this one answers "how far does what I've logged through
-   * the new independent tracker alone go towards covering total purchases," all-time like the
-   * other reconciliation figures (not scoped to the year/quarter filter).
+   * 4th top card (بجوار الكروت الثلاثة أعلاه، بدون أي تأثير عليها): إجمالي دفعات المورد المسجلة
+   * المستقلة (AcSupplierPayment log only) ناقص إجمالي الفواتير المشتراة بالسعر الأساسي — the ONLY
+   * place the independent tracker's total is compared against purchases; totalPaidAllTime/
+   * netBalanceOwed above never read from it.
    */
   const totalIndependentPaymentsAllTime = useMemo(
     () => (acPaymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
@@ -439,7 +437,7 @@ export function AcSupplierDetailPage() {
       {/* Point 2: مطابقة الأرصدة — always the supplier's full history, independent of the
           year/quarter filter above (see netBalanceOwed's own comment for why). Shown regardless of
           which tab is active since it's a standing summary, not something tied to one tab's data. */}
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalCashPurchasesBase')}</div>
           <div className="mt-1 text-lg font-semibold">{money(totalCashPurchasesAllTime)}</div>
@@ -452,6 +450,16 @@ export function AcSupplierDetailPage() {
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.netBalanceOwed')}</div>
           <div className={`mt-1 text-lg font-semibold ${netBalanceOwed > 0 ? 'text-red-600' : ''}`}>
             {money(netBalanceOwed)}
+          </div>
+        </div>
+        {/* 4th card — إجمالي دفعات المورد المسجلة المستقلة ناقص إجمالي الفواتير المشتراة. مستقل
+            تماماً عن الثلاث كروت اللي قبله: لا يقرأ منها ولا يُقرأ فيها. */}
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <div className="text-xs text-[var(--text-muted)]">{t('suppliers.differenceTabFull')}</div>
+          <div
+            className={`mt-1 text-lg font-semibold ${paymentsVsPurchasesDifference < 0 ? 'text-red-600' : 'text-green-600'}`}
+          >
+            {money(paymentsVsPurchasesDifference)}
           </div>
         </div>
       </div>
@@ -474,12 +482,6 @@ export function AcSupplierDetailPage() {
           onClick={() => setTab('tax')}
         >
           {t('suppliers.salesTaxTab')}
-        </button>
-        <button
-          className={`rounded-lg px-3 py-1.5 ${tab === 'difference' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
-          onClick={() => setTab('difference')}
-        >
-          {t('suppliers.differenceTab')}
         </button>
       </div>
 
@@ -550,26 +552,6 @@ export function AcSupplierDetailPage() {
             isLoading={taxQuery.isLoading}
           />
         </>
-      )}
-
-      {tab === 'difference' && (
-        <div>
-          <h3 className="mb-3 font-semibold">{t('suppliers.differenceTabFull')}</h3>
-          <div className="max-w-sm rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalIndependentPayments')}</div>
-            <div className="mt-1 text-lg font-semibold">{money(totalIndependentPaymentsAllTime)}</div>
-            <div className="mt-3 text-xs text-[var(--text-muted)]">{t('suppliers.totalCashPurchasesBase')}</div>
-            <div className="mt-1 text-lg font-semibold">{money(totalCashPurchasesAllTime)}</div>
-            <div className="mt-3 border-t border-[var(--border)] pt-3 text-xs text-[var(--text-muted)]">
-              {t('suppliers.differenceTabFull')}
-            </div>
-            <div
-              className={`mt-1 text-xl font-semibold ${paymentsVsPurchasesDifference < 0 ? 'text-red-600' : 'text-green-600'}`}
-            >
-              {money(paymentsVsPurchasesDifference)}
-            </div>
-          </div>
-        </div>
       )}
 
       <Modal open={payOpen} onClose={() => setPayOpen(false)} title={t('actions.recordPayment')}>

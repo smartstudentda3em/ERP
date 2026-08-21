@@ -917,7 +917,6 @@
     "taxSavedSuccess": "تم حفظ الضريبة بنجاح",
     "totalTaxForPeriod": "إجمالي الضرائب المدفوعة عن الفترة",
     "noSpecificInvoice": "بدون فاتورة محددة",
-    "differenceTab": "فرق المبالغ",
     "differenceTabFull": "الفرق بين دفعات المورد وإجمالي المشتراة",
     "totalIndependentPayments": "إجمالي دفعات المورد المسجلة (مستقلة)"
   },

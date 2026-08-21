@@ -214,7 +214,19 @@
       "Bash(ssh -i ~/.ssh/erp_vps_deploy -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@186.240.145.60 \"whoami && hostname && echo CONNECTED_OK\")",
       "Bash(touch ~/.ssh/config)",
       "Bash(ssh erp-vps *)",
-      "Bash(ls \"C:\\\\Users\\\\surface\\\\.claude\\\\projects\\\\E--ERP\\\\memory\\\\\" 2>&1)"
+      "Bash(ls \"C:\\\\Users\\\\surface\\\\.claude\\\\projects\\\\E--ERP\\\\memory\\\\\" 2>&1)",
+      "PowerShell(Get-WinEvent -FilterHashtable @{LogName='Application','System'; StartTime=\\(Get-Date\\).AddHours\\(-6\\)} -ErrorAction SilentlyContinue | Where-Object {$_.Message -match \"Wispr\" -or $_.Message -match \"WisprFlow\"} | Select-Object TimeCreated,LogName,ProviderName,Id,LevelDisplayName,Message | Format-List)",
+      "PowerShell(Get-PSDrive -PSProvider FileSystem | Select-Object Name,@{N='UsedGB';E={[math]::Round\\($_.Used/1GB,1\\)}},@{N='FreeGB';E={[math]::Round\\($_.Free/1GB,1\\)}})",
+      "Bash(mkdir -p /d/Android *)",
+      "PowerShell(Invoke-WebRequest -Uri \"https://dl.google.com/android/repository/commandlinetools-win-16111833_latest.zip\" -OutFile \"D:\\\\Android\\\\cmdline-tools.zip\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8899/icon-gen.html)",
+      "Bash(node decode-icon.js \"C:\\\\Users\\\\surface\\\\.claude\\\\projects\\\\E--ERP\\\\64c070fe-5c10-46a9-81f3-c9be8d1e25e5\\\\tool-results\\\\mcp-Claude_Browser-javascript_tool-1787298181508.txt\" \"/e/ERP/frontend/public/icon-512.png\")",
+      "Bash(node decode-icon.js \"C:\\\\Users\\\\surface\\\\.claude\\\\projects\\\\E--ERP\\\\64c070fe-5c10-46a9-81f3-c9be8d1e25e5\\\\tool-results\\\\mcp-Claude_Browser-javascript_tool-1787298220079.txt\" \"/e/ERP/frontend/public/icon-192.png\")",
+      "Bash(pkill -f \"http-server\")",
+      "Bash(curl -s -o /dev/null -w \"manifest: %{http_code}\\\\n\" http://localhost:5173/manifest.json)",
+      "Bash(curl -s -o /dev/null -w \"icon-192: %{http_code}\\\\n\" http://localhost:5173/icon-192.png)",
+      "Bash(curl -s -o /dev/null -w \"icon-512: %{http_code}\\\\n\" http://localhost:5173/icon-512.png)",
+      "Bash(curl -s http://localhost:5173/manifest.json)"
     ]
   }
 }

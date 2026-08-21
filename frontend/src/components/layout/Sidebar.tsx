@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany, useIsSalesRep } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
 
 interface NavItem {
   to: string;
@@ -128,12 +128,14 @@ const items: NavItem[] = [
   { to: '/sales/quotations', label: 'nav.quotations', icon: '📝', permission: 'sales.quotation.view' },
   { to: '/sales/invoices', label: 'nav.salesInvoices', icon: '💳', permission: 'sales.invoice.view' },
   {
+    // Deliberately no hideForBranchManager here anymore — مدير فرع is meant to reach this "جدول
+    // مبيعات" now too, seeing their own branch's sales (SalesReportPage.tsx already locks the
+    // branch filter to their own rep's branch, same as it always did for مندوب).
     to: '/sales',
     label: 'nav.sales',
     icon: '🛍️',
     permission: 'sales.invoice.view',
     end: true,
-    hideForBranchManager: true,
   },
   // Deliberately a different code from sales.payment.view: that code also gates the embedded
   // receipts fetch/collect-payment actions inside the Customer Balance and Sales Invoice detail
@@ -240,11 +242,11 @@ function sortByOrder(visible: NavItem[], order: string[]): NavItem[] {
 export function Sidebar({ open }: { open: boolean }) {
   const { t } = useTranslation();
   const hasPermission = useAuthStore((s) => s.hasPermission);
-  // A مدير فرع (Branch Manager) is the only role without sales-representatives.view — Administrator
-  // (isSystemRole grants '*') and Manager both have it — so this doubles as "is the logged-in user a
-  // مدير فرع", the same signal SalesRepresentativesPage.tsx already uses to swap in their self-service
-  // dashboard instead of the full المناديب/مدراء الفروع list.
-  const isBranchManagerSelf = !hasPermission('sales-representatives.view');
+  // "مدير فرع" specifically (role-derived, not permission-inferred) — a مندوب ALSO lacks
+  // sales-representatives.view, so the old `!hasPermission('sales-representatives.view')` signal
+  // this used to be actually matched both roles, silently hiding hideForBranchManager items (like
+  // "/sales") from مندوب too. useIsBranchManager() checks the role name directly instead.
+  const isBranchManagerSelf = useIsBranchManager();
   const isSalesRep = useIsSalesRep();
   const { isPrintingPress, isAirConditioning, isStationery } = useActiveCompany();
   const filteredItems = items.filter(

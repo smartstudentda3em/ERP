@@ -462,9 +462,21 @@ export class SalesInvoicesService {
    * never asks for a rep — see SalesInvoicesPage's branch selector replacing the rep selector.
    * Non-admin callers always have it re-pinned to their own rep's branch by SalesRepAccessService,
    * regardless of what they requested.
+   *
+   * A "مندوب" caller is additionally pinned to only their own sales lines (salesRepresentativeId
+   * must match their own linked rep) — mirrors the identical restriction already applied in
+   * findAll() for the invoices list, for the same reason: a مندوب has no "my branch's sales"
+   * concept, only "my own sales" (see SalesRepAccessService.isCallerSalesRep's doc comment).
    */
   async getSalesLines(companyId: string, userId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
     const effectiveBranchId = await this.salesRepAccess.resolveBranchId(userId, branchId, companyId);
+    const isSalesRep = await this.salesRepAccess.isCallerSalesRep(userId);
+    let ownRepId: string | null = null;
+    if (isSalesRep) {
+      const ownRep = await this.salesRepRepo.findOne({ where: { userId, companyId } });
+      ownRepId = ownRep?.id ?? null;
+      if (!ownRepId) return [];
+    }
     const rows = await this.dataSource
       .createQueryBuilder()
       .select('l.id', 'id')
@@ -493,6 +505,7 @@ export class SalesInvoicesService {
       .andWhere(dateFrom ? 'i."invoiceDate" >= :dateFrom' : '1=1', { dateFrom })
       .andWhere(dateTo ? 'i."invoiceDate" <= :dateTo' : '1=1', { dateTo })
       .andWhere(effectiveBranchId ? 'i."branchId" = :effectiveBranchId' : '1=1', { effectiveBranchId })
+      .andWhere(ownRepId ? 'i."salesRepresentativeId" = :ownRepId' : '1=1', { ownRepId })
       .orderBy('i."createdAt"', 'DESC')
       .getRawMany();
 

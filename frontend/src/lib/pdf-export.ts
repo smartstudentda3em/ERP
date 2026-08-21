@@ -93,7 +93,14 @@ async function buildPdf(element: HTMLElement, orientation: PdfOrientation) {
 
     if (page > 0) pdf.addPage();
     const sliceHeightMm = sliceHeightPx / pxPerMm;
-    pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', 0, 0, pageWidthMm, sliceHeightMm);
+    // JPEG, not PNG: this is a screenshot of anti-aliased text/borders on a solid opaque white
+    // background (.printable-document forces background-color: #ffffff, so there's no transparency
+    // to lose) — PNG's lossless compression handles that kind of noisy-edge content very poorly,
+    // producing multi-MB files even for a one-line invoice. A single-page quotation measured ~8MB
+    // as PNG; that's not just slow to upload/share, it's why an upload could time out at all on a
+    // real connection. 0.92 quality is visually indistinguishable at this DPI for a business
+    // document and cuts the file to a fraction of the PNG size.
+    pdf.addImage(sliceCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pageWidthMm, sliceHeightMm);
 
     // jsPDF's built-in fonts have no Arabic glyphs, so this footer (real vector text, unlike the
     // rest of the page which is a raster image of the captured DOM) has to stay in plain numerals

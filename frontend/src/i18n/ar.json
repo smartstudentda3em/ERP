@@ -1103,6 +1103,7 @@
     "purchasePrice": "سعر الشراء",
     "discountValue": "قيمة الخصم",
     "netPurchasePrice": "سعر الشراء الحقيقي",
+    "factorySellingPrice": "سعر البيع (المصنع)",
     "expectedSalePrice": "سعر البيع المتوقع",
     "pickCompanyPrompt": "اختر شركة لعرض أصنافها",
     "brand": "الماركة",

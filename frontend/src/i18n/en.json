@@ -1103,6 +1103,7 @@
     "purchasePrice": "Purchase Price",
     "discountValue": "Discount Value",
     "netPurchasePrice": "Net Purchase Price",
+    "factorySellingPrice": "Factory Selling Price",
     "expectedSalePrice": "Expected Sale Price",
     "pickCompanyPrompt": "Select a company to view its items",
     "brand": "Brand",

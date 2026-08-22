@@ -301,10 +301,11 @@ body {
 
 /* Column order is fixed by GuidelinePriceDetailPage.tsx's own `columns` array, not
    user-configurable, so targeting these exact positions is as reliable as the :last-child
-   convention used elsewhere in this file — nth-child 1/2/3/8 are the only ones still visible
-   (hideOnPrint hides 4/5/6/7 via display:none): 1 القدرة, 2 الماركة, 3 اسم الصنف, 8 سعر البيع
-   المتوقع. Narrower shares for capacity/brand (short values) leave the item-name and price columns
-   the room they actually need instead of four equal-width columns. */
+   convention used elsewhere in this file — nth-child 1/2/4/10 are the only ones still visible
+   (hideOnPrint hides 3 SKU, 5/6/7/8 cost columns, and 9 factory selling price, all via
+   display:none): 1 القدرة, 2 الماركة, 4 اسم الصنف, 10 سعر البيع المتوقع. Narrower shares for
+   capacity/brand (short values) leave the item-name and price columns the room they actually need
+   instead of four equal-width columns. */
 @media print {
   .guideline-price-print {
     page: guideline-price-report;
@@ -340,12 +341,12 @@ body {
     width: 15%;
     font-size: 11px;
   }
-  .guideline-price-print .app-table th:nth-child(3),
-  .guideline-price-print .app-table td:nth-child(3) {
+  .guideline-price-print .app-table th:nth-child(4),
+  .guideline-price-print .app-table td:nth-child(4) {
     width: 43%;
   }
-  .guideline-price-print .app-table th:nth-child(8),
-  .guideline-price-print .app-table td:nth-child(8) {
+  .guideline-price-print .app-table th:nth-child(10),
+  .guideline-price-print .app-table td:nth-child(10) {
     width: 30%;
     text-align: center;
   }
@@ -404,12 +405,12 @@ body {
   width: 15%;
   font-size: 15px;
 }
-.guideline-price-print.pdf-export-mode .app-table th:nth-child(3),
-.guideline-price-print.pdf-export-mode .app-table td:nth-child(3) {
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(4),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(4) {
   width: 43%;
 }
-.guideline-price-print.pdf-export-mode .app-table th:nth-child(8),
-.guideline-price-print.pdf-export-mode .app-table td:nth-child(8) {
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(10),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(10) {
   width: 30%;
   text-align: center;
 }

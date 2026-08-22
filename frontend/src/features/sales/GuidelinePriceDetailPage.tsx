@@ -24,9 +24,11 @@ interface GuidelinePriceLine {
   productId: string;
   price: number;
   product?: {
+    sku?: string | null;
     nameEn: string;
     nameAr?: string | null;
     barcode?: string | null;
+    sellingPrice?: number | null;
     brand?: { nameEn: string; nameAr?: string | null } | null;
     tax?: { rate: number } | null;
   } | null;
@@ -44,6 +46,7 @@ interface GuidelinePriceSheet {
 
 interface SupplierProductPrice {
   productId: string;
+  sku: string | null;
   nameEn: string;
   nameAr: string | null;
   barcode: string | null;
@@ -51,6 +54,7 @@ interface SupplierProductPrice {
   brandNameAr: string | null;
   taxRate: number | null;
   purchasePrice: number;
+  sellingPrice: number | null;
 }
 
 interface ProductRow {
@@ -58,12 +62,16 @@ interface ProductRow {
   productId: string;
   sheetId: string;
   companyName: string;
+  sku: string;
   name: string;
   capacity: string;
   brand: string;
   purchasePrice: number;
   taxRate: number;
   discountPercentage: number;
+  /** The product's own configured selling price ("سعر البيع (المصنع)") — a fixed reference value,
+   * distinct from "سعر البيع المتوقع" (the new guideline price being set on this page). */
+  factorySellingPrice: number;
 }
 
 interface Company extends LetterheadCompany {
@@ -169,12 +177,14 @@ export function GuidelinePriceDetailPage() {
           productId: p.productId,
           sheetId: sheet.id,
           companyName: sheet.supplier?.companyName ?? '—',
+          sku: p.sku ?? '—',
           name: p.nameAr || p.nameEn,
           capacity: p.barcode ?? '—',
           brand: p.brandNameAr || p.brandNameEn || '—',
           taxRate: Number(p.taxRate) || 0,
           discountPercentage: Number(sheet.discountPercentage) || 0,
           purchasePrice: Number(p.purchasePrice) || 0,
+          factorySellingPrice: Number(p.sellingPrice) || 0,
         });
       }
     }
@@ -187,12 +197,14 @@ export function GuidelinePriceDetailPage() {
             productId: line.productId,
             sheetId: sheet.id,
             companyName: sheet.supplier?.companyName ?? '—',
+            sku: line.product?.sku ?? '—',
             name: line.product?.nameAr || line.product?.nameEn || '—',
             capacity: line.product?.barcode ?? '—',
             brand: line.product?.brand?.nameAr || line.product?.brand?.nameEn || '—',
             taxRate: Number(line.product?.tax?.rate) || 0,
             discountPercentage: Number(sheet.discountPercentage) || 0,
             purchasePrice: 0,
+            factorySellingPrice: Number(line.product?.sellingPrice) || 0,
           });
         }
       }
@@ -295,6 +307,7 @@ export function GuidelinePriceDetailPage() {
   const columns: Column<ProductRow>[] = [
     { header: t('guidelinePrices.capacity'), accessor: (r) => r.capacity },
     { header: t('guidelinePrices.brand'), accessor: (r) => r.brand },
+    { header: t('fields.sku'), accessor: (r) => r.sku, hideOnPrint: true },
     { header: t('guidelinePrices.itemName'), accessor: (r) => r.name },
     { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice), hideOnPrint: true },
     {
@@ -310,6 +323,11 @@ export function GuidelinePriceDetailPage() {
     {
       header: t('guidelinePrices.netPurchasePrice'),
       accessor: (r) => formatAmount(r.purchasePrice * (1 - r.discountPercentage / 100)),
+      hideOnPrint: true,
+    },
+    {
+      header: t('guidelinePrices.factorySellingPrice'),
+      accessor: (r) => formatAmount(r.factorySellingPrice),
       hideOnPrint: true,
     },
     {
@@ -330,7 +348,7 @@ export function GuidelinePriceDetailPage() {
             value={prices[r.key] ?? ''}
             onChange={(e) => setPrices((p) => ({ ...p, [r.key]: e.target.value }))}
             disabled={!canEdit}
-            className="screen-only"
+            className="screen-only text-center"
           />
         </>
       ),

@@ -1077,6 +1077,19 @@
     "updated": "Quotation updated successfully",
     "deleted": "Quotation deleted successfully"
   },
+  "guidelinePrices": {
+    "tabLabel": "Guideline Prices",
+    "add": "Add Guideline Price",
+    "month": "Month",
+    "monthLabel": "Month",
+    "model": "Model",
+    "price": "Guideline Price",
+    "selectModel": "Select model…",
+    "addLine": "Add Line",
+    "created": "Guideline prices added successfully",
+    "updated": "Guideline prices updated successfully",
+    "deleted": "Guideline prices deleted successfully"
+  },
   "salesRepresentativesReports": {
     "listTabPress": "Branch Managers",
     "repsTab": "Sales Representatives",

@@ -78,6 +78,14 @@ const PERMISSION_MATRIX: Record<string, PermissionAction[]> = {
     PermissionAction.DELETE,
     PermissionAction.APPROVE,
   ],
+  // AC-only "Guideline Prices" tab on the Quotations page (see GuidelinePricesTab.tsx) — a
+  // per-month reference price sheet for AC models. No APPROVE step, it's just reference data.
+  'sales.guidelinePrice': [
+    PermissionAction.VIEW,
+    PermissionAction.CREATE,
+    PermissionAction.EDIT,
+    PermissionAction.DELETE,
+  ],
   'sales.order': [PermissionAction.VIEW, PermissionAction.CREATE],
   'sales.invoice': [
     PermissionAction.VIEW,
@@ -324,6 +332,10 @@ async function main() {
     'sales.quotation.edit',
     'sales.quotation.delete',
     'sales.quotation.approve',
+    'sales.guidelinePrice.view',
+    'sales.guidelinePrice.create',
+    'sales.guidelinePrice.edit',
+    'sales.guidelinePrice.delete',
     'sales.invoice.view',
     'sales.invoice.create',
     'sales.invoice.edit',

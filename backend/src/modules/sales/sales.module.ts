@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Quotation, QuotationLine } from './quotations/entities/quotation.entity';
+import { GuidelinePriceSheet, GuidelinePriceLine } from './guideline-prices/entities/guideline-price.entity';
 import {
   SalesOrder,
   SalesOrderLine,
@@ -21,6 +22,8 @@ import { Customer } from '../parties/customers/entities/customer.entity';
 
 import { QuotationsController } from './quotations/quotations.controller';
 import { QuotationsService } from './quotations/quotations.service';
+import { GuidelinePricesController } from './guideline-prices/guideline-prices.controller';
+import { GuidelinePricesService } from './guideline-prices/guideline-prices.service';
 import { SalesOrdersController } from './sales-orders/sales-orders.controller';
 import { SalesOrdersService } from './sales-orders/sales-orders.service';
 import { SalesInvoicesController } from './sales-invoices/sales-invoices.controller';
@@ -38,6 +41,8 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
     TypeOrmModule.forFeature([
       Quotation,
       QuotationLine,
+      GuidelinePriceSheet,
+      GuidelinePriceLine,
       SalesOrder,
       SalesOrderLine,
       DeliveryNote,
@@ -59,11 +64,18 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
   ],
   controllers: [
     QuotationsController,
+    GuidelinePricesController,
     SalesOrdersController,
     SalesInvoicesController,
     SalesPaymentsController,
   ],
-  providers: [QuotationsService, SalesOrdersService, SalesInvoicesService, SalesPaymentsService],
+  providers: [
+    QuotationsService,
+    GuidelinePricesService,
+    SalesOrdersService,
+    SalesInvoicesService,
+    SalesPaymentsService,
+  ],
   exports: [TypeOrmModule, QuotationsService, SalesInvoicesService, SalesPaymentsService],
 })
 export class SalesModule {}

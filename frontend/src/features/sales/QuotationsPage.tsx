@@ -18,6 +18,7 @@ import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 import { SalesLineEditor, SalesLineForm, emptyLine, linesToPayload, computeGrandTotal } from './SalesLineEditor';
 import { useSalesRepLock } from './useSalesRepLock';
+import { GuidelinePricesTab } from './GuidelinePricesTab';
 
 // Once a quotation moves past DRAFT, editing/deleting it is restricted to a true Administrator —
 // mirrors QuotationsService.assertMayModify() on the backend, which is the actual enforcement
@@ -78,6 +79,9 @@ export function QuotationsPage() {
   // row-shortcut (that's an app-owner/admin workflow decision, not a quick field action) — both
   // stay for every other role, on desktop, matching the same restriction on the invoice pages.
   const isMobileRestrictedRole = useIsSalesRep() || useIsBranchManager();
+  // Second tab is AC-only (see GuidelinePricesTab.tsx) — every other company keeps the page exactly
+  // as it was, with no tab strip at all.
+  const [tab, setTab] = useState<'quotations' | 'guidelinePrices'>('quotations');
   const [modalOpen, setModalOpen] = useState(false);
   const [customerId, setCustomerId] = useState('');
   const [salesRepresentativeId, setSalesRepresentativeId] = useState('');
@@ -157,7 +161,7 @@ export function QuotationsPage() {
 
   // Printing Press has no Customers screen at all (confirmed scope: every other company is
   // unaffected) — every quotation there is silently attributed to the one seeded walk-in customer.
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isAirConditioning } = useActiveCompany();
   const walkInCustomer = customersQuery.data?.find((c) => c.code === 'WALKIN');
   useEffect(() => {
     if (isPrintingPress && walkInCustomer && !customerId) setCustomerId(walkInCustomer.id);
@@ -340,6 +344,29 @@ export function QuotationsPage() {
 
   return (
     <div>
+      {isAirConditioning && (
+        <div className="mb-4 flex gap-2 text-sm">
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-1.5 ${tab === 'quotations' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+            onClick={() => setTab('quotations')}
+          >
+            {t('nav.quotations')}
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-1.5 ${tab === 'guidelinePrices' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+            onClick={() => setTab('guidelinePrices')}
+          >
+            {t('guidelinePrices.tabLabel')}
+          </button>
+        </div>
+      )}
+
+      {tab === 'guidelinePrices' ? (
+        <GuidelinePricesTab />
+      ) : (
+        <>
       <PageHeader
         title={t('nav.quotations')}
         actions={<Button onClick={() => setModalOpen(true)}>+ {t('common.create')}</Button>}
@@ -462,6 +489,8 @@ export function QuotationsPage() {
           </div>
         </form>
       </Modal>
+        </>
+      )}
     </div>
   );
 }

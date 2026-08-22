@@ -55,6 +55,7 @@ import { PurchaseReceipt } from '../modules/inventory/stock-movements/entities/p
 
 // Sales
 import { Quotation, QuotationLine } from '../modules/sales/quotations/entities/quotation.entity';
+import { GuidelinePriceSheet, GuidelinePriceLine } from '../modules/sales/guideline-prices/entities/guideline-price.entity';
 import {
   SalesOrder,
   SalesOrderLine,
@@ -126,6 +127,8 @@ export const allEntities = [
   PurchaseReceipt,
   Quotation,
   QuotationLine,
+  GuidelinePriceSheet,
+  GuidelinePriceLine,
   SalesOrder,
   SalesOrderLine,
   DeliveryNote,

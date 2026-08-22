@@ -92,4 +92,27 @@ export class GuidelinePricesService {
     const sheet = await this.findOne(id, companyId);
     await this.repo.remove(sheet);
   }
+
+  /** Powers the Guideline Price detail page's auto-populated product list: every product ever
+   * bought from this supplier, each with its most recent real purchase price (free-goods receipts
+   * excluded — their price is always forced to 0 and would otherwise mask the real figure if one
+   * happened to be the latest receipt). One row per product via DISTINCT ON, latest receipt wins. */
+  async findSupplierProducts(
+    supplierId: string,
+    companyId: string,
+  ): Promise<{ productId: string; nameEn: string; nameAr: string | null; barcode: string | null; purchasePrice: number }[]> {
+    return this.dataSource.query(
+      `SELECT DISTINCT ON (pr."productId")
+         pr."productId"  AS "productId",
+         pr."unitCost"   AS "purchasePrice",
+         p."nameEn"      AS "nameEn",
+         p."nameAr"      AS "nameAr",
+         p."barcode"     AS "barcode"
+       FROM purchase_receipts pr
+       JOIN products p ON p.id = pr."productId"
+       WHERE pr."supplierId" = $1 AND pr."companyId" = $2 AND pr."isFreeGoods" = false
+       ORDER BY pr."productId", pr."receiptDate" DESC, pr."createdAt" DESC`,
+      [supplierId, companyId],
+    );
+  }
 }

@@ -21,6 +21,7 @@ import { SuppliersPage } from './features/suppliers/SuppliersPage';
 import { ShipmentDetailPage } from './features/suppliers/ShipmentDetailPage';
 import { SupplierStatementPage } from './features/suppliers/SupplierStatementPage';
 import { AcSupplierDetailPage } from './features/suppliers/AcSupplierDetailPage';
+import { GuidelinePriceDetailPage } from './features/sales/GuidelinePriceDetailPage';
 import { SalesRepresentativesPage } from './features/sales-representatives/SalesRepresentativesPage';
 import { RepCommissionPayoutPage } from './features/sales-representatives/RepCommissionPayoutPage';
 import { ProductsPage } from './features/inventory/ProductsPage';
@@ -160,6 +161,16 @@ export const router = createBrowserRouter([
               {
                 path: '/suppliers/:id/ac-detail',
                 element: <RequirePermission code="suppliers.view"><AcSupplierDetailPage /></RequirePermission>,
+              },
+              {
+                path: '/suppliers/guideline-prices/:year/:month',
+                element: (
+                  <RequirePermission code="sales.guidelinePrice.view">
+                    <RequireAirConditioning>
+                      <GuidelinePriceDetailPage />
+                    </RequireAirConditioning>
+                  </RequirePermission>
+                ),
               },
               {
                 path: '/sales-representatives',

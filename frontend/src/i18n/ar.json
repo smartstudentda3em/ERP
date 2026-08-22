@@ -1094,13 +1094,16 @@
     "discountPercentage": "نسبة الخصم",
     "addCompany": "إضافة شركة أخرى",
     "moreCompanies": "+{{count}} أخرى",
-    "model": "الموديل",
-    "price": "السعر الاسترشادي",
-    "selectModel": "اختر الموديل…",
-    "addLine": "إضافة بند",
     "created": "تم إضافة الأسعار الاسترشادية بنجاح",
     "updated": "تم تحديث الأسعار الاسترشادية بنجاح",
-    "deleted": "تم حذف الأسعار الاسترشادية بنجاح"
+    "deleted": "تم حذف الأسعار الاسترشادية بنجاح",
+    "capacity": "القدرة",
+    "itemName": "اسم الصنف",
+    "purchasePrice": "سعر الشراء",
+    "discountValue": "قيمة الخصم",
+    "netPurchasePrice": "سعر الشراء الحقيقي",
+    "expectedSalePrice": "سعر البيع المتوقع",
+    "pickCompanyPrompt": "اختر شركة لعرض أصنافها"
   },
   "salesRepresentativesReports": {
     "listTabPress": "مدراء الأفرع",

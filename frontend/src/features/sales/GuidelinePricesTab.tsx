@@ -1,5 +1,6 @@
 import { MouseEvent, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { useAuthStore } from '../../store/auth-store';
@@ -12,12 +13,6 @@ import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
-import {
-  GuidelinePriceLineEditor,
-  GuidelinePriceLineForm,
-  emptyGuidelinePriceLine,
-  guidelineLinesToPayload,
-} from './GuidelinePriceLineEditor';
 
 interface GuidelinePriceLine {
   id: string;
@@ -62,6 +57,7 @@ const iconButtonClass = 'rounded-lg p-2 text-lg leading-none hover:bg-black/5 da
 
 export function GuidelinePricesTab() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const toast = useToast();
@@ -76,9 +72,6 @@ export function GuidelinePricesTab() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [companyRows, setCompanyRows] = useState<CompanyRowForm[]>([emptyCompanyRow()]);
-
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editLines, setEditLines] = useState<GuidelinePriceLineForm[]>([emptyGuidelinePriceLine()]);
   const [manageGroupKey, setManageGroupKey] = useState<string | null>(null);
 
   const sheetsQuery = useQuery({
@@ -134,17 +127,6 @@ export function GuidelinePricesTab() {
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
-  const updateMutation = useMutation({
-    mutationFn: () =>
-      apiClient.patch(`/sales/guideline-prices/${editingId}`, { lines: guidelineLinesToPayload(editLines) }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['guideline-price-sheets'] });
-      setEditingId(null);
-      toast.success(t('guidelinePrices.updated'));
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/sales/guideline-prices/${id}`),
     onSuccess: () => {
@@ -153,18 +135,6 @@ export function GuidelinePricesTab() {
     },
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
-
-  function openEdit(sheet: GuidelinePriceSheet) {
-    setEditingId(sheet.id);
-    setEditLines(
-      sheet.lines.length
-        ? // Number(...) before String(...) — price is typed `number` but Postgres numeric columns
-          // come back as fixed-decimal strings (e.g. "3000.0000"); without this the raw DB string
-          // lands straight in this editable field.
-          sheet.lines.map((l) => ({ productId: l.productId, price: String(Number(l.price)) }))
-        : [emptyGuidelinePriceLine()],
-    );
-  }
 
   async function handleDelete(e: MouseEvent, sheet: GuidelinePriceSheet) {
     e.stopPropagation();
@@ -194,7 +164,10 @@ export function GuidelinePricesTab() {
           <button
             type="button"
             className="inline-flex flex-wrap items-center justify-center gap-1.5 hover:underline"
-            onClick={() => setManageGroupKey(`${r.year}-${r.month}`)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setManageGroupKey(`${r.year}-${r.month}`);
+            }}
           >
             <span>{visible.map((s) => s.supplier?.companyName ?? '—').join(' - ')}</span>
             {overflow > 0 && (
@@ -223,6 +196,7 @@ export function GuidelinePricesTab() {
         data={groupedRows}
         keyField={(r) => `${r.year}-${r.month}`}
         isLoading={sheetsQuery.isLoading}
+        onRowClick={(r) => navigate(`/suppliers/guideline-prices/${r.year}/${r.month}`)}
       />
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={t('guidelinePrices.add')} widthClass="max-w-4xl">
@@ -359,7 +333,7 @@ export function GuidelinePricesTab() {
                     aria-label={t('common.edit')}
                     onClick={() => {
                       setManageGroupKey(null);
-                      openEdit(sheet);
+                      navigate(`/suppliers/guideline-prices/${sheet.year}/${sheet.month}?supplierId=${sheet.supplierId}`);
                     }}
                   >
                     ✏️
@@ -381,26 +355,6 @@ export function GuidelinePricesTab() {
             </div>
           ))}
         </div>
-      </Modal>
-
-      <Modal open={!!editingId} onClose={() => setEditingId(null)} title={t('common.edit')} widthClass="max-w-4xl">
-        <form
-          className="flex flex-col gap-5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            updateMutation.mutate();
-          }}
-        >
-          <GuidelinePriceLineEditor lines={editLines} onChange={setEditLines} />
-          <div className="flex justify-end gap-2 border-t border-[var(--border)] pt-4">
-            <Button type="button" variant="secondary" onClick={() => setEditingId(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" disabled={updateMutation.isPending}>
-              {t('common.save')}
-            </Button>
-          </div>
-        </form>
       </Modal>
     </div>
   );

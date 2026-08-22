@@ -31,6 +31,7 @@ const SEGMENT_LABEL_KEYS: Record<string, string> = {
   partners: 'nav.partners',
   statement: 'nav.statement',
   'ac-detail': 'nav.supplierDetail',
+  'guideline-prices': 'guidelinePrices.tabLabel',
   hr: 'nav.hrGroup',
   employees: 'nav.employees',
   payroll: 'nav.payroll',

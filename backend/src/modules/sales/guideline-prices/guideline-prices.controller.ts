@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
@@ -14,6 +14,17 @@ export class GuidelinePricesController {
   @Permissions('sales.guidelinePrice.view')
   findAll(@CurrentUser('companyId') companyId: string) {
     return this.service.findAll(companyId);
+  }
+
+  // Must stay ahead of the ':id' route below — otherwise Nest would try to parse
+  // "supplier-products" itself as a sheet id.
+  @Get('supplier-products')
+  @Permissions('sales.guidelinePrice.view')
+  findSupplierProducts(
+    @Query('supplierId', ParseUUIDPipe) supplierId: string,
+    @CurrentUser('companyId') companyId: string,
+  ) {
+    return this.service.findSupplierProducts(supplierId, companyId);
   }
 
   @Get(':id')

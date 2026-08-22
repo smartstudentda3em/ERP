@@ -1094,13 +1094,16 @@
     "discountPercentage": "Discount Percentage",
     "addCompany": "Add Another Company",
     "moreCompanies": "+{{count}} more",
-    "model": "Model",
-    "price": "Guideline Price",
-    "selectModel": "Select model…",
-    "addLine": "Add Line",
     "created": "Guideline prices added successfully",
     "updated": "Guideline prices updated successfully",
-    "deleted": "Guideline prices deleted successfully"
+    "deleted": "Guideline prices deleted successfully",
+    "capacity": "Capacity",
+    "itemName": "Item Name",
+    "purchasePrice": "Purchase Price",
+    "discountValue": "Discount Value",
+    "netPurchasePrice": "Net Purchase Price",
+    "expectedSalePrice": "Expected Sale Price",
+    "pickCompanyPrompt": "Select a company to view its items"
   },
   "salesRepresentativesReports": {
     "listTabPress": "Branch Managers",

@@ -90,7 +90,6 @@ export function DocumentLetterhead({
             padding: '7px 28px',
             fontSize: '13pt',
             fontWeight: 800,
-            letterSpacing: '0.5px',
             borderRadius: 999,
             display: 'inline-block',
           }}

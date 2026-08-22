@@ -280,6 +280,12 @@ body {
 .pdf-export-mode .data-table-mobile {
   display: none !important;
 }
+/* The search box (.data-table-search) already carries Tailwind's print:hidden for real browser
+   printing — html2canvas doesn't honor that media query at all, so PDF export needs this same
+   .pdf-export-mode pairing to drop it too. */
+.pdf-export-mode .data-table-search {
+  display: none !important;
+}
 
 /* Guideline Prices detail page (الأسعار الاسترشادية) print/PDF — reuses the exact navy-header +
    light zebra-stripe theme cargo-print-report already established elsewhere in the app, so the

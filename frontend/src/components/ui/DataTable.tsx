@@ -98,7 +98,7 @@ export function DataTable<T>({
   return (
     <div>
       {searchable && (
-        <div className="mb-3 max-w-xs">
+        <div className="data-table-search mb-3 max-w-xs print:hidden">
           <Input
             placeholder={t('common.search') ?? 'Search'}
             value={search}

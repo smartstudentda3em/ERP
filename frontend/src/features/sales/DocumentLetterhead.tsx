@@ -90,10 +90,12 @@ export function DocumentLetterhead({
             color: '#fff',
             padding: '7px 28px',
             fontSize: '13pt',
+            lineHeight: 1.2,
             fontWeight: 800,
             borderRadius: 999,
-            display: 'inline-block',
-            textAlign: 'center',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
           {docTypeLabel}

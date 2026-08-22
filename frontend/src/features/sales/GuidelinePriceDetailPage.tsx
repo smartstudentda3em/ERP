@@ -308,7 +308,7 @@ export function GuidelinePriceDetailPage() {
   const columns: Column<ProductRow>[] = [
     { header: t('guidelinePrices.capacity'), accessor: (r) => r.capacity },
     { header: t('guidelinePrices.brand'), accessor: (r) => r.brand },
-    { header: t('fields.sku'), accessor: (r) => r.sku },
+    { header: t('fields.sku'), accessor: (r) => r.sku, hideOnPrint: true },
     { header: t('guidelinePrices.itemName'), accessor: (r) => r.name },
     { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice), hideOnPrint: true },
     {

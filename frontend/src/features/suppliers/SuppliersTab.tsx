@@ -41,6 +41,14 @@ interface PurchaseReceipt {
   supplierId: string;
   totalAmount: number;
   paidAmount: number;
+  isFreeGoods?: boolean;
+}
+
+/** Air Conditioning only — the same standalone log AcSupplierDetailPage.tsx reads, here fetched
+ * company-wide (supplierId omitted) instead of for one supplier at a time. */
+interface AcSupplierPayment {
+  supplierId: string;
+  amount: number;
 }
 
 const emptyForm = { companyName: '', contactPerson: '', phone: '', currencyId: '' };
@@ -64,12 +72,12 @@ export function SuppliersTab() {
     enabled: !!companyId,
   });
 
-  // Only needed for the three financial columns below (Printing Press only), so this query is
-  // skipped entirely for every other company.
+  // Needed for the three financial columns below (Printing Press) and for the "الرصيد المتبقي"
+  // column (Air Conditioning) — skipped entirely for every other company.
   const receiptsQuery = useQuery({
     queryKey: ['purchase-receipts', companyId],
     queryFn: () => unwrap<PurchaseReceipt[]>(apiClient.get('/inventory/purchase-receipts', { params: { companyId } })),
-    enabled: isPrintingPress && !!companyId,
+    enabled: (isPrintingPress || isAirConditioning) && !!companyId,
   });
 
   const supplierTotals = useMemo(() => {
@@ -82,6 +90,43 @@ export function SuppliersTab() {
     }
     return map;
   }, [receiptsQuery.data]);
+
+  // Air Conditioning only — company-wide version of AcSupplierDetailPage.tsx's own per-supplier
+  // "الرصيد المتبقي الفعلي" (same formula, same 3-state label/color): إجمالي دفعات المورد الفعلية
+  // (positive AcSupplierPayment rows only — real money paid in, excluding
+  // PurchaseReceiptsService.deductForPurchase's negative consumption rows and the CASH→رصيد المورد
+  // migration's negative retroactive rows) − إجمالي الفواتير المشتراة بالسعر الأساسي (non-free-goods
+  // receipts only, matching that same page's "الفواتير المشتراة بالسعر الأساسي" card).
+  const acPaymentsQuery = useQuery({
+    queryKey: ['ac-supplier-payments', companyId],
+    queryFn: () => unwrap<AcSupplierPayment[]>(apiClient.get('/ac-supplier-payments', { params: { companyId } })),
+    enabled: isAirConditioning && !!companyId,
+  });
+
+  const supplierNetBalances = useMemo(() => {
+    const purchasesBySupplier = new Map<string, number>();
+    for (const r of receiptsQuery.data ?? []) {
+      if (r.isFreeGoods) continue;
+      purchasesBySupplier.set(r.supplierId, (purchasesBySupplier.get(r.supplierId) ?? 0) + Number(r.totalAmount ?? 0));
+    }
+    const paymentsBySupplier = new Map<string, number>();
+    for (const p of acPaymentsQuery.data ?? []) {
+      if (Number(p.amount) <= 0) continue;
+      paymentsBySupplier.set(p.supplierId, (paymentsBySupplier.get(p.supplierId) ?? 0) + Number(p.amount));
+    }
+    const supplierIds = new Set([...purchasesBySupplier.keys(), ...paymentsBySupplier.keys()]);
+    const map = new Map<string, number>();
+    for (const supplierId of supplierIds) {
+      map.set(supplierId, (paymentsBySupplier.get(supplierId) ?? 0) - (purchasesBySupplier.get(supplierId) ?? 0));
+    }
+    return map;
+  }, [receiptsQuery.data, acPaymentsQuery.data]);
+
+  function netBalanceStatus(value: number): { label: string; className: string } {
+    if (value < 0) return { label: t('suppliers.netBalanceDebt'), className: 'text-red-600' };
+    if (value > 0) return { label: t('suppliers.netBalanceCredit'), className: 'text-green-600' };
+    return { label: t('suppliers.netBalanceSettled'), className: 'text-blue-600' };
+  }
 
   const currenciesQuery = useQuery({
     queryKey: ['currencies'],
@@ -162,7 +207,26 @@ export function SuppliersTab() {
     },
     { header: t('fields.contactPerson'), accessor: (r) => r.contactPerson ?? '—' },
     { header: t('fields.phone'), accessor: (r) => r.phone ?? '—' },
-    { header: t('fields.currency'), accessor: (r) => currencyLabel(r.currency) },
+    // Air Conditioning: "الرصيد المتبقي" replaces "العملة" entirely — every other company keeps
+    // the currency column unchanged.
+    ...(isAirConditioning
+      ? [
+          {
+            header: t('suppliers.netBalanceOwed'),
+            accessor: (r: Supplier) => {
+              const value = supplierNetBalances.get(r.id) ?? 0;
+              const status = netBalanceStatus(value);
+              return (
+                <div>
+                  <div className={`font-semibold ${status.className}`}>{formatAmount(value)}</div>
+                  <div className={`text-xs ${status.className}`}>{status.label}</div>
+                </div>
+              );
+            },
+            align: 'right' as const,
+          },
+        ]
+      : [{ header: t('fields.currency'), accessor: (r: Supplier) => currencyLabel(r.currency) }]),
     // Printing Press only. Both figures open SupplierStatementPage: "إجمالي المشتريات" shows the
     // full statement, "المتبقي كمستحق للمورد" shows the same page narrowed to unpaid/partially
     // paid receipts via ?scope=pending.

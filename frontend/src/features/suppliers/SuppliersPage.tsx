@@ -18,22 +18,27 @@ type Tab = 'suppliers' | 'cargo' | 'shipping' | 'shipmentPayments' | 'products' 
  * getting here). Each tab owns its own "+ إضافة" action and CRUD state, since what "add" means
  * differs per tab (new supplier vs. new cargo line vs. new shipment).
  *
- * Printing Press restructures this section entirely into a disjoint tab set (every other company
- * keeps the three tabs above unchanged): "الموردون" (unchanged), "المواد الخام" (the standalone
- * Products screen, folded in as ProductsTab — see Sidebar.tsx's hideForPrintingPress on
- * '/inventory/products' and the RequireNotPrintingPress guard on that route in router.tsx), and
- * "فاتورة الشراء" (the standalone Purchasing page's form/table, folded in the same way for
- * '/purchasing'). Cargo/Shipping tracking has no use for this tenant, so both are dropped
- * entirely rather than relabeled.
+ * Printing Press restructures this section entirely into a disjoint tab set: "الموردون"
+ * (unchanged), "المواد الخام" (the standalone Products screen, folded in as ProductsTab — see
+ * Sidebar.tsx's hideForPrintingPress on '/inventory/products' and the RequireNotPrintingPress
+ * guard on that route in router.tsx), and "فاتورة الشراء" (the standalone Purchasing page's
+ * form/table, folded in the same way for '/purchasing'). Cargo/Shipping tracking has no use for
+ * this tenant, so both are dropped entirely rather than relabeled. Stationery keeps the original
+ * three-tab set unchanged.
  *
- * Print/PDF only apply to the Cargo tab (other companies) and the Purchase Invoice tab (Printing
+ * Air Conditioning, by explicit request, drops to a single "الموردون" tab — Cargo/Shipping/
+ * ShipmentPayments removed entirely from this screen for this tenant (the sidebar entry leading
+ * here is also relabeled from "الاستيراد" to "الموردون" for AC only, see Sidebar.tsx), with the
+ * Suppliers table itself gaining a "الرصيد المتبقي" column in their place — see SuppliersTab.tsx.
+ *
+ * Print/PDF only apply to the Cargo tab (Stationery) and the Purchase Invoice tab (Printing
  * Press), but sit in this shared top bar (opposite the page title, unlike a plain PageHeader)
  * rather than inside those tabs themselves — so they're driven through a ref into whichever one
  * is active.
  */
 export function SuppliersPage() {
   const { t } = useTranslation();
-  const { isPrintingPress, isLoading: isCompanyLoading } = useActiveCompany();
+  const { isPrintingPress, isAirConditioning, isLoading: isCompanyLoading } = useActiveCompany();
   // Manager-role users in the Press branch never see "فاتورة الشراء" at all — see
   // useIsPressManagerRestricted's own doc comment for the full restriction list this feeds.
   const purchasingTabRestricted = useIsPressManagerRestricted();
@@ -75,28 +80,32 @@ export function SuppliersPage() {
         { key: 'products', label: t('imports.rawMaterialsTab') },
         ...(purchasingTabRestricted ? [] : [{ key: 'purchasing' as Tab, label: t('imports.purchaseInvoiceTab') }]),
       ]
-    : [
-        { key: 'suppliers', label: t('nav.suppliers') },
-        { key: 'cargo', label: t('imports.cargoTab') },
-        { key: 'shipping', label: t('imports.shippingTab') },
-        { key: 'shipmentPayments', label: t('imports.shipmentPaymentsTab') },
-      ];
+    : isAirConditioning
+      ? [{ key: 'suppliers', label: t('nav.suppliers') }]
+      : [
+          { key: 'suppliers', label: t('nav.suppliers') },
+          { key: 'cargo', label: t('imports.cargoTab') },
+          { key: 'shipping', label: t('imports.shippingTab') },
+          { key: 'shipmentPayments', label: t('imports.shipmentPaymentsTab') },
+        ];
 
   // Guards against a stale selection surviving a company switch (no full page reload) now that
-  // 'shipping'/'cargo' and 'products'/'purchasing' each only exist for one side of the split.
-  // Skipped while the companies list is still loading — isPrintingPress is falsy during that
-  // window regardless of the real answer, and would otherwise wrongly reset a `?tab=products`
-  // deep link (e.g. from RequireNotPrintingPress's /inventory/stock redirect) back to "suppliers"
-  // before the true company is known.
+  // 'shipping'/'cargo'/'shipmentPayments' and 'products'/'purchasing' each only exist for one side
+  // of the split (and, for AC, don't exist at all — see the tabs list above). Skipped while the
+  // companies list is still loading — isPrintingPress/isAirConditioning are both falsy during that
+  // window regardless of the real answer, and would otherwise wrongly reset a `?tab=products` deep
+  // link (e.g. from RequireNotPrintingPress's /inventory/stock redirect) back to "suppliers" before
+  // the true company is known.
   useEffect(() => {
     if (isCompanyLoading) return;
     if (isPrintingPress && (tab === 'shipping' || tab === 'cargo' || tab === 'shipmentPayments')) selectTab('suppliers');
     if (!isPrintingPress && (tab === 'products' || tab === 'purchasing')) selectTab('suppliers');
+    if (isAirConditioning && (tab === 'shipping' || tab === 'cargo' || tab === 'shipmentPayments')) selectTab('suppliers');
     // Bounces a restricted Manager off a stale ?tab=purchasing deep link (e.g. bookmarked before
     // their role/company changed) — the tab button itself is already absent from `tabs` above.
     if (purchasingTabRestricted && tab === 'purchasing') selectTab('suppliers');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPrintingPress, isCompanyLoading, tab, purchasingTabRestricted]);
+  }, [isPrintingPress, isAirConditioning, isCompanyLoading, tab, purchasingTabRestricted]);
 
   const printHandle =
     tab === 'cargo' && cargoInDetailView
@@ -113,7 +122,9 @@ export function SuppliersPage() {
     <div>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex flex-wrap items-center gap-4">
-          <h1 className="text-xl font-semibold">{t(isPrintingPress ? 'nav.importsPress' : 'nav.imports')}</h1>
+          <h1 className="text-xl font-semibold">
+            {t(isPrintingPress ? 'nav.importsPress' : isAirConditioning ? 'nav.suppliers' : 'nav.imports')}
+          </h1>
           <div className="import-nav-tabs flex gap-2 text-sm">
             {tabs.map((tb) => (
               <button

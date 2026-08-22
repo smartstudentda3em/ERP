@@ -296,9 +296,11 @@ export function Sidebar({ open }: { open: boolean }) {
                   ? 'nav.branchManager'
                   : isPrintingPress && item.to === '/suppliers'
                     ? 'nav.importsPress'
-                    : !isPrintingPress && item.to === '/inventory/stock-audit'
-                      ? 'nav.stockAuditAnnual'
-                      : item.label,
+                    : isAirConditioning && item.to === '/suppliers'
+                      ? 'nav.suppliers'
+                      : !isPrintingPress && item.to === '/inventory/stock-audit'
+                        ? 'nav.stockAuditAnnual'
+                        : item.label,
               )}
             </span>
           </NavLink>

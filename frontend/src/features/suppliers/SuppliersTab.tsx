@@ -217,13 +217,13 @@ export function SuppliersTab() {
               const value = supplierNetBalances.get(r.id) ?? 0;
               const status = netBalanceStatus(value);
               return (
-                <div className={`flex items-baseline justify-end gap-1.5 whitespace-nowrap ${status.className}`}>
+                <div className={`flex items-center justify-center gap-1.5 whitespace-nowrap ${status.className}`}>
                   <span className="font-semibold">{formatAmount(Math.abs(value))}</span>
                   <span className="text-xs">{status.label}</span>
                 </div>
               );
             },
-            align: 'right' as const,
+            align: 'center' as const,
           },
         ]
       : [{ header: t('fields.currency'), accessor: (r: Supplier) => currencyLabel(r.currency) }]),

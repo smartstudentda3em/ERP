@@ -217,12 +217,18 @@ export function AcSupplierDetailPage() {
   );
 
   /**
-   * Account reconciliation (top 3 cards): إجمالي الفواتير المشتراة بالسعر الأساسي - إجمالي دفعات
-   * المورد المسجلة = الرصيد المتبقي الفعلي. Always computed from the supplier's FULL history (never
-   * the year/quarter filter above) since a debt balance is cumulative by nature — scoping it to one
-   * period would misreport it whenever a purchase and its payment land in different periods.
-   * Free-goods receipts are excluded from "الفواتير المشتراة بالسعر الأساسي" by construction
-   * (their totalAmount is always 0), matching point 3's required separation.
+   * Account reconciliation (top 3 cards), by explicit request: إجمالي دفعات المورد المسجلة -
+   * إجمالي الفواتير المشتراة بالسعر الأساسي = الرصيد المتبقي الفعلي — payments minus purchases, not
+   * the other way around, so the SIGN reads directly as the company's own position: negative means
+   * the company has purchased more than it's actually paid ("مديونية على شركتنا" — a debt against
+   * the company, it still owes the supplier the difference); positive means the company has paid
+   * more than it's purchased ("رصيد لشركتنا" — a credit balance in the company's favor, e.g. an
+   * advance not yet consumed by a purchase). See statusOf() below for the label/color this drives.
+   * Always computed from the supplier's FULL history (never the year/quarter filter above) since a
+   * balance is cumulative by nature — scoping it to one period would misreport it whenever a
+   * purchase and its payment land in different periods. Free-goods receipts are excluded from
+   * "الفواتير المشتراة بالسعر الأساسي" by construction (their totalAmount is always 0), matching
+   * point 3's required separation.
    *
    * "إجمالي دفعات المورد المسجلة" is the standalone AcSupplierPayment ledger's POSITIVE rows only —
    * real money the company actually handed the supplier (every "تسجيل دفعة", see payMutation).
@@ -230,15 +236,8 @@ export function AcSupplierDetailPage() {
    * consumption entries (a purchase paid via "رصيد المورد") and the one-off CASH→رصيد المورد
    * migration's retroactive rows — those were never new money leaving the company, just
    * already-received credit being marked as spent, so summing them in here would understate this
-   * card and swing it negative for no accounting reason (confirmed in production: a supplier with
-   * one real 1,000,000 payment and 1,042,800 of migrated consumption showed as -42,800 here, which
-   * reads as "the company somehow owes the SUPPLIER money" rather than what actually happened).
-   *
-   * الرصيد المتبقي الفعلي = إجمالي الفواتير المشتراة − هذا الرقم still holds exactly as before —
-   * every purchase not covered by real money (whether still fully unpaid, or settled by consuming
-   * previously-paid رصيد المورد credit) correctly stays counted as owed, since only genuine deposits
-   * reduce it now. SupplierStatementPage.tsx is untouched and still uses its own, separate
-   * calculation — this screen alone pivots around the AC-only ledger.
+   * card for no accounting reason. SupplierStatementPage.tsx is untouched and still uses its own,
+   * separate calculation — this screen alone pivots around the AC-only ledger.
    */
   const allCashReceipts = useMemo(() => allSupplierReceipts.filter((r) => !r.isFreeGoods), [allSupplierReceipts]);
   const totalCashPurchasesAllTime = useMemo(
@@ -252,7 +251,16 @@ export function AcSupplierDetailPage() {
         .reduce((sum, p) => sum + Number(p.amount), 0),
     [acPaymentsQuery.data],
   );
-  const netBalanceOwed = totalCashPurchasesAllTime - totalRegisteredSupplierPaymentsAllTime;
+  const netBalanceOwed = totalRegisteredSupplierPaymentsAllTime - totalCashPurchasesAllTime;
+  /** Dynamic label + color for netBalanceOwed's card, by explicit request — three states, not
+   * just positive/negative, so an exactly-settled account gets its own neutral treatment instead
+   * of silently falling into whichever branch happens to match zero. */
+  const netBalanceStatus =
+    netBalanceOwed < 0
+      ? { label: t('suppliers.netBalanceDebt'), className: 'text-red-600' }
+      : netBalanceOwed > 0
+        ? { label: t('suppliers.netBalanceCredit'), className: 'text-green-600' }
+        : { label: t('suppliers.netBalanceSettled'), className: 'text-blue-600' };
 
   function invalidatePayments() {
     queryClient.invalidateQueries({ queryKey: ['supplier-payments', companyId, id] });
@@ -436,9 +444,8 @@ export function AcSupplierDetailPage() {
         </div>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.netBalanceOwed')}</div>
-          <div className={`mt-1 text-lg font-semibold ${netBalanceOwed > 0 ? 'text-red-600' : ''}`}>
-            {money(netBalanceOwed)}
-          </div>
+          <div className={`mt-1 text-lg font-semibold ${netBalanceStatus.className}`}>{money(netBalanceOwed)}</div>
+          <div className={`mt-0.5 text-xs font-medium ${netBalanceStatus.className}`}>{netBalanceStatus.label}</div>
         </div>
       </div>
 

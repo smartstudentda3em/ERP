@@ -38,6 +38,14 @@ import { localToday } from '../../lib/date-utils';
 type Tab = 'payments' | 'purchases' | 'tax';
 type Quarter = 'ALL' | 'Q1' | 'Q2' | 'Q3' | 'Q4';
 
+/** Only the two fields this page reads off /dashboard/summary — same endpoint
+ * PurchasingPage.tsx's own withdrawal-source badges use, so these numbers always agree with what
+ * that screen (and the Dashboard/Treasury screens) show for the same company. */
+interface BranchBalanceSummary {
+  cashBalance: number;
+  bankBalance: number;
+}
+
 interface Supplier {
   id: string;
   companyName: string;
@@ -157,8 +165,10 @@ export function AcSupplierDetailPage() {
     enabled: !!companyId && !!id,
   });
 
-  // The new standalone, non-treasury-linked payment log — everything recorded via this page's
-  // own "+ تسجيل دفعة" modal from now on lands here instead of /supplier-payments.
+  // Everything recorded via this page's own "+ تسجيل دفعة" modal lands here instead of
+  // /supplier-payments — a standalone log with its own running balance (see the reconciliation
+  // cards below), though a user-entered row here now also debits a real treasury account (see
+  // payMutation and the withdrawal-source field in that modal).
   const acPaymentsQuery = useQuery({
     queryKey: ['ac-supplier-payments', companyId, id],
     queryFn: () =>
@@ -173,6 +183,15 @@ export function AcSupplierDetailPage() {
         apiClient.get('/ac-supplier-tax-payments', { params: { companyId, supplierId: id } }),
       ),
     enabled: !!companyId && !!id,
+  });
+
+  // Live Cash/Bank balances for the "تسجيل دفعة" modal's withdrawal-source badges below — same
+  // /dashboard/summary endpoint and design as PurchasingPage.tsx's own payment-source field, only
+  // fetched while that modal is actually open.
+  const branchBalanceQuery = useQuery({
+    queryKey: ['dashboard-summary', companyId],
+    queryFn: () => unwrap<BranchBalanceSummary>(apiClient.get('/dashboard/summary', { params: { companyId } })),
+    enabled: payOpen && !!companyId,
   });
 
   // Everything below this line is filtered by the year/quarter picker above — for BROWSING one
@@ -559,12 +578,52 @@ export function AcSupplierDetailPage() {
               onChange={(e) => setPayAmount(e.target.value)}
             />
           </FormField>
-          <FormField label={t('suppliers.withdrawalSource')}>
-            <Select required value={payAccount} onChange={(e) => setPayAccount(e.target.value as 'CASH' | 'BANK')}>
-              <option value="CASH">{t('suppliers.withdrawalSourceCash')}</option>
-              <option value="BANK">{t('suppliers.withdrawalSourceBank')}</option>
-            </Select>
-          </FormField>
+          <div className="col-span-2">
+            <FormField label={t('suppliers.withdrawalSource')}>
+              {/* Live balances, same endpoint/design as PurchasingPage.tsx's own payment-source
+                  field — lets the user see available liquidity before confirming, without leaving
+                  this modal. The account matching the current selection is highlighted; entering
+                  more than that account actually holds shows a warning below (the real,
+                  authoritative check still happens server-side in AcSupplierPaymentsService via
+                  assertSufficientBalance — this is a pre-submit hint, not a substitute for it). */}
+              <div className="mb-2 flex flex-wrap gap-2">
+                <div
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                    payAccount === 'BANK'
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                      : 'border-[var(--border)] text-[var(--text-muted)]'
+                  }`}
+                >
+                  <span>🏦</span>
+                  <span>
+                    {t('treasury.paymentAccounts.BANK')}: {formatAmount(branchBalanceQuery.data?.bankBalance ?? 0)}
+                  </span>
+                </div>
+                <div
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                    payAccount === 'CASH'
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                      : 'border-[var(--border)] text-[var(--text-muted)]'
+                  }`}
+                >
+                  <span>💵</span>
+                  <span>
+                    {t('treasury.paymentAccounts.CASH')}: {formatAmount(branchBalanceQuery.data?.cashBalance ?? 0)}
+                  </span>
+                </div>
+              </div>
+              <Select required value={payAccount} onChange={(e) => setPayAccount(e.target.value as 'CASH' | 'BANK')}>
+                <option value="CASH">{t('suppliers.withdrawalSourceCash')}</option>
+                <option value="BANK">{t('suppliers.withdrawalSourceBank')}</option>
+              </Select>
+              {(() => {
+                const available =
+                  payAccount === 'BANK' ? branchBalanceQuery.data?.bankBalance : branchBalanceQuery.data?.cashBalance;
+                if (available === undefined || Number(payAmount) <= available) return null;
+                return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
+              })()}
+            </FormField>
+          </div>
           <div className="col-span-2">
             <FormField label={t('table.description')}>
               <Input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} />

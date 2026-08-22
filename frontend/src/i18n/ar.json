@@ -925,7 +925,7 @@
     "taxSavedSuccess": "تم حفظ الضريبة بنجاح",
     "totalTaxForPeriod": "إجمالي الضرائب المدفوعة عن الفترة",
     "noSpecificInvoice": "بدون فاتورة محددة",
-    "totalIndependentPayments": "إجمالي دفعات المورد المسجلة (مستقلة)"
+    "totalIndependentPayments": "إجمالي دفعات المورد المسجلة"
   },
   "printingProducts": {
     "addNew": "إضافة منتج جديد",

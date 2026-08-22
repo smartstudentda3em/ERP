@@ -925,7 +925,7 @@
     "taxSavedSuccess": "Tax entry saved successfully",
     "totalTaxForPeriod": "Total Tax Paid for Period",
     "noSpecificInvoice": "No specific invoice",
-    "totalIndependentPayments": "Total Registered Supplier Payments (Independent)"
+    "totalIndependentPayments": "Total Registered Supplier Payments"
   },
   "printingProducts": {
     "addNew": "Add New Product",

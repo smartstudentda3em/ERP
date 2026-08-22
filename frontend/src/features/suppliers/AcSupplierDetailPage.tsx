@@ -19,20 +19,22 @@ import { localToday } from '../../lib/date-utils';
  * Air Conditioning company only — a standalone supplier detail screen, entry point is the
  * supplier's own name in SuppliersTab.tsx's table (AC-gated there). Deliberately self-contained:
  * doesn't import or depend on ImportCargoTab/ShippingTab/ShipmentPaymentsTab or any of their
- * services. /suppliers, /inventory/purchase-receipts and /supplier-payments (read-only here, for
- * historical payments) are generic parties/purchasing resources shared company-wide, not part of
- * the Cargo/Shipping import-tracking feature set, so reusing them here doesn't couple this screen
- * to that system. /ac-supplier-payments and /ac-supplier-tax-payments are new, AC-only, standalone
- * endpoints (ac-supplier-ledger module) with no CashMovementsService/treasury dependency at all —
- * this is where the page's own "+ تسجيل دفعة"/"+ تسجيل ضريبة" actions write. Nothing here is
- * imported by, or affects, any other screen. The "دفعات المورد" tab and its own total show ONLY
- * these standalone AcSupplierPayment rows (never the legacy treasury-tied SupplierPayment ones) —
- * full decoupling, see filteredPayments below. The reconciliation row's "إجمالي المدفوعات"/"الرصيد
- * المتبقي الفعلي" cards deliberately EXCLUDE this standalone log entirely (totalPaidAllTime only
- * reads legacy sources) — per explicit instruction, the independent tracker must never affect
- * those cards or the treasury. There used to be a 4th card comparing this log's total against
- * purchases ("الفرق بين دفعات المورد وإجمالي المشتراة") — removed entirely by explicit request, it
- * no longer exists anywhere in this screen or its reports.
+ * services. /suppliers and /inventory/purchase-receipts are generic parties/purchasing resources
+ * shared company-wide, not part of the Cargo/Shipping import-tracking feature set, so reusing them
+ * here doesn't couple this screen to that system. /ac-supplier-payments and
+ * /ac-supplier-tax-payments are AC-only, standalone endpoints (ac-supplier-ledger module) — this is
+ * where the page's own "+ تسجيل دفعة"/"+ تسجيل ضريبة" actions write, and (since a "تسجيل دفعة" now
+ * also debits a real treasury account, see payMutation) where AC purchase receipts paid via "رصيد
+ * المورد" post their consumption too (PurchaseReceiptsService.deductForPurchase).
+ *
+ * The reconciliation row's 3 cards, by explicit request, now pivot entirely around this standalone
+ * ledger instead of the legacy per-receipt paidAmount/SupplierPayment bookkeeping the rest of the
+ * app still uses elsewhere (e.g. SupplierStatementPage.tsx): "إجمالي دفعات المورد المسجلة" (this
+ * ledger's own all-time sum — reuses the same figure the "دفعات المورد" tab's own badge shows,
+ * just unfiltered by the year/quarter picker) stands in for what "إجمالي المدفوعات" used to mean,
+ * and "الرصيد المتبقي الفعلي" is now إجمالي الفواتير − هذا المجموع. There used to be a 4th card
+ * comparing this log's total against purchases ("الفرق بين دفعات المورد وإجمالي المشتراة") —
+ * removed entirely by an earlier explicit request; it no longer exists anywhere in this screen.
  */
 
 type Tab = 'payments' | 'purchases' | 'tax';
@@ -67,20 +69,8 @@ interface PurchaseReceipt {
   product?: { nameEn?: string; nameAr?: string; barcode?: string | null } | null;
 }
 
-interface SupplierPayment {
-  id: string;
-  documentNumber: string;
-  paymentDate: string;
-  amount: number;
-  method: 'CASH' | 'BANK_TRANSFER';
-  notes?: string | null;
-  createdByName: string;
-  purchaseReceiptId?: string | null;
-}
-
-/** Standalone, non-treasury-linked payment log (see AcSupplierPayment entity) — the only
- * mechanism the "+ تسجيل دفعة" modal writes to going forward. Has no method/documentNumber by
- * design, unlike the legacy SupplierPayment above. */
+/** This screen's own standalone payment log (see AcSupplierPayment entity) — the only mechanism
+ * the "+ تسجيل دفعة" modal writes to, and now the source of the top reconciliation cards too. */
 interface AcSupplierPayment {
   id: string;
   paymentDate: string;
@@ -158,13 +148,6 @@ export function AcSupplierDetailPage() {
     enabled: !!companyId,
   });
 
-  const paymentsQuery = useQuery({
-    queryKey: ['supplier-payments', companyId, id],
-    queryFn: () =>
-      unwrap<SupplierPayment[]>(apiClient.get('/supplier-payments', { params: { companyId, supplierId: id } })),
-    enabled: !!companyId && !!id,
-  });
-
   // Everything recorded via this page's own "+ تسجيل دفعة" modal lands here instead of
   // /supplier-payments — a standalone log with its own running balance (see the reconciliation
   // cards below), though a user-entered row here now also debits a real treasury account (see
@@ -219,8 +202,8 @@ export function AcSupplierDetailPage() {
   // non-treasury-linked AcSupplierPayment log — never the legacy treasury-tied SupplierPayment
   // rows (those carry a real Cash/Bank method and cashMovementId, so mixing them in here would
   // contradict "مسجلة بشكل مستقل تماماً خاص بالمورد فقط"). Legacy money is still counted in the
-  // reconciliation cards above (totalPaidAllTime) for an accurate debt balance, just not surfaced
-  // in this specific tab/list.
+  // reconciliation cards above (totalRegisteredSupplierPaymentsAllTime) too, just scoped to the
+  // year/quarter filter here instead of the full history.
   const filteredPayments = useMemo(
     () => (acPaymentsQuery.data ?? []).filter((p) => inDateRange(p.paymentDate, dateRange)),
     [acPaymentsQuery.data, dateRange],
@@ -240,44 +223,33 @@ export function AcSupplierDetailPage() {
   );
 
   /**
-   * Account reconciliation (top 3 cards): إجمالي الفواتير المشتراة بالسعر الأساسي - إجمالي
-   * المدفوعات = الرصيد المتبقي الفعلي. Always computed from the supplier's FULL history (never the
-   * year/quarter filter above) since a debt balance is cumulative by nature — scoping it to one
+   * Account reconciliation (top 3 cards): إجمالي الفواتير المشتراة بالسعر الأساسي - إجمالي دفعات
+   * المورد المسجلة = الرصيد المتبقي الفعلي. Always computed from the supplier's FULL history (never
+   * the year/quarter filter above) since a debt balance is cumulative by nature — scoping it to one
    * period would misreport it whenever a purchase and its payment land in different periods.
    * Free-goods receipts are excluded from "الفواتير المشتراة بالسعر الأساسي" by construction
    * (their totalAmount is always 0), matching point 3's required separation.
    *
-   * IMPORTANT: "إجمالي المدفوعات" here counts ONLY the legacy, treasury-linked money — (a) paidAmount
-   * recorded directly on a receipt (at creation, or via a later per-receipt "دفع المتبقي" action,
-   * which increments the receipt's own paidAmount AND writes a tied SupplierPayment row for the same
-   * money) and (b) a general/untied SupplierPayment (the "سداد المتبقي" bulk action). It deliberately
-   * EXCLUDES the standalone AcSupplierPayment log ("دفعات المورد" tab) — per explicit instruction,
-   * these upper cards/the treasury must never be affected by that independent tracker at all. (a)+(b)
-   * mirror SupplierStatementPage.tsx's own proven legacyVoucherRows/tiedAmountByReceipt logic exactly,
-   * so this never disagrees with that page's totals for the same underlying data.
+   * "إجمالي دفعات المورد المسجلة" is the standalone AcSupplierPayment ledger's own all-time sum —
+   * every "تسجيل دفعة" (a real treasury debit, see payMutation) plus every retroactive
+   * ترحيل/تسويات row (the CASH→رصيد المورد migration, and PurchaseReceiptsService.deductForPurchase's
+   * own consumption entries) — the exact same figure the "دفعات المورد" tab's own badge shows, just
+   * unfiltered by the year/quarter picker above. This replaced an earlier legacy-only calculation
+   * (per-receipt paidAmount + the old treasury-tied SupplierPayment log) by explicit request, since
+   * that one no longer reflects reality once a purchase can be paid from رصيد المورد instead of the
+   * treasury. SupplierStatementPage.tsx is untouched and still uses the legacy calculation — this
+   * screen alone now pivots around the AC-only ledger.
    */
   const allCashReceipts = useMemo(() => allSupplierReceipts.filter((r) => !r.isFreeGoods), [allSupplierReceipts]);
   const totalCashPurchasesAllTime = useMemo(
     () => allCashReceipts.reduce((sum, r) => sum + Number(r.totalAmount ?? 0), 0),
     [allCashReceipts],
   );
-  const tiedAmountByReceiptAllTime = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const p of paymentsQuery.data ?? []) {
-      if (!p.purchaseReceiptId) continue;
-      map.set(p.purchaseReceiptId, (map.get(p.purchaseReceiptId) ?? 0) + Number(p.amount));
-    }
-    return map;
-  }, [paymentsQuery.data]);
-  const totalPaidAllTime = useMemo(() => {
-    const legacy = allSupplierReceipts.reduce((sum, r) => {
-      const amount = Number(r.paidAmount ?? 0) - (tiedAmountByReceiptAllTime.get(r.id) ?? 0);
-      return sum + Math.max(0, amount);
-    }, 0);
-    const real = (paymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
-    return legacy + real;
-  }, [allSupplierReceipts, tiedAmountByReceiptAllTime, paymentsQuery.data]);
-  const netBalanceOwed = totalCashPurchasesAllTime - totalPaidAllTime;
+  const totalRegisteredSupplierPaymentsAllTime = useMemo(
+    () => (acPaymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
+    [acPaymentsQuery.data],
+  );
+  const netBalanceOwed = totalCashPurchasesAllTime - totalRegisteredSupplierPaymentsAllTime;
 
   function invalidatePayments() {
     queryClient.invalidateQueries({ queryKey: ['supplier-payments', companyId, id] });
@@ -452,12 +424,12 @@ export function AcSupplierDetailPage() {
           which tab is active since it's a standing summary, not something tied to one tab's data. */}
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-          <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalCashPurchasesBase')}</div>
-          <div className="mt-1 text-lg font-semibold">{money(totalCashPurchasesAllTime)}</div>
+          <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalIndependentPayments')}</div>
+          <div className="mt-1 text-lg font-semibold">{money(totalRegisteredSupplierPaymentsAllTime)}</div>
         </div>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-          <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalPaymentsLabel')}</div>
-          <div className="mt-1 text-lg font-semibold">{money(totalPaidAllTime)}</div>
+          <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalCashPurchasesBase')}</div>
+          <div className="mt-1 text-lg font-semibold">{money(totalCashPurchasesAllTime)}</div>
         </div>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.netBalanceOwed')}</div>

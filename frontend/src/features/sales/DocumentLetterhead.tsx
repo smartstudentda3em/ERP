@@ -36,7 +36,7 @@ export function DocumentLetterhead({
 
   return (
     <div className="document-letterhead" style={{ borderBottom: '2px solid #1e3a8a', paddingBottom: 10, marginBottom: 15, breakAfter: 'avoid' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table className="letterhead-name-row" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <tbody>
           <tr>
             <td style={{ width: '40%', textAlign: 'right', verticalAlign: 'middle' }}>
@@ -53,6 +53,7 @@ export function DocumentLetterhead({
       </table>
 
       <div
+        className="letterhead-contact-bar"
         style={{
           width: '100%',
           backgroundColor: '#f1f5f9',
@@ -82,7 +83,7 @@ export function DocumentLetterhead({
         </table>
       </div>
 
-      <div style={{ textAlign: 'center', margin: '18px 0 0' }}>
+      <div style={{ textAlign: 'center', margin: '18px 0 0', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <span
           style={{
             backgroundColor: '#1e3a8a',
@@ -92,6 +93,7 @@ export function DocumentLetterhead({
             fontWeight: 800,
             borderRadius: 999,
             display: 'inline-block',
+            textAlign: 'center',
           }}
         >
           {docTypeLabel}

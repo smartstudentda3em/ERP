@@ -317,13 +317,24 @@ body {
     width: 100%;
     table-layout: fixed;
   }
+  /* Every row stays on one line — no wrapping down to a second line even if a cell's content
+     is longer than its fixed column width. */
   .guideline-price-print th,
   .guideline-price-print td {
     overflow-wrap: break-word;
-    white-space: normal;
+    white-space: nowrap;
+  }
+  /* Letterhead's company-name row (which for التكييفات shows just "التكييفات" as the Arabic
+     name) and its address/phone contact bar are dropped from this one page's print/PDF only —
+     DocumentLetterhead.tsx is shared by every other printable document, so this stays scoped to
+     .guideline-price-print instead of touching the component's own default output. Only the
+     title badge ("أسعار استرشادية") and its subtitle line stay. */
+  .guideline-price-print .letterhead-name-row,
+  .guideline-price-print .letterhead-contact-bar {
+    display: none !important;
   }
   .guideline-price-print th {
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 700;
     padding: 8px 6px;
   }
@@ -389,10 +400,14 @@ body {
 .guideline-price-print.pdf-export-mode th,
 .guideline-price-print.pdf-export-mode td {
   overflow-wrap: break-word;
-  white-space: normal;
+  white-space: nowrap;
+}
+.guideline-price-print.pdf-export-mode .letterhead-name-row,
+.guideline-price-print.pdf-export-mode .letterhead-contact-bar {
+  display: none !important;
 }
 .guideline-price-print.pdf-export-mode th {
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 700;
   padding: 10px 6px;
 }

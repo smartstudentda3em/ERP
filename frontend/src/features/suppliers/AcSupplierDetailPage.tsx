@@ -127,6 +127,7 @@ export function AcSupplierDetailPage() {
   const [payOpen, setPayOpen] = useState(false);
   const [payAmount, setPayAmount] = useState('0');
   const [payNotes, setPayNotes] = useState('');
+  const [payAccount, setPayAccount] = useState<'CASH' | 'BANK'>('CASH');
 
   const [taxOpen, setTaxOpen] = useState(false);
   const [taxAmount, setTaxAmount] = useState('0');
@@ -270,13 +271,16 @@ export function AcSupplierDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['ac-supplier-tax-payments', companyId, id] });
   }
 
-  // Writes only to the new standalone log — no method field, never touches the treasury.
+  // Draws the amount from the chosen treasury account (see paymentAccount) and records it as a
+  // "دفعة مورد" in the same standalone log, in one server-side transaction — see
+  // AcSupplierPaymentsService.create().
   const payMutation = useMutation({
     mutationFn: () =>
       apiClient.post('/ac-supplier-payments', {
         paymentDate: localToday(),
         supplierId: id,
         amount: Number(payAmount),
+        paymentAccount: payAccount,
         notes: payNotes || undefined,
       }),
     onSuccess: () => {
@@ -284,6 +288,7 @@ export function AcSupplierDetailPage() {
       setPayOpen(false);
       setPayAmount('0');
       setPayNotes('');
+      setPayAccount('CASH');
       toast.success(t('suppliers.paymentSavedSuccess'));
     },
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
@@ -553,6 +558,12 @@ export function AcSupplierDetailPage() {
               value={payAmount}
               onChange={(e) => setPayAmount(e.target.value)}
             />
+          </FormField>
+          <FormField label={t('suppliers.withdrawalSource')}>
+            <Select required value={payAccount} onChange={(e) => setPayAccount(e.target.value as 'CASH' | 'BANK')}>
+              <option value="CASH">{t('suppliers.withdrawalSourceCash')}</option>
+              <option value="BANK">{t('suppliers.withdrawalSourceBank')}</option>
+            </Select>
           </FormField>
           <div className="col-span-2">
             <FormField label={t('table.description')}>

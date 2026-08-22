@@ -7,14 +7,15 @@ import { Company } from '../settings/entities/company.entity';
 import { AcSupplierPaymentsController, AcSupplierTaxPaymentsController } from './ac-supplier-ledger.controller';
 import { AcSupplierPaymentsService } from './ac-supplier-payments.service';
 import { AcSupplierTaxPaymentsService } from './ac-supplier-tax-payments.service';
+import { TreasuryModule } from '../treasury/treasury.module';
 
 /**
- * Air Conditioning company only — standalone supplier-debt-payment and sales-tax logs, fully
- * independent of TreasuryModule (no CashMovementsService dependency anywhere in this module).
- * See AcSupplierPayment/AcSupplierTaxPayment entity comments for why.
+ * Air Conditioning company only — supplier-debt-payment and sales-tax logs. AcSupplierPaymentsService
+ * now depends on TreasuryModule/CashMovementsService (a "تسجيل دفعة" now really debits Cash/Bank —
+ * see that service's create()/remove()); AcSupplierTaxPaymentsService stays fully independent of it.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([AcSupplierPayment, AcSupplierTaxPayment, Supplier, Company])],
+  imports: [TypeOrmModule.forFeature([AcSupplierPayment, AcSupplierTaxPayment, Supplier, Company]), TreasuryModule],
   controllers: [AcSupplierPaymentsController, AcSupplierTaxPaymentsController],
   providers: [AcSupplierPaymentsService, AcSupplierTaxPaymentsService],
   // AcSupplierPaymentsService is also used directly by PurchaseReceiptsService (InventoryModule)

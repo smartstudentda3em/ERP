@@ -5,11 +5,17 @@ import { AcSupplierPayment } from './entities/ac-supplier-payment.entity';
 import { Supplier } from '../parties/suppliers/entities/supplier.entity';
 import { Company } from '../settings/entities/company.entity';
 import { CreateAcSupplierPaymentDto } from './dto/ac-supplier-ledger.dto';
+import { CashMovementSourceType, CashMovementType } from '../../entities/enums';
+import { CashMovementsService } from '../treasury/cash-movements.service';
 
 /**
- * Air Conditioning company only — supplier payments recorded as a standalone bookkeeping log,
- * deliberately independent of CashMovementsService/the treasury (see AcSupplierPayment entity
- * comment). Never imports TreasuryModule.
+ * Air Conditioning company only — supplier payments recorded in this standalone bookkeeping log.
+ * A user-entered payment (create()/remove(), the "+ تسجيل دفعة" modal) now DOES draw from a real
+ * treasury account (see paymentAccount on the DTO) — by explicit request, this deliberately
+ * reverses the log's original "never touches the treasury" design. The internal
+ * deductForPurchase()/removeByPurchaseReceipt() pair below is unaffected and stays fully
+ * treasury-independent: that path never moves new money, it only marks an already-recorded
+ * balance as consumed by a later purchase.
  */
 @Injectable()
 export class AcSupplierPaymentsService {
@@ -18,6 +24,7 @@ export class AcSupplierPaymentsService {
     @InjectRepository(Supplier) private readonly supplierRepo: Repository<Supplier>,
     @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly cashMovementsService: CashMovementsService,
   ) {}
 
   private async assertAcCompany(companyId: string): Promise<void> {
@@ -42,26 +49,60 @@ export class AcSupplierPaymentsService {
     return payments.map((p) => ({ ...p, createdByName: nameById.get(p.createdById) ?? '—' }));
   }
 
+  /**
+   * Draws the payment out of the chosen treasury account (الخزينة النقدي / الرصيد البنكي) and
+   * records it as a "دفعة مورد" for the selected supplier in the same transaction — a rejected
+   * balance check aborts both, so the two never disagree.
+   */
   async create(dto: CreateAcSupplierPaymentDto, companyId: string, createdById: string): Promise<AcSupplierPayment> {
     await this.assertAcCompany(companyId);
     const supplier = await this.supplierRepo.findOne({ where: { id: dto.supplierId, companyId } });
     if (!supplier) throw new NotFoundException('Supplier not found');
 
-    const payment = this.repo.create({
-      supplierId: dto.supplierId,
-      companyId,
-      paymentDate: dto.paymentDate,
-      amount: dto.amount,
-      notes: dto.notes ?? null,
-      createdById,
+    return this.dataSource.transaction(async (manager) => {
+      await this.cashMovementsService.assertSufficientBalance(companyId, dto.paymentAccount, dto.amount, undefined, manager);
+
+      const payment = await manager.getRepository(AcSupplierPayment).save(
+        manager.getRepository(AcSupplierPayment).create({
+          supplierId: dto.supplierId,
+          companyId,
+          paymentDate: dto.paymentDate,
+          amount: dto.amount,
+          notes: dto.notes ?? null,
+          createdById,
+        }),
+      );
+
+      await this.cashMovementsService.record(
+        {
+          companyId,
+          branchId: null,
+          movementDate: dto.paymentDate,
+          type: CashMovementType.EXPENSE,
+          account: dto.paymentAccount,
+          amount: dto.amount,
+          sourceType: CashMovementSourceType.SUPPLIER_PAYMENT,
+          sourceId: payment.id,
+          partySupplierId: dto.supplierId,
+          description: `AC supplier payment for ${supplier.companyName}`,
+          createdById,
+        },
+        manager,
+      );
+
+      return payment;
     });
-    return this.repo.save(payment);
   }
 
+  /** Reverses whatever treasury movement create() posted (a no-op if this row predates that
+   * change, or is one of deductForPurchase's own internal entries, which never had one). */
   async remove(id: string, companyId: string): Promise<void> {
-    const existing = await this.repo.findOne({ where: { id, companyId } });
-    if (!existing) throw new NotFoundException('Payment not found');
-    await this.repo.remove(existing);
+    await this.dataSource.transaction(async (manager) => {
+      const existing = await manager.getRepository(AcSupplierPayment).findOne({ where: { id, companyId } });
+      if (!existing) throw new NotFoundException('Payment not found');
+      await this.cashMovementsService.removeBySource(companyId, CashMovementSourceType.SUPPLIER_PAYMENT, id, manager);
+      await manager.getRepository(AcSupplierPayment).remove(existing);
+    });
   }
 
   /**

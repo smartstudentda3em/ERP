@@ -4,12 +4,15 @@ import { Supplier } from "../../parties/suppliers/entities/supplier.entity";
 import { Company } from "../../settings/entities/company.entity";
 
 /**
- * Air Conditioning company only — a supplier debt payment recorded as a pure bookkeeping entry.
- * Deliberately NOT the pre-existing SupplierPayment entity (used everywhere else in this system),
- * which always debits a Cash/Bank treasury account via CashMovementsService — this one never
- * touches the treasury at all, by explicit design (see AcSupplierDetailPage.tsx's "تسجيل دفعة"
- * modal, which has no payment-method field for exactly this reason). Standalone: this module has
- * no dependency on TreasuryModule/CashMovementsService.
+ * Air Conditioning company only — a supplier debt payment recorded here AND (by explicit request)
+ * as a real Cash/Bank treasury debit via CashMovementsService, linked by CashMovement's
+ * sourceType=SUPPLIER_PAYMENT/sourceId=this row's id (see AcSupplierPaymentsService.create()).
+ * Deliberately NOT the pre-existing SupplierPayment entity (used everywhere else in this system)
+ * — that one carries its own documentNumber/purchaseReceiptId ledger; this one exists specifically
+ * for AcSupplierDetailPage.tsx's "دفعات المورد" tab and its own independent running balance, which
+ * a purchase receipt's "رصيد المورد" payment source (see PurchaseReceiptsService) can later consume
+ * via a NEGATIVE row here (AcSupplierPaymentsService.deductForPurchase) — that internal path is the
+ * one part of this ledger that still never touches the treasury, since it never moves new money.
  */
 @Entity("ac_supplier_payments")
 export class AcSupplierPayment extends BaseEntity {

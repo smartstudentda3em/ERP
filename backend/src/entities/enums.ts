@@ -93,9 +93,12 @@ export enum CashMovementSourceType {
    * distinct from PURCHASE_RECEIPT/SUPPLIER_PAYMENT since a shipment has no single supplier of its
    * own (each cargo line can name a different one); see ShipmentPaymentsService. */
   SHIPMENT_PAYMENT = 'SHIPMENT_PAYMENT',
-  /** A commission ("أرباح") payout to a Printing Press branch manager — "صرف الأرباح". Attributed
-   * to the manager via CashMovement.salesRepresentativeId, the same way DIVIDEND is attributed to
-   * a partner via partnerId; see PartnersTreasuryController's commission-payouts routes. */
+  /** A commission payout to a مندوب or مدير فرع (both are just SalesRepresentative rows,
+   * distinguished only by their linked user's role, never a field on the entity itself) —
+   * "العمولات المصروفة" on Stationery/Air Conditioning's Expenses screen, "صرف الأرباح" on
+   * Printing Press's manager-only "أرباح المدراء والشركاء" tab. Attributed to the beneficiary via
+   * CashMovement.salesRepresentativeId, the same way DIVIDEND is attributed to a partner via
+   * partnerId; see PartnersTreasuryController's commission-payouts routes. */
   COMMISSION_PAYOUT = 'COMMISSION_PAYOUT',
 }
 

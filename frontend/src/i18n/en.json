@@ -305,8 +305,13 @@
     "distributedDividends": "Distributed Dividends",
     "managerPartnerProfits": "Managers & Partners Profits",
     "totalManagerPartnerProfits": "Total Distributed Profits",
-    "commissionPayoutsTab": "Commission Payouts",
+    "commissionPayoutsTab": "Disbursed Commissions",
     "totalCommissionPayouts": "Total Commission Payouts",
+    "commissionBeneficiaryType": "Beneficiary Type",
+    "commissionBeneficiaryTypes": {
+      "MANAGER": "Branch Manager",
+      "REP": "Sales Rep"
+    },
     "disbursedProfitsTab": "Disbursed Profits",
     "partnersDisbursedProfitsTitle": "Partners Disbursed Profits",
     "repsDisbursedProfitsTitle": "Representatives Disbursed Commissions",

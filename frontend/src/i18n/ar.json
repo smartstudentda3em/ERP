@@ -305,8 +305,13 @@
     "distributedDividends": "الأرباح المصروفة",
     "managerPartnerProfits": "أرباح المدراء والشركاء",
     "totalManagerPartnerProfits": "إجمالي الأرباح المصروفة",
-    "commissionPayoutsTab": "صرف العمولات",
+    "commissionPayoutsTab": "العمولات المصروفة",
     "totalCommissionPayouts": "إجمالي العمولات المصروفة",
+    "commissionBeneficiaryType": "نوع المستفيد",
+    "commissionBeneficiaryTypes": {
+      "MANAGER": "مدير فرع",
+      "REP": "مندوب"
+    },
     "disbursedProfitsTab": "الأرباح المصروفة",
     "partnersDisbursedProfitsTitle": "أرباح الشركاء المصروفة",
     "repsDisbursedProfitsTitle": "عمولات المناديب المصروفة",

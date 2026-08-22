@@ -71,8 +71,10 @@ interface ProfitTransaction {
   description: string | null;
 }
 
-/** Stationery only — "صرف العمولات" tab: every مندوب commission payout recorded from
- * RepCommissionPayoutPage.tsx, all reps combined (no salesRepresentativeId filter). */
+/** Stationery/Air Conditioning — "العمولات المصروفة" tab: every مندوب AND مدير فرع commission
+ * payout recorded from RepCommissionPayoutPage.tsx, all beneficiaries combined (no
+ * salesRepresentativeId filter). beneficiaryType distinguishes the two — see
+ * CashMovementsService.getCommissionPayouts's own doc comment for how it's resolved. */
 interface CommissionPayoutTransaction {
   id: string;
   date: string;
@@ -80,6 +82,7 @@ interface CommissionPayoutTransaction {
   amount: number;
   account: 'CASH' | 'BANK';
   repName: string;
+  beneficiaryType: 'MANAGER' | 'REP';
   description: string | null;
   createdByName: string;
 }
@@ -241,11 +244,11 @@ export function ExpensesPage() {
       ),
     enabled: !!companyId && isPrintingPress,
   });
-  // Stationery/Air Conditioning — "صرف العمولات" tab: every مندوب commission payout in the
-  // company, unscoped to one رep (reuses the exact endpoint RepCommissionPayoutPage.tsx's own
-  // history table already calls with a salesRepresentativeId filter — omitting it here returns
-  // every رep's rows combined). Air Conditioning reuses this same tab/mechanism rather than a
-  // separate implementation — see RepCommissionPayoutPage.tsx.
+  // Stationery/Air Conditioning — "العمولات المصروفة" tab: every مندوب AND مدير فرع commission
+  // payout in the company, unscoped to one beneficiary (reuses the exact endpoint
+  // RepCommissionPayoutPage.tsx's own history table already calls with a salesRepresentativeId
+  // filter — omitting it here returns every beneficiary's rows combined). Air Conditioning reuses
+  // this same tab/mechanism rather than a separate implementation — see RepCommissionPayoutPage.tsx.
   const commissionPayoutsQuery = useQuery({
     queryKey: ['commission-payouts', companyId, dateRange.from, dateRange.to],
     queryFn: () =>
@@ -259,7 +262,7 @@ export function ExpensesPage() {
 
   // Stationery only — "الأرباح المصروفة" tab's two beneficiary picklists, and its own two
   // independently-filtered queries (each narrowed by its own select below, unlike the unfiltered
-  // commissionPayoutsQuery above which always feeds the separate "صرف العمولات" tab's full list).
+  // commissionPayoutsQuery above which always feeds the separate "العمولات المصروفة" tab's full list).
   const partnersListQuery = useQuery({
     queryKey: ['partners', companyId],
     queryFn: () => unwrap<PartnerOption[]>(apiClient.get('/settings/partners')),
@@ -580,12 +583,14 @@ export function ExpensesPage() {
     { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.account}`) },
   ];
 
-  // Read-only — managed from صرف العمولات screen itself (reached via the commission card on
-  // "لوحة المندوب"), same convention as the profitColumns/salaryColumns rows above.
+  // Read-only — managed from the commission payout screen itself (reached via the commission card
+  // on either "لوحة المندوب" or "لوحة المدير"), same convention as the profitColumns/salaryColumns
+  // rows above. Covers both مندوب and مدير فرع payouts — see beneficiaryType.
   const commissionPayoutColumns: Column<CommissionPayoutTransaction>[] = [
     { header: t('common.date'), accessor: (r) => r.date },
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('fields.salesRepresentative'), accessor: (r) => r.repName },
+    { header: t('accounting.commissionBeneficiaryType'), accessor: (r) => t(`accounting.commissionBeneficiaryTypes.${r.beneficiaryType}`) },
     { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
     { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.account}`) },
     { header: t('table.description'), accessor: (r) => r.description ?? '—' },

@@ -871,10 +871,17 @@ export class CashMovementsService {
     await this.repo.remove(row);
   }
 
-  /** Commission payout log — every "صرف الأرباح"/"صرف العمولات" transaction, optionally scoped to
-   * one manager/رep. Also feeds the Stationery Expenses screen's "صرف العمولات" tab (all reps,
-   * unscoped), hence the repName join — that tab has no reps list of its own to resolve names from,
-   * unlike CommissionPayoutsTab.tsx which already gets managerName from its own branch-commissions query. */
+  /** Commission payout log — "العمولات المصروفة" on the Stationery/Air Conditioning Expenses
+   * screen: every commission payout transaction recorded from RepCommissionPayoutPage.tsx,
+   * optionally scoped to one beneficiary. Covers BOTH مندوب and مدير فرع payouts — a
+   * SalesRepresentative row means one or the other depending solely on whether its linked user
+   * holds the "مدير فرع" role (see BRANCH_MANAGER_ROLE_NAME/sales-rep-access.service.ts), never a
+   * field on SalesRepresentative itself, so beneficiaryType is resolved via an EXISTS subquery
+   * against that user's roles rather than a join (a join to a many-roles user would multiply this
+   * row per role instead of yielding one boolean). Also feeds the Stationery Expenses screen's tab
+   * (all reps, unscoped), hence the repName join — that tab has no reps list of its own to resolve
+   * names from, unlike CommissionPayoutsTab.tsx which already gets managerName from its own
+   * branch-commissions query. */
   async getCommissionPayouts(companyId: string, dateFrom?: string, dateTo?: string, salesRepresentativeId?: string) {
     const qb = this.dataSource
       .createQueryBuilder()
@@ -886,6 +893,14 @@ export class CashMovementsService {
       .addSelect('m."branchId"', 'branchId')
       .addSelect('m."salesRepresentativeId"', 'salesRepresentativeId')
       .addSelect('sr.name', 'repName')
+      .addSelect(
+        `EXISTS (
+           SELECT 1 FROM user_roles ur
+           JOIN roles r ON r.id = ur."roleId"
+           WHERE ur."userId" = sr."userId" AND r.name = 'مدير فرع'
+         )`,
+        'isBranchManager',
+      )
       .addSelect('m.description', 'description')
       .addSelect('m."createdAt"', 'createdAt')
       .addSelect('u."fullName"', 'createdByName')
@@ -910,6 +925,7 @@ export class CashMovementsService {
       branchId: r.branchId,
       salesRepresentativeId: r.salesRepresentativeId,
       repName: r.repName ?? '—',
+      beneficiaryType: r.isBranchManager ? ('MANAGER' as const) : ('REP' as const),
       description: r.description,
       createdAt: r.createdAt,
       createdByName: r.createdByName ?? '—',

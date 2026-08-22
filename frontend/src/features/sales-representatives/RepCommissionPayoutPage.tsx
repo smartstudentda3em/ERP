@@ -40,15 +40,16 @@ function firstDayOfThisMonth(): string {
 }
 
 /** Stationery/Air Conditioning detail/payout screen reached by clicking the commission card on
- * "لوحة المندوب" — Admin/Manager only (see MyManagerDashboardTab.tsx's own canViewAll gate on that
- * click), never reachable by a رep viewing their own dashboard. Air Conditioning has no
- * commission-payout mechanism of its own and reuses this one rather than a separate
- * implementation. Shows the commission earned in a chosen date range (reusing the same computation
- * already backing that dashboard's own commission card, via
- * SalesRepresentativesService.getManagerDashboard/-ByRepId) alongside what's already been paid out
- * in that same range, and lets an admin/manager execute a new payout — routed into the exact same
- * "COMMISSION_PAYOUT" cash movement Printing Press branch managers' own "صرف الأرباح" already uses,
- * so it also surfaces automatically under the Expenses screen's new "صرف العمولات" tab. */
+ * either "لوحة المندوب" or "لوحة المدير" (both render the shared MyManagerDashboardTab.tsx) —
+ * Admin/Manager only (see that component's own canViewAll gate on the click), never reachable by a
+ * رep/مدير فرع viewing their own dashboard. Air Conditioning has no commission-payout mechanism of
+ * its own and reuses this one rather than a separate implementation. Shows the commission earned in
+ * a chosen date range (reusing the same computation already backing that dashboard's own commission
+ * card, via SalesRepresentativesService.getManagerDashboard/-ByRepId) alongside what's already been
+ * paid out in that same range, and lets an admin/manager execute a new payout for either a مندوب or
+ * a مدير فرع — routed into the exact same "COMMISSION_PAYOUT" cash movement Printing Press branch
+ * managers' own "صرف الأرباح" already uses, so it also surfaces automatically under the Expenses
+ * screen's "العمولات المصروفة" tab. */
 export function RepCommissionPayoutPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();

@@ -217,9 +217,9 @@ export function SuppliersTab() {
               const value = supplierNetBalances.get(r.id) ?? 0;
               const status = netBalanceStatus(value);
               return (
-                <div>
-                  <div className={`font-semibold ${status.className}`}>{formatAmount(value)}</div>
-                  <div className={`text-xs ${status.className}`}>{status.label}</div>
+                <div className={`flex items-baseline justify-end gap-1.5 whitespace-nowrap ${status.className}`}>
+                  <span className="font-semibold">{formatAmount(Math.abs(value))}</span>
+                  <span className="text-xs">{status.label}</span>
                 </div>
               );
             },

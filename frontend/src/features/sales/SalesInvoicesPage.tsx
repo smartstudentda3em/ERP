@@ -51,6 +51,7 @@ interface Customer {
 interface Warehouse {
   id: string;
   nameEn: string;
+  nameAr?: string | null;
   branchId?: string | null;
 }
 interface Branch {
@@ -600,7 +601,7 @@ export function SalesInvoicesPage() {
                     <option value="">{t('actions.selectWarehouse')}</option>
                     {(warehousesQuery.data ?? []).map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.nameEn}
+                        {w.nameAr || w.nameEn}
                       </option>
                     ))}
                   </Select>
@@ -680,7 +681,7 @@ export function SalesInvoicesPage() {
                     <option value="">{t('actions.selectWarehouse')}</option>
                     {(warehousesQuery.data ?? []).map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.nameEn}
+                        {w.nameAr || w.nameEn}
                       </option>
                     ))}
                   </Select>

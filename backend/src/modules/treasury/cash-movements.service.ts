@@ -508,14 +508,46 @@ export class CashMovementsService {
   }
 
   /**
-   * Expense report: manually-recorded operating expenses (rent, electricity, ...) plus payroll
-   * postings (see PayrollService.approve() — one row per branch, sourceType PAYROLL, category
-   * "رواتب الموظفين"), grouped by category. Deliberately excludes EXPENSE movements from supplier
-   * payments/purchase receipts — those are balance-sheet cash-out-for-inventory movements, not
-   * P&L expenses; their cost only hits the P&L via costOfGoodsSold on the units actually sold
-   * (see getProfitReport). Counting the full purchase payment here as well would double-count
-   * inventory not yet sold. `branchId` (Printing Press only) narrows this to expenses recorded
-   * against one branch.
+   * Sums EXPENSE-type cash movements of exactly one sourceType for a period/branch — shared by
+   * getExpenseReport's salaries/commissions totals, kept as independent categories (rather than
+   * folded into the MANUAL rows below) so the Expense Report can show Operating Expenses, Salaries,
+   * and Commissions as three distinct, individually-labeled figures instead of one merged blob.
+   */
+  private async sumExpensesBySourceType(
+    companyId: string,
+    sourceType: CashMovementSourceType,
+    dateFrom?: string,
+    dateTo?: string,
+    branchId?: string,
+  ): Promise<number> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('COALESCE(SUM(m.amount), 0)', 'total')
+      .from('cash_movements', 'm')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere('m.type = :type', { type: CashMovementType.EXPENSE })
+      .andWhere('m."sourceType" = :sourceType', { sourceType });
+    if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });
+    if (dateTo) qb.andWhere('m."movementDate" <= :dateTo', { dateTo });
+    if (branchId) qb.andWhere('m."branchId" = :branchId', { branchId });
+    const row = await qb.getRawOne();
+    return Number(row?.total ?? 0);
+  }
+
+  /**
+   * Expense report: manually-recorded operating expenses (rent, electricity, ...), grouped by
+   * category, plus payroll (PAYROLL — see PayrollService.approve()) and commission payouts
+   * (COMMISSION_PAYOUT — مندوب/مدير فرع payouts, see getCommissionPayouts) summed as their own
+   * distinct totals rather than mixed into the categorized rows list, so Operating Expenses,
+   * Salaries, and Commissions can each be shown/labeled on the Reports screen without one silently
+   * absorbing another (previously PAYROLL was merged into `rows`/`totalExpenses` under the
+   * "Operating Expenses" label, and COMMISSION_PAYOUT wasn't counted here at all).
+   *
+   * Deliberately excludes EXPENSE movements from supplier payments/purchase receipts — those are
+   * balance-sheet cash-out-for-inventory movements, not P&L expenses; their cost only hits the P&L
+   * via costOfGoodsSold on the units actually sold (see getProfitReport). Counting the full
+   * purchase payment here as well would double-count inventory not yet sold. `branchId` (Printing
+   * Press only) narrows this to expenses recorded against one branch.
    */
   async getExpenseReport(companyId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
     const qb = this.dataSource
@@ -525,7 +557,7 @@ export class CashMovementsService {
       .from('cash_movements', 'm')
       .where('m."companyId" = :companyId', { companyId })
       .andWhere(`m.type = 'EXPENSE'`)
-      .andWhere(`m."sourceType" IN ('MANUAL', 'PAYROLL')`)
+      .andWhere(`m."sourceType" = 'MANUAL'`)
       .groupBy(`COALESCE(m.category, m."sourceType"::text)`)
       .orderBy('total', 'DESC');
 
@@ -534,11 +566,19 @@ export class CashMovementsService {
     if (branchId) qb.andWhere('m."branchId" = :branchId', { branchId });
 
     const rows = await qb.getRawMany();
-    const totalExpenses = rows.reduce((s, r) => s + Number(r.total), 0);
+    const operatingExpenses = rows.reduce((s, r) => s + Number(r.total), 0);
+    const [salaries, commissions] = await Promise.all([
+      this.sumExpensesBySourceType(companyId, CashMovementSourceType.PAYROLL, dateFrom, dateTo, branchId),
+      this.sumExpensesBySourceType(companyId, CashMovementSourceType.COMMISSION_PAYOUT, dateFrom, dateTo, branchId),
+    ]);
+    const totalExpenses = operatingExpenses + salaries + commissions;
     return {
       dateFrom: dateFrom ?? null,
       dateTo: dateTo ?? null,
       rows: rows.map((r) => ({ label: r.label, total: Number(r.total) })),
+      operatingExpenses,
+      salaries,
+      commissions,
       totalExpenses,
     };
   }
@@ -995,23 +1035,29 @@ export class CashMovementsService {
   }
 
   /**
-   * Profit report: Sales revenue - COGS - operating expenses = Net profit. For every company
-   * except Printing Press, COGS comes from sales_invoices (see getRawMaterialPurchasesTotal for
-   * why Press is different). Net profit deliberately stays dividend-agnostic (dividends are a
-   * distribution OF profit, not a cost incurred to earn it) — this is exactly the figure the
-   * Partners/Dividends screen validates a payout against, so it can never be circular.
-   * `expenseBreakdown` is a separate, purely informational rollup for the Reports screen's Expense
-   * Report tab: COGS + operating expenses — dividends are deliberately excluded, since a profit
-   * distribution is not an expense.
+   * Profit report: Sales revenue - COGS - operating expenses - salaries - commissions = Net profit.
+   * For every company except Printing Press, COGS comes from sales_invoices (see
+   * getRawMaterialPurchasesTotal for why Press is different). Net profit deliberately stays
+   * dividend-agnostic (dividends are a distribution OF profit, not a cost incurred to earn it) —
+   * this is exactly the figure the Partners/Dividends screen validates a payout against, so it can
+   * never be circular. `expenseBreakdown` is a separate, purely informational rollup for the
+   * Reports screen's Expense Report tab: COGS + operating expenses + salaries + commissions —
+   * dividends are deliberately excluded, since a profit distribution is not an expense. Salaries
+   * and commissions were previously excluded from both totalExpenses/netProfit and this breakdown
+   * (commissions weren't counted at all; salaries were silently merged into "operating expenses"
+   * under getExpenseReport's old combined MANUAL+PAYROLL query) — both are real costs, so folding
+   * them in here also makes netProfit (and therefore max available dividends) correctly smaller by
+   * exactly what's actually been paid out in salaries/commissions, not a display-only change.
    *
    * `branchId` (Printing Press only — the Financial Reports screen's Branch filter) narrows all
    * three figures to one branch: Revenue via the invoice's own branchId column (set directly on
    * every invoice at creation — see SalesInvoicesService.create()'s resolveBranchId() call — not
    * via a join through its optional salesRepresentativeId, which a Press invoice frequently has no
    * value for at all and would silently zero out revenue for a branch that filter is applied to),
-   * COGS via PurchaseReceipt.branchId (set on the Purchase Invoice form), and operating expenses
-   * via CashMovement.branchId (set on the Treasury Expenses form). Omitted/undefined means every
-   * branch combined — identical to today's behavior.
+   * COGS via PurchaseReceipt.branchId (set on the Purchase Invoice form), and operating
+   * expenses/salaries/commissions via CashMovement.branchId (set on the Treasury Expenses /
+   * commission-payout forms). Omitted/undefined means every branch combined — identical to today's
+   * behavior.
    */
   async getProfitReport(companyId: string, dateFrom: string, dateTo: string, branchId?: string) {
     const salesQb = this.dataSource
@@ -1025,7 +1071,13 @@ export class CashMovementsService {
     if (branchId) salesQb.andWhere('i."branchId" = :branchId', { branchId });
     const salesRow = await salesQb.getRawOne();
 
-    const { totalExpenses, rows: expenseRows } = await this.getExpenseReport(companyId, dateFrom, dateTo, branchId);
+    const {
+      totalExpenses,
+      rows: expenseRows,
+      operatingExpenses,
+      salaries,
+      commissions,
+    } = await this.getExpenseReport(companyId, dateFrom, dateTo, branchId);
     const distributedDividends = await this.getDistributedDividendsTotal(companyId, dateFrom, dateTo, undefined, branchId);
 
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
@@ -1051,7 +1103,9 @@ export class CashMovementsService {
       distributedDividends,
       expenseBreakdown: {
         cogs,
-        operatingExpenses: totalExpenses,
+        operatingExpenses,
+        salaries,
+        commissions,
         total: cogs + totalExpenses,
       },
     };
@@ -1116,6 +1170,8 @@ export class CashMovementsService {
       expenseBreakdown: {
         cogs: a.expenseBreakdown.cogs + b.expenseBreakdown.cogs,
         operatingExpenses: a.expenseBreakdown.operatingExpenses + b.expenseBreakdown.operatingExpenses,
+        salaries: a.expenseBreakdown.salaries + b.expenseBreakdown.salaries,
+        commissions: a.expenseBreakdown.commissions + b.expenseBreakdown.commissions,
         total: a.expenseBreakdown.total + b.expenseBreakdown.total,
       },
     };

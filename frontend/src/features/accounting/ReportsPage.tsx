@@ -27,6 +27,7 @@ import { exportElementToPdf } from '../../lib/pdf-export';
 
 interface Company {
   id: string;
+  code: string;
   nameAr?: string | null;
   nameEn?: string | null;
 }
@@ -78,6 +79,8 @@ interface ExpenseRow {
 interface ExpenseBreakdown {
   cogs: number;
   operatingExpenses: number;
+  salaries: number;
+  commissions: number;
   total: number;
 }
 
@@ -209,6 +212,38 @@ export function ReportsPage() {
     queryFn: () => unwrap<Company[]>(apiClient.get('/settings/companies')),
   });
   const company = companiesQuery.data?.find((c) => c.id === companyId) ?? companiesQuery.data?.[0];
+  const acCompanyId = companiesQuery.data?.find((c) => c.code === 'AC')?.id;
+  const statCompanyId = companiesQuery.data?.find((c) => c.code === 'STAT')?.id;
+
+  // The report-scope selector's "AC"/"STAT" options used to carry a made-up "فرع التكييفات"/"فرع
+  // القرطاسية" label — calling a whole company a "فرع" (branch) by a name nobody actually gave it.
+  // AC and Stationery each really do have exactly one real Branch record (unlike Printing Press's
+  // genuine multi-branch structure), so this fetches that one real branch per company and uses its
+  // actual name instead — e.g. "المكتب الرئيسي جمصه" for AC. Falls back to the old static label
+  // only while still loading, so the option never renders blank.
+  const scopeBranchesQuery = useQuery({
+    queryKey: ['report-scope-branches', acCompanyId, statCompanyId],
+    queryFn: async () => {
+      const [acBranches, statBranches] = await Promise.all([
+        acCompanyId
+          ? unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId: acCompanyId } }))
+          : Promise.resolve([]),
+        statCompanyId
+          ? unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId: statCompanyId } }))
+          : Promise.resolve([]),
+      ]);
+      return { ac: acBranches[0] as Branch | undefined, stat: statBranches[0] as Branch | undefined };
+    },
+    enabled: showScopeSelector && (!!acCompanyId || !!statCompanyId),
+  });
+  const acScopeLabel = (() => {
+    const b = scopeBranchesQuery.data?.ac;
+    return b ? b.nameAr || b.nameEn : t('accounting.scopeAc');
+  })();
+  const statScopeLabel = (() => {
+    const b = scopeBranchesQuery.data?.stat;
+    return b ? b.nameAr || b.nameEn : t('accounting.scopeStat');
+  })();
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'profit', label: t('accounting.profitReport') },
@@ -321,8 +356,8 @@ export function ReportsPage() {
           {showScopeSelector && (
             <FormField label={t('accounting.reportScope')}>
               <Select value={reportScope} onChange={(e) => setReportScope(e.target.value as 'AC' | 'STAT' | 'ALL')}>
-                <option value="AC">{t('accounting.scopeAc')}</option>
-                <option value="STAT">{t('accounting.scopeStat')}</option>
+                <option value="AC">{acScopeLabel}</option>
+                <option value="STAT">{statScopeLabel}</option>
                 <option value="ALL">{t('accounting.scopeAll')}</option>
               </Select>
             </FormField>
@@ -378,6 +413,14 @@ export function ReportsPage() {
                   <tr>
                     <td>{t('accounting.operatingExpenses')}</td>
                     <td>{formatAmount(profitQuery.data?.expenseBreakdown?.operatingExpenses ?? 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>{t('accounting.salaries')}</td>
+                    <td>{formatAmount(profitQuery.data?.expenseBreakdown?.salaries ?? 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>{t('accounting.commissions')}</td>
+                    <td>{formatAmount(profitQuery.data?.expenseBreakdown?.commissions ?? 0)}</td>
                   </tr>
                 </tbody>
                 <tfoot>
@@ -575,6 +618,14 @@ export function ReportsPage() {
               <tr>
                 <td className="font-semibold">{t('treasury.operatingExpensesTotal')}</td>
                 <td className="font-semibold">{formatAmount(profitQuery.data?.expenseBreakdown?.operatingExpenses ?? 0)}</td>
+              </tr>
+              <tr>
+                <td>{t('accounting.salaries')}</td>
+                <td>{formatAmount(profitQuery.data?.expenseBreakdown?.salaries ?? 0)}</td>
+              </tr>
+              <tr>
+                <td>{t('accounting.commissions')}</td>
+                <td>{formatAmount(profitQuery.data?.expenseBreakdown?.commissions ?? 0)}</td>
               </tr>
               <tr>
                 <td>{t(isPrintingPress ? 'accounting.totalRawMaterialPurchases' : 'accounting.costOfGoodsSold')}</td>

@@ -27,6 +27,9 @@ export interface SalesLineForm {
 interface Product {
   id: string;
   sku: string;
+  /** AC only — relabeled "القدرة" (capacity, e.g. "1.5 حصان") for this tenant; every other company
+   * just never sets it. Same underlying field as ProductsPage.tsx's own relabeling. */
+  barcode?: string | null;
   nameEn: string;
   unitId: string;
   sellingPrice: number | null;
@@ -109,7 +112,7 @@ export function SalesLineEditor({
   // (ProductType.CATALOG_ITEM) instead of the raw-materials Product list — see
   // ProductsService.findAllForCompany/findCatalogForCompany for how the two never mix. Every
   // other company keeps fetching the unfiltered raw-materials endpoint exactly as before.
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isAirConditioning } = useActiveCompany();
   // A "مندوب" must never see purchase cost, margin, or a below-cost warning — the backend already
   // omits the underlying fields from the API response (see ProductsService.maybeStripCostFields),
   // this is the second, independent layer: even if pricing somehow resolved to a number, the UI
@@ -152,9 +155,13 @@ export function SalesLineEditor({
     () =>
       products.map((p) => ({
         value: p.id,
-        label: isPrintingPress ? p.nameEn : `${p.sku} — ${p.nameEn}`,
+        // AC only — capacity appended right in the picker label, so two capacities of the same
+        // model (e.g. 1.5 vs 2.25 حصان) never look identical while choosing a sale/quotation line.
+        label: isPrintingPress
+          ? p.nameEn
+          : `${p.sku} — ${p.nameEn}${isAirConditioning && p.barcode ? ` - ${p.barcode}` : ''}`,
       })),
-    [products, isPrintingPress],
+    [products, isPrintingPress, isAirConditioning],
   );
 
   /**

@@ -601,7 +601,13 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               {selectedProduct ? (
                 <div className="flex items-center justify-between rounded-lg border border-[var(--border)] px-3 py-2">
                   <div className="text-sm">
-                    <div className="font-medium text-[var(--text)]">{selectedProduct.nameEn}</div>
+                    <div className="font-medium text-[var(--text)]">
+                      {selectedProduct.nameEn}
+                      {/* AC only — barcode doubles as "القدرة" for this tenant (see ProductsPage.tsx's
+                          same relabeling), surfaced right in the name so two capacities of the same
+                          model never look identical while picking a purchase item. */}
+                      {isAirConditioning && selectedProduct.barcode ? ` - ${selectedProduct.barcode}` : ''}
+                    </div>
                     <div className="text-xs text-[var(--text-muted)]">
                       {selectedProduct.sku ?? '—'} · {packageTypeName(selectedProduct.packageTypeId)} (
                       {formatQuantity(selectedProduct.unitsPerPackage)})
@@ -642,9 +648,15 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
                             setSearch('');
                           }}
                         >
-                          <div className="font-medium text-[var(--text)]">{p.nameEn}</div>
+                          <div className="font-medium text-[var(--text)]">
+                            {p.nameEn}
+                            {isAirConditioning && p.barcode ? ` - ${p.barcode}` : ''}
+                          </div>
                           <div className="text-xs text-[var(--text-muted)]">
-                            {p.sku ?? '—'} {p.barcode ? `· ${p.barcode}` : ''}
+                            {p.sku ?? '—'}
+                            {!isAirConditioning && p.barcode ? ` · ${p.barcode}` : ''}
+                            {' · '}
+                            {packageTypeName(p.packageTypeId)} ({formatQuantity(p.unitsPerPackage)})
                           </div>
                         </button>
                       ))}

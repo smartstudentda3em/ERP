@@ -41,15 +41,15 @@ export function OutstandingBalancesPage() {
 
   const totalOutstanding = useMemo(() => debtors.reduce((sum, c) => sum + Number(c.balanceDue ?? 0), 0), [debtors]);
 
+  // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the same
+  // pattern.
   const filteredDebtors = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return debtors;
-    return debtors.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.mobile ?? '').toLowerCase().includes(q) ||
-        (c.salesRepresentativeName ?? '').toLowerCase().includes(q),
-    );
+    const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (keywords.length === 0) return debtors;
+    return debtors.filter((c) => {
+      const haystack = [c.name, c.mobile, c.salesRepresentativeName].filter(Boolean).join(' ').toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
+    });
   }, [debtors, search]);
 
   const columns: Column<Customer>[] = [

@@ -220,12 +220,21 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
 
   const selectedProduct = productsQuery.data?.find((p) => p.id === selectedProductId) ?? null;
 
+  // Multi-keyword, cross-field, order-independent — same algorithm as DataTable's own built-in
+  // search (see that component's comment): splits the typed query into separate words and
+  // requires every one of them to appear SOMEWHERE across the combined fields, not all in one
+  // continuous phrase and not all in the same field. Lets e.g. "فريش 1.5" (or "1.5 فريش") match a
+  // receipt where "فريش" is in the supplier name and "1.5" is in the product name, or vice versa.
   const filteredReceipts = useMemo(() => {
-    const q = tableSearch.trim().toLowerCase();
+    const keywords = tableSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return (receiptsQuery.data ?? []).filter((r) => {
       if (!inDateRange(r.receiptDate, dateRange)) return false;
-      if (!q) return true;
-      return (r.supplier?.companyName ?? '').toLowerCase().includes(q) || (r.product?.nameEn ?? '').toLowerCase().includes(q);
+      if (keywords.length === 0) return true;
+      const haystack = [r.documentNumber, r.supplier?.companyName, r.product?.nameEn, r.product?.sku, r.product?.barcode]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
     });
   }, [receiptsQuery.data, dateRange, tableSearch]);
 

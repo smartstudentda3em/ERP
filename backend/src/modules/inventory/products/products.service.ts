@@ -203,21 +203,31 @@ export class ProductsService extends BaseCrudService<Product> {
    * category — the exact five fields the Products screen's search bar covers, deliberately
    * excluding anything warehouse/stock-related. `nameEn`, `categoryId`, `brandId` carry their own
    * indexes (see the entity) so this stays fast as the catalog grows.
+   *
+   * Multi-keyword, cross-column, order-independent: the term is split on whitespace and each
+   * keyword gets its own `AND (...)` clause across the same five OR'd fields — not the whole term
+   * matched as one continuous substring in a single field. Lets e.g. "فريش 1.5" (or "1.5 فريش")
+   * match a product where "فريش" is in the name and "1.5" is in the SKU, regardless of which
+   * field holds which word or the order they were typed in.
    */
   async search(companyId: string, term: string): Promise<Product[]> {
-    const q = `%${term.trim()}%`;
-    return this.repo
+    const keywords = term.trim().split(/\s+/).filter(Boolean);
+    const qb = this.repo
       .createQueryBuilder('p')
       .leftJoin('brands', 'b', 'b.id = p."brandId"')
       .leftJoin('product_categories', 'c', 'c.id = p."categoryId"')
       .where('p."companyId" = :companyId', { companyId })
-      .andWhere('p."productType" = :pt', { pt: ProductType.RAW_MATERIAL })
-      .andWhere(
-        '(p.sku ILIKE :q OR p.barcode ILIKE :q OR p."nameEn" ILIKE :q OR b."nameEn" ILIKE :q OR c."nameEn" ILIKE :q)',
-        { q },
-      )
-      .orderBy('p."createdAt"', 'ASC')
-      .getMany();
+      .andWhere('p."productType" = :pt', { pt: ProductType.RAW_MATERIAL });
+
+    keywords.forEach((keyword, i) => {
+      const param = `q${i}`;
+      qb.andWhere(
+        `(p.sku ILIKE :${param} OR p.barcode ILIKE :${param} OR p."nameEn" ILIKE :${param} OR b."nameEn" ILIKE :${param} OR c."nameEn" ILIKE :${param})`,
+        { [param]: `%${keyword}%` },
+      );
+    });
+
+    return qb.orderBy('p."createdAt"', 'ASC').getMany();
   }
 
   async lowStockForCompany(companyId: string) {

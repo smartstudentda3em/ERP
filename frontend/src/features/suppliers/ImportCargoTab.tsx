@@ -386,14 +386,17 @@ export const ImportCargoTab = forwardRef<ImportCargoTabHandle, ImportCargoTabPro
     // Detail view only ever shows the currently open shipment's own lines — applied before the
     // text search below so search only ever narrows within that shipment, never across others.
     const scoped = (cargoQuery.data ?? []).filter((r) => r.shipmentId === selectedShipmentId);
-    const q = cargoSearch.trim().toLowerCase();
-    if (!q) return scoped;
-    return scoped.filter(
-      (r) =>
-        productLabel(r.product).toLowerCase().includes(q) ||
-        (r.supplier?.companyName ?? '').toLowerCase().includes(q) ||
-        (r.shipment?.shipmentName ?? '').toLowerCase().includes(q),
-    );
+    // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the
+    // same pattern.
+    const keywords = cargoSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (keywords.length === 0) return scoped;
+    return scoped.filter((r) => {
+      const haystack = [productLabel(r.product), r.supplier?.companyName, r.shipment?.shipmentName]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
+    });
   }, [cargoQuery.data, cargoSearch, selectedShipmentId]);
 
   // إجمالي مصاريف الشحن: sums each DISTINCT shipment's totalCost exactly once across whatever

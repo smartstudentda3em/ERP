@@ -245,13 +245,16 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
     return r.branch?.nameAr || r.branch?.nameEn || '';
   }
 
+  // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the same
+  // pattern.
   const filteredReps = useMemo(() => {
     const rows = repsQuery.data ?? [];
-    if (!isPrintingPress || !repSearch.trim()) return rows;
-    const q = repSearch.trim().toLowerCase();
-    return rows.filter(
-      (r) => r.name.toLowerCase().includes(q) || repBranchLabel(r).toLowerCase().includes(q),
-    );
+    const keywords = repSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!isPrintingPress || keywords.length === 0) return rows;
+    return rows.filter((r) => {
+      const haystack = [r.name, repBranchLabel(r)].filter(Boolean).join(' ').toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
+    });
   }, [repsQuery.data, isPrintingPress, repSearch]);
 
   const columns: Column<SalesRepresentative>[] = [

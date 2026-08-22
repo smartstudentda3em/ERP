@@ -165,14 +165,15 @@ export function OutstandingBalanceDetailsPage() {
   // narrowing further on top of the open-invoice/date filtering, so its total badge always matches
   // exactly what's displayed in the table.
   const [invoiceSearch, setInvoiceSearch] = useState('');
+  // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the same
+  // pattern.
   const filteredInvoices = useMemo(() => {
-    const q = invoiceSearch.trim().toLowerCase();
-    if (!q) return openInvoices;
-    return openInvoices.filter(
-      (r) =>
-        r.documentNumber.toLowerCase().includes(q) ||
-        (r.salesRepresentativeName ?? '').toLowerCase().includes(q),
-    );
+    const keywords = invoiceSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (keywords.length === 0) return openInvoices;
+    return openInvoices.filter((r) => {
+      const haystack = [r.documentNumber, r.salesRepresentativeName].filter(Boolean).join(' ').toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
+    });
   }, [openInvoices, invoiceSearch]);
   const filteredInvoicesTotal = useMemo(
     () => filteredInvoices.reduce((sum, i) => sum + Number(i.grandTotal ?? 0), 0),

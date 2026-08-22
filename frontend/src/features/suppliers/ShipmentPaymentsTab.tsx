@@ -72,16 +72,18 @@ export function ShipmentPaymentsTab() {
   });
 
   // Filters on اسم الشحنة and نوع الدفعة (matched against its translated label, e.g. typing "شحن"
-  // matches the "تكلفة شحن" option) — same substring/case-insensitive matching DataTable's own
-  // built-in search would have done, just lifted up here so the total badge below can track it.
+  // matches the "تكلفة شحن" option) — multi-keyword, cross-column, order-independent, same as
+  // DataTable's own built-in search, just lifted up here so the total badge below can track it.
   const filteredPayments = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return paymentsQuery.data ?? [];
-    return (paymentsQuery.data ?? []).filter(
-      (p) =>
-        (p.shipment?.shipmentName ?? '').toLowerCase().includes(q) ||
-        t(`imports.paymentTypes.${p.paymentType}`).toLowerCase().includes(q),
-    );
+    const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (keywords.length === 0) return paymentsQuery.data ?? [];
+    return (paymentsQuery.data ?? []).filter((p) => {
+      const haystack = [p.shipment?.shipmentName, t(`imports.paymentTypes.${p.paymentType}`)]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
+    });
   }, [paymentsQuery.data, search, t]);
 
   // إجمالي الدفعات المدفوعة: live sum over the currently FILTERED rows only, so typing/clearing a

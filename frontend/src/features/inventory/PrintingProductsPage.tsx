@@ -53,10 +53,13 @@ export function PrintingProductsPage() {
     enabled: !!companyId,
   });
 
+  // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the same
+  // pattern.
   const filteredProducts = (productsQuery.data ?? []).filter((p) => {
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return [p.nameEn, p.size].some((v) => (v ?? '').toLowerCase().includes(q));
+    const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (keywords.length === 0) return true;
+    const haystack = [p.nameEn, p.size].filter(Boolean).join(' ').toLowerCase();
+    return keywords.every((kw) => haystack.includes(kw));
   });
 
   const createMutation = useMutation({

@@ -167,17 +167,17 @@ export function RepProductsView() {
     queryFn: () => unwrap<RepProductRow[]>(apiClient.get('/inventory/products/rep-view')),
     enabled: !!companyId,
   });
+  // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the same
+  // pattern. Lets e.g. "فريش 1.5" (or "1.5 فريش") match a row where "فريش" is in the name and
+  // "1.5" is in the SKU, regardless of which field holds which word or typing order.
   const rows = useMemo(() => {
     const all = productsQuery.data ?? [];
-    const term = search.trim().toLowerCase();
-    if (!term) return all;
-    return all.filter(
-      (r) =>
-        r.nameAr?.toLowerCase().includes(term) ||
-        r.nameEn?.toLowerCase().includes(term) ||
-        r.sku?.toLowerCase().includes(term) ||
-        r.barcode?.toLowerCase().includes(term),
-    );
+    const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (keywords.length === 0) return all;
+    return all.filter((r) => {
+      const haystack = [r.nameAr, r.nameEn, r.sku, r.barcode].filter(Boolean).join(' ').toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
+    });
   }, [productsQuery.data, search]);
 
   const columns: Column<RepProductRow>[] = [
@@ -398,13 +398,20 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
   const displayedProducts = useMemo(() => {
     const rows = productsQuery.data ?? [];
     if (!isPrintingPress) return rows;
-    const q = search.trim().toLowerCase();
-    const searched = q
-      ? rows.filter((p) => {
-          const name = (p.nameEn || p.nameAr || '').toLowerCase();
-          return name.includes(q) || categoryLabel(p).toLowerCase().includes(q) || brandLabel(p).toLowerCase().includes(q);
-        })
-      : rows;
+    // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the
+    // same pattern. Lets e.g. "فريش 1.5" match a row where "فريش" is in the name and "1.5" is in
+    // the category/brand, regardless of which field holds which word or typing order.
+    const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const searched =
+      keywords.length > 0
+        ? rows.filter((p) => {
+            const haystack = [p.nameEn || p.nameAr, categoryLabel(p), brandLabel(p)]
+              .filter(Boolean)
+              .join(' ')
+              .toLowerCase();
+            return keywords.every((kw) => haystack.includes(kw));
+          })
+        : rows;
     const statusOf = (p: Product) => computeStockStatus(totalQuantity(p.id), Number(p.reorderLevel ?? 0));
     const filtered = statusFilter === 'ALL' ? searched : searched.filter((p) => statusOf(p) === statusFilter);
     // Default sort: متوفر أولاً، يليه منخفض، ثم غير متوفر في نهاية الجدول.

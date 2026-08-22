@@ -145,16 +145,19 @@ export function SalesReportPage() {
     enabled: !!companyId,
   });
 
+  // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the same
+  // pattern.
   const filteredLines = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const rows = linesQuery.data ?? [];
-    if (!q) return rows;
-    return rows.filter(
-      (r) =>
-        r.productName.toLowerCase().includes(q) ||
-        (r.salesRepresentativeName ?? '').toLowerCase().includes(q) ||
-        (r.customerName ?? '').toLowerCase().includes(q),
-    );
+    if (keywords.length === 0) return rows;
+    return rows.filter((r) => {
+      const haystack = [r.productName, r.salesRepresentativeName, r.customerName]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
+    });
   }, [linesQuery.data, search]);
 
   const totalAmount = useMemo(() => filteredLines.reduce((sum, r) => sum + Number(r.lineTotal ?? 0), 0), [filteredLines]);

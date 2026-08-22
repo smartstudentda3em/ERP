@@ -136,16 +136,17 @@ export function StockPage() {
   });
 
   // Depleted (zero-balance) rows are hidden by default — the toggle below opts back in. The
-  // product search matches name OR sku; the warehouse dropdown narrows to one specific warehouse
-  // (empty = all) — both apply together, on top of the depleted filter.
+  // product search is multi-keyword, cross-column, order-independent (see DataTable.tsx's own
+  // search for the same pattern): every typed word must appear SOMEWHERE across name+sku
+  // combined, not all in one field or one continuous phrase; the warehouse dropdown narrows to
+  // one specific warehouse (empty = all) — both apply together, on top of the depleted filter.
   const visibleLevels = (levelsQuery.data ?? []).filter((l) => {
     if (!showDepleted && Number(l.quantityOnHand) <= 0) return false;
     if (warehouseFilter && l.warehouse?.id !== warehouseFilter) return false;
-    if (productSearch.trim()) {
-      const q = productSearch.trim().toLowerCase();
-      const matchesName = l.product?.nameEn?.toLowerCase().includes(q) ?? false;
-      const matchesSku = l.product?.sku?.toLowerCase().includes(q) ?? false;
-      if (!matchesName && !matchesSku) return false;
+    const keywords = productSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (keywords.length > 0) {
+      const haystack = [l.product?.nameEn, l.product?.sku].filter(Boolean).join(' ').toLowerCase();
+      if (!keywords.every((kw) => haystack.includes(kw))) return false;
     }
     return true;
   });

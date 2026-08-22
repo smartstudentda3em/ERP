@@ -58,12 +58,18 @@ export function DataTable<T>({
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
+  // Multi-keyword, cross-column, order-independent: splits the typed query into separate words
+  // and requires every one of them to appear SOMEWHERE across the row's columns combined — not
+  // each word in the same column, and not all in one continuous phrase. This is what lets
+  // "فريش 1.5" (or "1.5 فريش") match a row where "فريش" is in the product-name column and "1.5"
+  // is in a completely different column (model/spec/whatever), regardless of typing order.
   const filtered = useMemo(() => {
-    if (!search) return data;
-    const q = search.toLowerCase();
-    return data.filter((row) =>
-      columns.some((col) => String(col.accessor(row) ?? '').toLowerCase().includes(q)),
-    );
+    const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (keywords.length === 0) return data;
+    return data.filter((row) => {
+      const haystack = columns.map((col) => String(col.accessor(row) ?? '').toLowerCase()).join(' ');
+      return keywords.every((kw) => haystack.includes(kw));
+    });
   }, [data, search, columns]);
 
   const totalPages = serverPagination

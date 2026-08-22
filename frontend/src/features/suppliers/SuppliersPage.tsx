@@ -9,8 +9,9 @@ import { ShippingTab } from './ShippingTab';
 import { ShipmentPaymentsTab } from './ShipmentPaymentsTab';
 import { PurchasingTab, PurchasingTabHandle } from '../purchasing/PurchasingPage';
 import { ProductsTab, ProductsTabHandle } from '../inventory/ProductsPage';
+import { GuidelinePricesTab } from '../sales/GuidelinePricesTab';
 
-type Tab = 'suppliers' | 'cargo' | 'shipping' | 'shipmentPayments' | 'products' | 'purchasing';
+type Tab = 'suppliers' | 'cargo' | 'shipping' | 'shipmentPayments' | 'products' | 'purchasing' | 'guidelinePrices';
 
 /**
  * The "الاستيراد" (Import) section: three tabs sharing one screen — Suppliers (who goods are
@@ -26,10 +27,12 @@ type Tab = 'suppliers' | 'cargo' | 'shipping' | 'shipmentPayments' | 'products' 
  * this tenant, so both are dropped entirely rather than relabeled. Stationery keeps the original
  * three-tab set unchanged.
  *
- * Air Conditioning, by explicit request, drops to a single "الموردون" tab — Cargo/Shipping/
- * ShipmentPayments removed entirely from this screen for this tenant (the sidebar entry leading
- * here is also relabeled from "الاستيراد" to "الموردون" for AC only, see Sidebar.tsx), with the
- * Suppliers table itself gaining a "الرصيد المتبقي" column in their place — see SuppliersTab.tsx.
+ * Air Conditioning, by explicit request, drops Cargo/Shipping/ShipmentPayments entirely from this
+ * screen for this tenant (the sidebar entry leading here is also relabeled from "الاستيراد" to
+ * "الموردون" for AC only, see Sidebar.tsx), with the Suppliers table itself gaining a
+ * "الرصيد المتبقي" column in their place — see SuppliersTab.tsx. AC also gets a second tab here,
+ * "الأسعار الاسترشادية" (GuidelinePricesTab), relocated from the Quotations screen so everything
+ * supplier- and guideline-price-related lives in one place for this tenant.
  *
  * Print/PDF only apply to the Cargo tab (Stationery) and the Purchase Invoice tab (Printing
  * Press), but sit in this shared top bar (opposite the page title, unlike a plain PageHeader)
@@ -51,7 +54,8 @@ export function SuppliersPage() {
       initialTab === 'purchasing' ||
       initialTab === 'cargo' ||
       initialTab === 'shipping' ||
-      initialTab === 'shipmentPayments'
+      initialTab === 'shipmentPayments' ||
+      initialTab === 'guidelinePrices'
       ? initialTab
       : 'suppliers',
   );
@@ -81,7 +85,10 @@ export function SuppliersPage() {
         ...(purchasingTabRestricted ? [] : [{ key: 'purchasing' as Tab, label: t('imports.purchaseInvoiceTab') }]),
       ]
     : isAirConditioning
-      ? [{ key: 'suppliers', label: t('nav.suppliers') }]
+      ? [
+          { key: 'suppliers', label: t('nav.suppliers') },
+          { key: 'guidelinePrices', label: t('guidelinePrices.tabLabel') },
+        ]
       : [
           { key: 'suppliers', label: t('nav.suppliers') },
           { key: 'cargo', label: t('imports.cargoTab') },
@@ -160,6 +167,7 @@ export function SuppliersPage() {
       {tab === 'purchasing' && !purchasingTabRestricted && (
         <PurchasingTab ref={purchasingRef} onPdfLoadingChange={setPurchasingPdfLoading} />
       )}
+      {tab === 'guidelinePrices' && <GuidelinePricesTab />}
     </div>
   );
 }

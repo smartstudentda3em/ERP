@@ -140,6 +140,13 @@ export class SalesInvoicesService {
    * visible from every company context; everyone else only appears where they hold a
    * UserCompany row for the caller's active company — this is what previously let a user from an
    * unrelated company (e.g. التكييفات) leak into another company's assignee dropdown.
+   *
+   * Excludes any user who already has a SalesRepresentative row for this company — the frontend
+   * lists this method's results alongside GET /sales-representatives in the same dropdown, and a
+   * "مندوب" account's own SalesRepresentative row is auto-created with their exact display name
+   * (see UsersService.syncRepRepresentative) at account creation. Without this exclusion, that one
+   * person appeared twice in the merged dropdown under two different value keys (rep:<repId> vs
+   * user:<userId>) — not a rare edge case, but the guaranteed outcome for every مندوب account.
    */
   async getAssignableUsers(companyId: string) {
     const users = await this.userRepo.find({ where: { isActive: true }, relations: ['roles'] });
@@ -149,11 +156,17 @@ export class SalesInvoicesService {
     for (const link of links) {
       companyIdsByUser.set(link.userId, [...(companyIdsByUser.get(link.userId) ?? []), link.companyId]);
     }
+    const repUserIds = new Set(
+      (await this.salesRepRepo.find({ where: { companyId } }))
+        .map((r) => r.userId)
+        .filter((id): id is string => !!id),
+    );
     return users
       .filter(
         (u) =>
-          (u.roles?.some((r) => r.isSystemRole) ?? false) ||
-          (companyIdsByUser.get(u.id) ?? []).includes(companyId),
+          !repUserIds.has(u.id) &&
+          ((u.roles?.some((r) => r.isSystemRole) ?? false) ||
+            (companyIdsByUser.get(u.id) ?? []).includes(companyId)),
       )
       .map((u) => ({ id: u.id, fullName: u.fullName }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName));

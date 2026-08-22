@@ -114,7 +114,7 @@ export function DataTable<T>({
           widths, and this component is shared by every list screen in the app (including the ones
           مندوب/مدير فرع use inside the Android app), so the fix lives here once instead of being
           rebuilt per screen. */}
-      <div className="hidden overflow-x-auto rounded-lg border border-[var(--border)] md:block">
+      <div className="data-table-desktop hidden overflow-x-auto rounded-lg border border-[var(--border)] md:block">
         <table className="app-table">
           {columns.some((col) => col.width) && (
             <colgroup>
@@ -193,7 +193,7 @@ export function DataTable<T>({
       {/* Phone: one card per row instead of a horizontally-scrolling table. The first column
           becomes the card's title (it's always the row's own identifying value — a name, a
           document number, a date); every other column renders as a label/value line. */}
-      <div className="flex flex-col gap-2.5 md:hidden">
+      <div className="data-table-mobile flex flex-col gap-2.5 md:hidden">
         {isLoading ? (
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-center text-sm text-[var(--text-muted)]">
             {t('common.loading')}

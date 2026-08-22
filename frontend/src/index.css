@@ -260,6 +260,107 @@ body {
   display: none !important;
 }
 
+/* DataTable.tsx splits into a desktop table (.data-table-desktop, shown via `md:block`) and a
+   stacked phone-card list (.data-table-mobile, shown via `md:hidden`) purely off screen viewport
+   width. Print media's own viewport-width computation isn't reliable enough to trust the same
+   breakpoint (confirmed live: printing/exporting a DataTable was silently falling back to the
+   unstyled stacked-card layout instead of the real table), so print and PDF export both force the
+   desktop table unconditionally regardless of which one the on-screen breakpoint picked. */
+@media print {
+  .data-table-desktop {
+    display: block !important;
+  }
+  .data-table-mobile {
+    display: none !important;
+  }
+}
+.pdf-export-mode .data-table-desktop {
+  display: block !important;
+}
+.pdf-export-mode .data-table-mobile {
+  display: none !important;
+}
+
+/* Guideline Prices detail page (الأسعار الاسترشادية) print/PDF — reuses the exact navy-header +
+   light zebra-stripe theme cargo-print-report already established elsewhere in the app, so the
+   two "professional colored table export" screens share one visual identity instead of each
+   inventing its own palette. Kept on its own class for the same reason cargo-print-report is: so
+   these rules can never leak onto some unrelated table elsewhere in the app. */
+@page guideline-price-report {
+  size: A4 portrait;
+  margin: 12mm;
+}
+@media print {
+  .guideline-price-print {
+    page: guideline-price-report;
+  }
+  .guideline-price-print .overflow-x-auto {
+    overflow: visible;
+  }
+  .guideline-price-print table {
+    width: 100%;
+  }
+  .guideline-price-print th,
+  .guideline-price-print td {
+    overflow-wrap: break-word;
+    white-space: normal;
+  }
+  .guideline-price-print th {
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .guideline-price-print td {
+    font-size: 12px;
+    padding: 6px 6px;
+  }
+  .guideline-price-print .app-table thead th {
+    background-color: #1e3a5f !important;
+    color: #ffffff !important;
+    border: 1px solid #14293f !important;
+  }
+  .guideline-price-print .app-table th,
+  .guideline-price-print .app-table td {
+    border: 1px solid #94a3b8 !important;
+  }
+  .guideline-price-print .app-table tbody tr:nth-child(even) td {
+    background-color: #eef2f7 !important;
+  }
+}
+
+.guideline-price-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+.guideline-price-print.pdf-export-mode table {
+  width: 100%;
+}
+.guideline-price-print.pdf-export-mode th,
+.guideline-price-print.pdf-export-mode td {
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+.guideline-price-print.pdf-export-mode th {
+  font-size: 19px;
+  font-weight: 700;
+  padding: 10px 6px;
+}
+.guideline-price-print.pdf-export-mode td {
+  font-size: 17px;
+  padding: 8px 6px;
+}
+.guideline-price-print.pdf-export-mode .app-table thead th {
+  background-color: #1e3a5f !important;
+  color: #ffffff !important;
+  border: 1px solid #14293f !important;
+}
+.guideline-price-print.pdf-export-mode .app-table th,
+.guideline-price-print.pdf-export-mode .app-table td {
+  border: 1px solid #94a3b8 !important;
+}
+.guideline-price-print.pdf-export-mode .app-table tbody tr:nth-child(even) td {
+  background-color: #eef2f7 !important;
+}
+
 /* Printing should never inherit the dark theme's colors — force light/print-safe values for every
    CSS-variable-driven surface (background, text, borders, table header) regardless of which theme
    was active on screen when the user printed. */

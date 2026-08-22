@@ -416,7 +416,7 @@ export function GuidelinePriceDetailPage() {
           {t('guidelinePrices.pickCompanyPrompt')}
         </div>
       ) : (
-        <div ref={printRef} className="printable-document">
+        <div ref={printRef} className="printable-document guideline-price-print">
           <DocumentLetterhead
             docTypeLabel={t('guidelinePrices.tabLabel')}
             metaLine={`${t('guidelinePrices.company')}: ${metaCompanyLabel}  |  ${title}`}

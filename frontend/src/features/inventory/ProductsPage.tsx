@@ -22,6 +22,7 @@ import { LetterheadCompany } from '../sales/DocumentLetterhead';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdf } from '../../lib/pdf-export';
+import { ServicesTab } from './ServicesTab';
 
 interface Product {
   id: string;
@@ -1071,13 +1072,35 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
 
 /** Standalone route wrapper for every company except Printing Press (which embeds ProductsTab
  * directly inside SuppliersPage instead) — adds the page-level title this tab intentionally omits
- * so it isn't duplicated when nested under another section's own heading. */
+ * so it isn't duplicated when nested under another section's own heading. Air Conditioning only
+ * additionally gets a "الخدمات" tab alongside "المنتجات" (installation/maintenance price lists,
+ * see ServicesTab.tsx) — every other company only ever sees the plain ProductsTab, unchanged. */
 export function ProductsPage() {
   const { t } = useTranslation();
+  const { isAirConditioning } = useActiveCompany();
+  const [tab, setTab] = useState<'products' | 'services'>('products');
   return (
     <div>
       <PageHeader title={t('nav.products')} />
-      <ProductsTab />
+      {isAirConditioning && (
+        <div className="mb-4 flex gap-2 text-sm print:hidden">
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-1.5 ${tab === 'products' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+            onClick={() => setTab('products')}
+          >
+            {t('nav.products')}
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-1.5 ${tab === 'services' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+            onClick={() => setTab('services')}
+          >
+            {t('products.services')}
+          </button>
+        </div>
+      )}
+      {tab === 'products' ? <ProductsTab /> : <ServicesTab />}
     </div>
   );
 }

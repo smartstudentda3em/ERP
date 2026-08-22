@@ -168,4 +168,8 @@ export enum ImportCargoStatus {
 export enum ProductType {
   RAW_MATERIAL = 'RAW_MATERIAL',
   CATALOG_ITEM = 'CATALOG_ITEM',
+  /** Air Conditioning only — one row per capacity price tier of a named Service (see the Service
+   * entity and ProductsService.createService/updateService). Carries no real stock, exactly like
+   * CATALOG_ITEM, and is skipped the same way everywhere stock is issued/received/reported. */
+  SERVICE = 'SERVICE',
 }

@@ -130,9 +130,44 @@ export function SalesLineEditor({
     queryFn: () => unwrap<Product[]>(apiClient.get('/inventory/products/sellable-raw-materials')),
     enabled: isPrintingPress,
   });
+  // Air Conditioning only — every service's capacity price tier (see ServicesTab.tsx) is already
+  // a real, directly sellable Product row (productType=SERVICE) under the hood; this just flattens
+  // the grouped {service, tiers[]} shape the Services screen shows into that same picker-ready
+  // Product shape, tagged with a "خدمة" placeholder sku (services carry no real SKU) so a service
+  // line reads unmistakably as "خدمة — تركيب مكيف - 1.5" rather than looking like a stocked part.
+  // No packageTypeId/unitsPerPackage is set, so canSellByPackage correctly stays false for these.
+  const servicesQuery = useQuery({
+    queryKey: ['services'],
+    queryFn: () =>
+      unwrap<{ id: string; name: string; tiers: { id: string; capacity: string | null; price: number }[] }[]>(
+        apiClient.get('/inventory/products/services'),
+      ),
+    enabled: isAirConditioning,
+  });
+  const serviceTierProducts = useMemo<Product[]>(
+    () =>
+      isAirConditioning
+        ? (servicesQuery.data ?? []).flatMap((s) =>
+            s.tiers.map((tier) => ({
+              id: tier.id,
+              sku: t('products.serviceSkuLabel') ?? 'خدمة',
+              barcode: tier.capacity,
+              nameEn: s.name,
+              unitId: '',
+              sellingPrice: tier.price,
+              purchasePrice: 0,
+            })),
+          )
+        : [],
+    [servicesQuery.data, isAirConditioning, t],
+  );
   const products = useMemo(
-    () => [...(productsQuery.data ?? []), ...(isPrintingPress ? sellableRawMaterialsQuery.data ?? [] : [])],
-    [productsQuery.data, sellableRawMaterialsQuery.data, isPrintingPress],
+    () => [
+      ...(productsQuery.data ?? []),
+      ...(isPrintingPress ? sellableRawMaterialsQuery.data ?? [] : []),
+      ...serviceTierProducts,
+    ],
+    [productsQuery.data, sellableRawMaterialsQuery.data, isPrintingPress, serviceTierProducts],
   );
   const unitsQuery = useQuery({
     queryKey: ['units'],

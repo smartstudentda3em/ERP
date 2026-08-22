@@ -1,9 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DeepPartial, QueryFailedError, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, DeepPartial, In, QueryFailedError, Repository } from 'typeorm';
 import { BaseCrudService, rethrowFriendlyDbError } from '../../../common/services/base-crud.service';
 import { Product } from './entities/product.entity';
+import { Service } from './entities/service.entity';
 import { CreateProductDto, UpdateProductDto, CreateCatalogProductDto, UpdateCatalogProductDto } from './dto/product.dto';
+import { CreateServiceDto, UpdateServiceDto } from './dto/service.dto';
 import { StockMovement } from '../stock-movements/entities/stock-movement.entity';
 import { ProductType } from '../../../entities/enums';
 import { Unit } from '../../settings/entities/unit.entity';
@@ -27,6 +29,8 @@ export class ProductsService extends BaseCrudService<Product> {
     @InjectRepository(PackageType) private readonly packageTypeRepo: Repository<PackageType>,
     @InjectRepository(ProductCategory) private readonly categoryRepo: Repository<ProductCategory>,
     @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
+    @InjectRepository(Service) private readonly serviceRepo: Repository<Service>,
+    @InjectDataSource() private readonly dataSource: DataSource,
     private readonly salesRepAccess: SalesRepAccessService,
   ) {
     super(repo);
@@ -247,6 +251,11 @@ export class ProductsService extends BaseCrudService<Product> {
       .addSelect('COALESCE(SUM(sl."quantityOnHand"), 0)', 'totalOnHand')
       .where('p."isActive" = true')
       .andWhere('p."companyId" = :companyId', { companyId })
+      // Only raw materials carry real warehouse stock at all — catalog items and services have no
+      // stock_levels rows, ever, which would otherwise satisfy the HAVING clause below
+      // unconditionally (0 on-hand <= their default 0 reorder level) and show up as permanently
+      // "low stock" for something that was never meant to be reordered in the first place.
+      .andWhere('p."productType" = :productType', { productType: ProductType.RAW_MATERIAL })
       .groupBy('p.id')
       .having('COALESCE(SUM(sl."quantityOnHand"), 0) <= p."reorderLevel"')
       .getRawMany();
@@ -380,6 +389,187 @@ export class ProductsService extends BaseCrudService<Product> {
       return await super.update(id, patch as any);
     } catch (err) {
       throw this.toFriendlySaveError(err);
+    }
+  }
+
+  /**
+   * Service tiers carry no real category/unit/packaging either, same reasoning as
+   * resolveCatalogDefaults — one hidden placeholder row per company, kept on its own codes so it
+   * never collides with the catalog-item defaults above.
+   */
+  private async resolveServiceDefaults(
+    companyId: string,
+  ): Promise<{ categoryId: string; unitId: string; packageTypeId: string }> {
+    let category = await this.categoryRepo.findOne({ where: { companyId, code: 'SERVICE' } });
+    if (!category) {
+      category = await this.categoryRepo.save(
+        this.categoryRepo.create({ companyId, code: 'SERVICE', nameEn: 'Services', nameAr: 'خدمات' }),
+      );
+    }
+    let unit = await this.unitRepo.findOne({ where: { companyId, code: 'SVC' } });
+    if (!unit) {
+      unit = await this.unitRepo.save(
+        this.unitRepo.create({ companyId, code: 'SVC', nameEn: 'Service', nameAr: 'خدمة', categoryId: category.id }),
+      );
+    }
+    let packageType = await this.packageTypeRepo.findOne({ where: { companyId, code: 'SVC' } });
+    if (!packageType) {
+      packageType = await this.packageTypeRepo.save(
+        this.packageTypeRepo.create({ companyId, code: 'SVC', nameEn: 'Service', nameAr: 'خدمة', categoryId: category.id }),
+      );
+    }
+    return { categoryId: category.id, unitId: unit.id, packageTypeId: packageType.id };
+  }
+
+  /** A short, human-scannable SKU for a service tier — AC has no SKU-uniqueness rule at all (see
+   * assertSkuBarcodeUnique), so this only needs to avoid rendering as the literal string "null" in
+   * pickers that interpolate product.sku directly, not to be truly unique. */
+  private generateServiceTierSku(serviceId: string, tierIndex: number): string {
+    return `SVC-${serviceId.slice(0, 8).toUpperCase()}-${tierIndex + 1}`;
+  }
+
+  /** Services screen (Air Conditioning's "الخدمات" tab) — one row per Service, each with its
+   * capacity price tiers nested (only the active ones; a tier deactivated by updateService because
+   * it had already been sold and couldn't be hard-deleted stays hidden here and from the sales
+   * picker, matching how every other inactive product is treated). */
+  async findServicesForCompany(companyId: string): Promise<
+    {
+      id: string;
+      name: string;
+      notes: string | null;
+      isActive: boolean;
+      tiers: { id: string; capacity: string | null; price: number }[];
+    }[]
+  > {
+    const services = await this.serviceRepo.find({ where: { companyId }, order: { createdAt: 'ASC' } });
+    if (!services.length) return [];
+    const tiers = await this.repo.find({
+      where: { companyId, productType: ProductType.SERVICE, serviceId: In(services.map((s) => s.id)), isActive: true },
+      order: { createdAt: 'ASC' },
+    });
+    return services.map((s) => ({
+      id: s.id,
+      name: s.name,
+      notes: s.notes,
+      isActive: s.isActive,
+      tiers: tiers
+        .filter((t) => t.serviceId === s.id)
+        .map((t) => ({ id: t.id, capacity: t.barcode, price: Number(t.sellingPrice ?? 0) })),
+    }));
+  }
+
+  async createService(dto: CreateServiceDto, companyId: string): Promise<Service> {
+    const defaults = await this.resolveServiceDefaults(companyId);
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const service = await manager.getRepository(Service).save(
+          manager.getRepository(Service).create({ companyId, name: dto.name, notes: dto.notes ?? null }),
+        );
+        const tierRepo = manager.getRepository(Product);
+        await tierRepo.save(
+          dto.tiers.map((tier, i) =>
+            tierRepo.create({
+              companyId,
+              serviceId: service.id,
+              productType: ProductType.SERVICE,
+              nameEn: dto.name,
+              nameAr: dto.name,
+              barcode: tier.capacity,
+              sku: this.generateServiceTierSku(service.id, i),
+              categoryId: defaults.categoryId,
+              unitId: defaults.unitId,
+              packageTypeId: defaults.packageTypeId,
+              unitsPerPackage: 1,
+              sellingPrice: tier.price,
+              purchasePrice: 0,
+              averageCost: 0,
+            }),
+          ),
+        );
+        return service;
+      });
+    } catch (err) {
+      throw this.toFriendlySaveError(err);
+    }
+  }
+
+  /** Tiers are matched to the submitted set by capacity label: a matching existing tier is updated
+   * in place (keeping its id valid on any invoice that already references it); a new capacity
+   * creates a new tier row; a capacity no longer submitted is removed if it was never sold, or just
+   * deactivated (isActive=false) if removing it would violate a RESTRICT FK from real sales history
+   * — never left half-done by an unhandled DB error either way. */
+  async updateService(id: string, companyId: string, dto: UpdateServiceDto): Promise<Service> {
+    const service = await this.serviceRepo.findOne({ where: { id, companyId } });
+    if (!service) throw new NotFoundException('Service not found');
+
+    if (dto.name !== undefined || dto.notes !== undefined) {
+      await this.serviceRepo.update(id, {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+      });
+    }
+
+    if (dto.tiers) {
+      const existingTiers = await this.repo.find({ where: { companyId, serviceId: id, productType: ProductType.SERVICE } });
+      const defaults = await this.resolveServiceDefaults(companyId);
+      const nameForTiers = dto.name ?? service.name;
+      const keepIds = new Set<string>();
+
+      for (const [i, tier] of dto.tiers.entries()) {
+        const existing = existingTiers.find((t) => t.barcode === tier.capacity);
+        if (existing) {
+          await this.repo.update(existing.id, {
+            sellingPrice: tier.price,
+            nameEn: nameForTiers,
+            nameAr: nameForTiers,
+            isActive: true,
+          });
+          keepIds.add(existing.id);
+        } else {
+          const created = await this.repo.save(
+            this.repo.create({
+              companyId,
+              serviceId: id,
+              productType: ProductType.SERVICE,
+              nameEn: nameForTiers,
+              nameAr: nameForTiers,
+              barcode: tier.capacity,
+              sku: this.generateServiceTierSku(id, existingTiers.length + i),
+              categoryId: defaults.categoryId,
+              unitId: defaults.unitId,
+              packageTypeId: defaults.packageTypeId,
+              unitsPerPackage: 1,
+              sellingPrice: tier.price,
+              purchasePrice: 0,
+              averageCost: 0,
+            }),
+          );
+          keepIds.add(created.id);
+        }
+      }
+
+      for (const stale of existingTiers.filter((t) => !keepIds.has(t.id))) {
+        try {
+          await this.repo.remove(stale);
+        } catch {
+          await this.repo.update(stale.id, { isActive: false });
+        }
+      }
+    }
+
+    return (await this.serviceRepo.findOne({ where: { id } }))!;
+  }
+
+  /** RESTRICT-protected the same way removeScoped() is — a service with any tier already used in a
+   * real sale can't be deleted outright (Product.serviceId's onDelete:"CASCADE" only reaches tiers
+   * that are themselves free of any other RESTRICT reference). */
+  async removeService(id: string, companyId: string): Promise<void> {
+    const service = await this.serviceRepo.findOne({ where: { id, companyId } });
+    if (!service) throw new NotFoundException('Service not found');
+    try {
+      await this.serviceRepo.remove(service);
+    } catch (err) {
+      rethrowFriendlyDbError(err);
     }
   }
 }

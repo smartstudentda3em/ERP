@@ -273,13 +273,14 @@ export class SalesInvoicesService {
         }
         const baseQuantity = unitKind === SaleUnitKind.PACKAGE ? Number(line.quantity) * unitsPerPackage! : Number(line.quantity);
 
-        // Catalog items (Printing Press "المنتجات") are finished/manufactured products with no
-        // real stock tracking — only raw materials (default RAW_MATERIAL, whether flagged
-        // "قابلة للبيع" or not) ever move real warehouse stock, so this skips issuance for them
-        // entirely rather than failing on their permanently-empty StockLevel.
+        // Catalog items (Printing Press "المنتجات") and services (Air Conditioning "الخدمات") are
+        // finished/manufactured products or pure labor with no real stock tracking — only raw
+        // materials (default RAW_MATERIAL, whether flagged "قابلة للبيع" or not) ever move real
+        // warehouse stock, so this skips issuance for them entirely rather than failing on their
+        // permanently-empty StockLevel.
         let unitCost = 0;
         let totalCost = 0;
-        if (product?.productType !== ProductType.CATALOG_ITEM) {
+        if (product?.productType !== ProductType.CATALOG_ITEM && product?.productType !== ProductType.SERVICE) {
           const issued = await this.stockService.issue(
             {
               companyId,
@@ -471,9 +472,10 @@ export class SalesInvoicesService {
       const productTypeById = new Map(products.map((p) => [p.id, p.productType]));
 
       for (const line of invoice.lines) {
-        // Mirrors create()'s skip: catalog items never had stock issued in the first place, so
-        // there is nothing to receive back for them.
-        if (productTypeById.get(line.productId) === ProductType.CATALOG_ITEM) continue;
+        // Mirrors create()'s skip: catalog items and services never had stock issued in the first
+        // place, so there is nothing to receive back for them.
+        const lineProductType = productTypeById.get(line.productId);
+        if (lineProductType === ProductType.CATALOG_ITEM || lineProductType === ProductType.SERVICE) continue;
         await this.stockService.receive(
           {
             companyId,

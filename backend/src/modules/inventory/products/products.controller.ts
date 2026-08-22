@@ -9,6 +9,7 @@ import {
   CreateCatalogProductDto,
   UpdateCatalogProductDto,
 } from './dto/product.dto';
+import { CreateServiceDto, UpdateServiceDto } from './dto/service.dto';
 
 @ApiTags('Inventory - Products')
 @Controller('inventory/products')
@@ -36,6 +37,35 @@ export class ProductsController {
     @CurrentUser('companyId') companyId: string,
   ) {
     return this.service.updateCatalogItem(id, companyId, dto);
+  }
+
+  // Declared before the generic ':id' routes below, same reasoning as 'catalog' above.
+  @Get('services')
+  @Permissions('inventory.product.view')
+  findAllServices(@CurrentUser('companyId') companyId: string) {
+    return this.service.findServicesForCompany(companyId);
+  }
+
+  @Post('services')
+  @Permissions('inventory.product.create')
+  createService(@Body() dto: CreateServiceDto, @CurrentUser('companyId') companyId: string) {
+    return this.service.createService(dto, companyId);
+  }
+
+  @Patch('services/:id')
+  @Permissions('inventory.product.edit')
+  updateService(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateServiceDto,
+    @CurrentUser('companyId') companyId: string,
+  ) {
+    return this.service.updateService(id, companyId, dto);
+  }
+
+  @Delete('services/:id')
+  @Permissions('inventory.product.delete')
+  removeService(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('companyId') companyId: string) {
+    return this.service.removeService(id, companyId);
   }
 
   @Get()

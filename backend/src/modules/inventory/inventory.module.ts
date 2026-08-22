@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Product } from './products/entities/product.entity';
 import { ProductBatch } from './products/entities/product-batch.entity';
+import { Service } from './products/entities/service.entity';
 import { StockLevel } from './stock-movements/entities/stock-level.entity';
 import { StockMovement } from './stock-movements/entities/stock-movement.entity';
 import {
@@ -43,6 +44,7 @@ import { AcSupplierLedgerModule } from '../ac-supplier-ledger/ac-supplier-ledger
     TypeOrmModule.forFeature([
       Product,
       ProductBatch,
+      Service,
       StockLevel,
       StockMovement,
       StockAdjustment,

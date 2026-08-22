@@ -7,6 +7,7 @@ import { PackageType } from "../../../settings/entities/package-type.entity";
 import { Tax } from "../../../settings/entities/tax.entity";
 import { Company } from "../../../settings/entities/company.entity";
 import { ProductType } from "../../../../entities/enums";
+import { Service } from "./service.entity";
 
 // sku/barcode uniqueness is enforced in ProductsService (assertSkuBarcodeUnique), not here as a DB
 // constraint — Postgres partial indexes can't reference another table (companies), so excluding
@@ -201,4 +202,15 @@ export class Product extends BaseEntity {
     default: false,
   })
   isSellable: boolean;
+
+  /** Set only for productType=SERVICE rows — links this capacity price-tier row back to its
+   * parent Service grouping (e.g. every "تركيب مكيف" tier shares the same serviceId). Null for
+   * every regular product. See Service's own doc comment for why the reverse relation isn't
+   * declared here. */
+  @Column("uuid", { nullable: true })
+  serviceId: string | null;
+
+  @ManyToOne(() => Service, { nullable: true, onDelete: "CASCADE" })
+  @JoinColumn({ name: "serviceId" })
+  service: Service | null;
 }

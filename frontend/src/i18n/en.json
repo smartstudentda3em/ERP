@@ -709,7 +709,16 @@
     "stockTooltipMinRequired": "Minimum",
     "stockTooltipShortage": "Shortage",
     "stockTooltipNone": "None",
-    "capacityLabel": "Capacity"
+    "capacityLabel": "Capacity",
+    "services": "Services",
+    "addService": "Add Service",
+    "noServices": "No services added yet",
+    "serviceName": "Service Name",
+    "serviceNamePlaceholder": "e.g. AC Installation",
+    "priceTiers": "Prices by Capacity",
+    "addTier": "Add Capacity",
+    "servicePrice": "Service Price",
+    "serviceSkuLabel": "Service"
   },
   "settingsCategories": {
     "availablePackages": "Available Packages",

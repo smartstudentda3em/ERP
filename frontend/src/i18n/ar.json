@@ -709,7 +709,16 @@
     "stockTooltipMinRequired": "الحد الأدنى",
     "stockTooltipShortage": "النقص",
     "stockTooltipNone": "لا يوجد",
-    "capacityLabel": "القدرة"
+    "capacityLabel": "القدرة",
+    "services": "الخدمات",
+    "addService": "إضافة خدمة",
+    "noServices": "لا توجد خدمات مضافة بعد",
+    "serviceName": "اسم الخدمة",
+    "serviceNamePlaceholder": "مثال: تركيب مكيف",
+    "priceTiers": "أسعار حسب القدرة",
+    "addTier": "إضافة قدرة",
+    "servicePrice": "سعر الخدمة",
+    "serviceSkuLabel": "خدمة"
   },
   "settingsCategories": {
     "availablePackages": "العبوات المتاحة",

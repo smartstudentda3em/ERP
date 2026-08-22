@@ -111,8 +111,11 @@ export class AcSupplierPaymentsService {
    * standalone ledger so the "دفعات المورد" tab's table and running total directly reflect the
    * consumption, with no separate UI needed. Bypasses CreateAcSupplierPaymentDto's @Min(0.01)
    * validator on purpose: this is an internal deduction, never a normal user-entered payment. Runs
-   * inside the caller's own transaction (manager), and throws if the supplier's current balance
-   * can't cover it — mirrors CashMovementsService.assertSufficientBalance for the treasury path.
+   * inside the caller's own transaction (manager). By explicit request, a purchase paid this way is
+   * NEVER blocked for insufficient balance — unlike the treasury accounts (which still reject an
+   * overdraft via assertSufficientBalance), رصيد المورد is allowed to go negative and simply shows
+   * that negative balance normally, covering the purchase regardless of what the supplier was
+   * actually credited beforehand.
    */
   async deductForPurchase(
     supplierId: string,
@@ -124,14 +127,6 @@ export class AcSupplierPaymentsService {
     manager: EntityManager,
   ): Promise<void> {
     const repo = manager.getRepository(AcSupplierPayment);
-    const row = await repo
-      .createQueryBuilder('p')
-      .select('COALESCE(SUM(p.amount), 0)', 'sum')
-      .where('p."supplierId" = :supplierId AND p."companyId" = :companyId', { supplierId, companyId })
-      .getRawOne<{ sum: string }>();
-    if (Number(row?.sum ?? 0) < amount) {
-      throw new BadRequestException('رصيد المورد غير كافٍ لتغطية هذا المبلغ');
-    }
     await repo.save(
       repo.create({
         supplierId,

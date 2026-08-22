@@ -26,7 +26,8 @@
     "fix:payment-account-mapping": "ts-node -r tsconfig-paths/register src/database/fix-payment-account-mapping.ts",
     "verify:cargo-shipment-links": "ts-node -r tsconfig-paths/register src/database/verify-cargo-shipment-links.ts",
     "backfill:rep-treasury-settlements": "ts-node -r tsconfig-paths/register src/database/backfill-rep-treasury-settlements.ts",
-    "fix:cash-movement-numbering": "ts-node -r tsconfig-paths/register src/database/fix-cash-movement-numbering-drift.ts"
+    "fix:cash-movement-numbering": "ts-node -r tsconfig-paths/register src/database/fix-cash-movement-numbering-drift.ts",
+    "fix:ac-cash-purchases-to-supplier-balance": "ts-node -r tsconfig-paths/register src/database/fix-ac-cash-purchases-to-supplier-balance.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",

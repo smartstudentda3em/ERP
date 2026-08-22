@@ -849,16 +849,19 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
                     <option value="SUPPLIER_BALANCE">{t('purchasing.paymentSourceSupplierBalance')}</option>
                   )}
                 </Select>
-                {(() => {
-                  const available =
-                    form.paymentAccount === 'BANK'
-                      ? branchBalanceQuery.data?.bankBalance
-                      : form.paymentAccount === 'CASH'
-                        ? branchBalanceQuery.data?.cashBalance
-                        : supplierBalance;
-                  if (available === undefined || paidAmount <= available) return null;
-                  return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
-                })()}
+                {/* رصيد المورد is deliberately excluded here — by explicit request it's allowed to
+                    go negative to cover a purchase, so an "insufficient balance" warning would be
+                    misleading for it (nothing is ever rejected). Bank/Cash still reject an
+                    overdraft server-side, so their own warning stays. */}
+                {form.paymentAccount !== 'SUPPLIER_BALANCE' &&
+                  (() => {
+                    const available =
+                      form.paymentAccount === 'BANK'
+                        ? branchBalanceQuery.data?.bankBalance
+                        : branchBalanceQuery.data?.cashBalance;
+                    if (available === undefined || paidAmount <= available) return null;
+                    return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
+                  })()}
               </FormField>
             </div>
           )}

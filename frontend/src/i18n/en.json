@@ -921,7 +921,6 @@
     "taxSavedSuccess": "Tax entry saved successfully",
     "totalTaxForPeriod": "Total Tax Paid for Period",
     "noSpecificInvoice": "No specific invoice",
-    "differenceTabFull": "Difference Between Supplier Payments and Total Purchases",
     "totalIndependentPayments": "Total Registered Supplier Payments (Independent)"
   },
   "printingProducts": {

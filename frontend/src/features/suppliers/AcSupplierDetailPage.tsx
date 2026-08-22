@@ -27,11 +27,12 @@ import { localToday } from '../../lib/date-utils';
  * this is where the page's own "+ تسجيل دفعة"/"+ تسجيل ضريبة" actions write. Nothing here is
  * imported by, or affects, any other screen. The "دفعات المورد" tab and its own total show ONLY
  * these standalone AcSupplierPayment rows (never the legacy treasury-tied SupplierPayment ones) —
- * full decoupling, see filteredPayments/totalIndependentPaymentsAllTime below. The 4-card
- * reconciliation row's "إجمالي المدفوعات"/"الرصيد المتبقي الفعلي" cards deliberately EXCLUDE this
- * standalone log entirely (totalPaidAllTime only reads legacy sources) — per explicit instruction,
- * the independent tracker must never affect those cards or the treasury. Its own comparison against
- * purchases lives only in the 4th card ("الفرق بين دفعات المورد وإجمالي المشتراة").
+ * full decoupling, see filteredPayments below. The reconciliation row's "إجمالي المدفوعات"/"الرصيد
+ * المتبقي الفعلي" cards deliberately EXCLUDE this standalone log entirely (totalPaidAllTime only
+ * reads legacy sources) — per explicit instruction, the independent tracker must never affect
+ * those cards or the treasury. There used to be a 4th card comparing this log's total against
+ * purchases ("الفرق بين دفعات المورد وإجمالي المشتراة") — removed entirely by explicit request, it
+ * no longer exists anywhere in this screen or its reports.
  */
 
 type Tab = 'payments' | 'purchases' | 'tax';
@@ -258,18 +259,6 @@ export function AcSupplierDetailPage() {
   }, [allSupplierReceipts, tiedAmountByReceiptAllTime, paymentsQuery.data]);
   const netBalanceOwed = totalCashPurchasesAllTime - totalPaidAllTime;
 
-  /**
-   * 4th top card (بجوار الكروت الثلاثة أعلاه، بدون أي تأثير عليها): إجمالي دفعات المورد المسجلة
-   * المستقلة (AcSupplierPayment log only) ناقص إجمالي الفواتير المشتراة بالسعر الأساسي — the ONLY
-   * place the independent tracker's total is compared against purchases; totalPaidAllTime/
-   * netBalanceOwed above never read from it.
-   */
-  const totalIndependentPaymentsAllTime = useMemo(
-    () => (acPaymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
-    [acPaymentsQuery.data],
-  );
-  const paymentsVsPurchasesDifference = totalIndependentPaymentsAllTime - totalCashPurchasesAllTime;
-
   function invalidatePayments() {
     queryClient.invalidateQueries({ queryKey: ['supplier-payments', companyId, id] });
     queryClient.invalidateQueries({ queryKey: ['ac-supplier-payments', companyId, id] });
@@ -437,7 +426,7 @@ export function AcSupplierDetailPage() {
       {/* Point 2: مطابقة الأرصدة — always the supplier's full history, independent of the
           year/quarter filter above (see netBalanceOwed's own comment for why). Shown regardless of
           which tab is active since it's a standing summary, not something tied to one tab's data. */}
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalCashPurchasesBase')}</div>
           <div className="mt-1 text-lg font-semibold">{money(totalCashPurchasesAllTime)}</div>
@@ -450,16 +439,6 @@ export function AcSupplierDetailPage() {
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.netBalanceOwed')}</div>
           <div className={`mt-1 text-lg font-semibold ${netBalanceOwed > 0 ? 'text-red-600' : ''}`}>
             {money(netBalanceOwed)}
-          </div>
-        </div>
-        {/* 4th card — إجمالي دفعات المورد المسجلة المستقلة ناقص إجمالي الفواتير المشتراة. مستقل
-            تماماً عن الثلاث كروت اللي قبله: لا يقرأ منها ولا يُقرأ فيها. */}
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-          <div className="text-xs text-[var(--text-muted)]">{t('suppliers.differenceTabFull')}</div>
-          <div
-            className={`mt-1 text-lg font-semibold ${paymentsVsPurchasesDifference < 0 ? 'text-red-600' : 'text-green-600'}`}
-          >
-            {money(paymentsVsPurchasesDifference)}
           </div>
         </div>
       </div>

@@ -28,7 +28,7 @@ interface GuidelinePriceLine {
     nameEn: string;
     nameAr?: string | null;
     barcode?: string | null;
-    sellingPrice?: number | null;
+    packageSellingPrice?: number | null;
     brand?: { nameEn: string; nameAr?: string | null } | null;
     tax?: { rate: number } | null;
   } | null;
@@ -54,7 +54,7 @@ interface SupplierProductPrice {
   brandNameAr: string | null;
   taxRate: number | null;
   purchasePrice: number;
-  sellingPrice: number | null;
+  packageSellingPrice: number | null;
 }
 
 interface ProductRow {
@@ -69,8 +69,9 @@ interface ProductRow {
   purchasePrice: number;
   taxRate: number;
   discountPercentage: number;
-  /** The product's own configured selling price ("سعر البيع (المصنع)") — a fixed reference value,
-   * distinct from "سعر البيع المتوقع" (the new guideline price being set on this page). */
+  /** The product's own configured PACKAGE/carton selling price ("سعر البيع (المصنع)") — a fixed
+   * reference value, distinct from "سعر البيع المتوقع" (the new guideline price being set on this
+   * page). Package price, not per-unit, since the factory sells this product by the carton. */
   factorySellingPrice: number;
 }
 
@@ -184,7 +185,7 @@ export function GuidelinePriceDetailPage() {
           taxRate: Number(p.taxRate) || 0,
           discountPercentage: Number(sheet.discountPercentage) || 0,
           purchasePrice: Number(p.purchasePrice) || 0,
-          factorySellingPrice: Number(p.sellingPrice) || 0,
+          factorySellingPrice: Number(p.packageSellingPrice) || 0,
         });
       }
     }
@@ -204,7 +205,7 @@ export function GuidelinePriceDetailPage() {
             taxRate: Number(line.product?.tax?.rate) || 0,
             discountPercentage: Number(sheet.discountPercentage) || 0,
             purchasePrice: 0,
-            factorySellingPrice: Number(line.product?.sellingPrice) || 0,
+            factorySellingPrice: Number(line.product?.packageSellingPrice) || 0,
           });
         }
       }
@@ -307,7 +308,7 @@ export function GuidelinePriceDetailPage() {
   const columns: Column<ProductRow>[] = [
     { header: t('guidelinePrices.capacity'), accessor: (r) => r.capacity },
     { header: t('guidelinePrices.brand'), accessor: (r) => r.brand },
-    { header: t('fields.sku'), accessor: (r) => r.sku, hideOnPrint: true },
+    { header: t('fields.sku'), accessor: (r) => r.sku },
     { header: t('guidelinePrices.itemName'), accessor: (r) => r.name },
     { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice), hideOnPrint: true },
     {

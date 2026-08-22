@@ -113,24 +113,25 @@ export class GuidelinePricesService {
       brandNameAr: string | null;
       taxRate: number | null;
       purchasePrice: number;
-      /** The product's own configured selling price ("سعر البيع (المصنع)") — a fixed reference
-       * value from the Product record itself, not company/month-specific like the guideline
-       * price being set on this page. */
-      sellingPrice: number | null;
+      /** The product's own configured PACKAGE/carton selling price ("سعر البيع (المصنع)") — a
+       * fixed reference value from the Product record itself, not company/month-specific like
+       * the guideline price being set on this page. Deliberately the package price, not the
+       * per-unit price, since the factory sells this product to us by the carton. */
+      packageSellingPrice: number | null;
     }[]
   > {
     return this.dataSource.query(
       `SELECT DISTINCT ON (pr."productId")
-         pr."productId"    AS "productId",
-         pr."unitCost"     AS "purchasePrice",
-         p."sku"           AS "sku",
-         p."nameEn"        AS "nameEn",
-         p."nameAr"        AS "nameAr",
-         p."barcode"       AS "barcode",
-         p."sellingPrice"  AS "sellingPrice",
-         b."nameEn"        AS "brandNameEn",
-         b."nameAr"        AS "brandNameAr",
-         t."rate"          AS "taxRate"
+         pr."productId"          AS "productId",
+         pr."unitCost"           AS "purchasePrice",
+         p."sku"                 AS "sku",
+         p."nameEn"              AS "nameEn",
+         p."nameAr"              AS "nameAr",
+         p."barcode"             AS "barcode",
+         p."packageSellingPrice" AS "packageSellingPrice",
+         b."nameEn"              AS "brandNameEn",
+         b."nameAr"              AS "brandNameAr",
+         t."rate"                AS "taxRate"
        FROM purchase_receipts pr
        JOIN products p ON p.id = pr."productId"
        LEFT JOIN brands b ON b.id = p."brandId"

@@ -1,23 +1,31 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { useAuthStore } from '../../store/auth-store';
 import { formatAmount } from '../../lib/number-format';
-import { monthNameOnly } from '../../lib/date-utils';
+import { monthNameOnly, localToday } from '../../lib/date-utils';
+import { exportElementToPdf } from '../../lib/pdf-export';
+import { buildPdfFileName } from '../../lib/pdf-filename';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
-import { FormField, Input } from '../../components/ui/Input';
+import { FormField, Input, Select } from '../../components/ui/Input';
 import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useToast } from '../../components/ui/Toast';
+import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 
 interface GuidelinePriceLine {
   id: string;
   productId: string;
   price: number;
-  product?: { nameEn: string; nameAr?: string | null; barcode?: string | null } | null;
+  product?: {
+    nameEn: string;
+    nameAr?: string | null;
+    barcode?: string | null;
+    brand?: { nameEn: string; nameAr?: string | null } | null;
+  } | null;
 }
 
 interface GuidelinePriceSheet {
@@ -35,6 +43,8 @@ interface SupplierProductPrice {
   nameEn: string;
   nameAr: string | null;
   barcode: string | null;
+  brandNameEn: string | null;
+  brandNameAr: string | null;
   purchasePrice: number;
 }
 
@@ -42,15 +52,22 @@ interface ProductRow {
   productId: string;
   name: string;
   capacity: string;
+  brand: string;
   purchasePrice: number;
 }
+
+interface Company extends LetterheadCompany {
+  id: string;
+}
+
+type SortField = 'capacity' | 'brand';
 
 /**
  * AC-only — opens from clicking a month/year row in GuidelinePricesTab.tsx's grouped list. A
  * merged row has no single company, so this page owns picking WHICH of that month's companies to
  * work on (top filter, scoped to only the companies that already have a sheet for this month/year
- * — see GuidelinePricesTab.tsx's "manage companies" popover, which is this page's other entry
- * point via its own ✏️ button, pre-selecting the company through ?supplierId=).
+ * — also reachable via that same table's ✏️ edit-companies popover, which deep-links here with
+ * ?supplierId= pre-filled).
  *
  * The product list auto-populates from that supplier's own Purchasing history (real paid receipts
  * only — free-goods receipts are excluded server-side since their price is always forced to 0),
@@ -68,6 +85,8 @@ export function GuidelinePriceDetailPage() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const canEdit = hasPermission('sales.guidelinePrice.edit');
   const [searchParams, setSearchParams] = useSearchParams();
+  const printRef = useRef<HTMLDivElement>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const sheetsQuery = useQuery({
     queryKey: ['guideline-price-sheets', companyId],
@@ -75,8 +94,15 @@ export function GuidelinePriceDetailPage() {
     enabled: !!companyId,
   });
 
+  const companiesQuery = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => unwrap<Company[]>(apiClient.get('/settings/companies')),
+  });
+  const company = companiesQuery.data?.find((c) => c.id === companyId) ?? companiesQuery.data?.[0];
+
   const groupSheets = (sheetsQuery.data ?? []).filter((s) => String(s.year) === year && String(s.month) === month);
   const supplierOptions = groupSheets.map((s) => ({ value: s.supplierId, label: s.supplier?.companyName ?? '—' }));
+  const title = year && month ? `${monthNameOnly(Number(month), i18n.language)} ${year}` : '';
 
   const [supplierId, setSupplierId] = useState(searchParams.get('supplierId') ?? '');
   const selectedSheet = groupSheets.find((s) => s.supplierId === supplierId) ?? null;
@@ -104,6 +130,7 @@ export function GuidelinePriceDetailPage() {
         productId: p.productId,
         name: p.nameAr || p.nameEn,
         capacity: p.barcode ?? '—',
+        brand: p.brandNameAr || p.brandNameEn || '—',
         purchasePrice: Number(p.purchasePrice) || 0,
       });
     }
@@ -113,12 +140,25 @@ export function GuidelinePriceDetailPage() {
           productId: line.productId,
           name: line.product?.nameAr || line.product?.nameEn || '—',
           capacity: line.product?.barcode ?? '—',
+          brand: line.product?.brand?.nameAr || line.product?.brand?.nameEn || '—',
           purchasePrice: 0,
         });
       }
     }
     return Array.from(map.values());
   }, [supplierProductsQuery.data, selectedSheet]);
+
+  const [primarySort, setPrimarySort] = useState<SortField>('capacity');
+  const [secondarySort, setSecondarySort] = useState<SortField>('brand');
+
+  const sortedRows = useMemo(() => {
+    const sortValue = (r: ProductRow, field: SortField) => (field === 'capacity' ? r.capacity : r.brand);
+    return [...rows].sort((a, b) => {
+      const primaryDiff = sortValue(a, primarySort).localeCompare(sortValue(b, primarySort), 'ar');
+      if (primaryDiff !== 0) return primaryDiff;
+      return sortValue(a, secondarySort).localeCompare(sortValue(b, secondarySort), 'ar');
+    });
+  }, [rows, primarySort, secondarySort]);
 
   const [prices, setPrices] = useState<Record<string, string>>({});
 
@@ -143,11 +183,31 @@ export function GuidelinePriceDetailPage() {
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
+  async function handleDownloadPdf() {
+    if (!printRef.current) return;
+    setPdfLoading(true);
+    printRef.current.classList.add('pdf-export-mode');
+    try {
+      await new Promise(requestAnimationFrame);
+      await exportElementToPdf(
+        printRef.current,
+        buildPdfFileName('الأسعار الاسترشادية', selectedSheet?.supplier?.companyName, `${title} ${localToday()}`),
+        'portrait',
+      );
+    } catch {
+      toast.error(t('common.saveFailed'));
+    } finally {
+      printRef.current?.classList.remove('pdf-export-mode');
+      setPdfLoading(false);
+    }
+  }
+
   const discountRate = (selectedSheet?.discountPercentage ?? 0) / 100;
 
   const columns: Column<ProductRow>[] = [
     { header: t('guidelinePrices.capacity'), accessor: (r) => r.capacity },
     { header: t('guidelinePrices.itemName'), accessor: (r) => r.name },
+    { header: t('guidelinePrices.brand'), accessor: (r) => r.brand },
     { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice) },
     { header: t('guidelinePrices.discountValue'), accessor: (r) => formatAmount(r.purchasePrice * discountRate) },
     {
@@ -169,31 +229,74 @@ export function GuidelinePriceDetailPage() {
     },
   ];
 
-  const title = year && month ? `${monthNameOnly(Number(month), i18n.language)} ${year}` : '';
+  const sortOptions: { value: SortField; label: string }[] = [
+    { value: 'capacity', label: t('guidelinePrices.capacity') },
+    { value: 'brand', label: t('guidelinePrices.brand') },
+  ];
 
   return (
     <div>
       <PageHeader
         title={title}
         actions={
-          canEdit && selectedSheet ? (
-            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-              {t('common.save')}
-            </Button>
-          ) : undefined
+          <div className="flex flex-wrap gap-2 print:hidden">
+            {supplierId && (
+              <>
+                <Button variant="secondary" onClick={() => window.print()}>
+                  {t('common.print')}
+                </Button>
+                <Button variant="secondary" onClick={handleDownloadPdf} loading={pdfLoading}>
+                  {t('actions.downloadPdf')}
+                </Button>
+              </>
+            )}
+            {canEdit && selectedSheet && (
+              <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+                {t('common.save')}
+              </Button>
+            )}
+          </div>
         }
       />
 
-      <div className="mb-4 max-w-xs">
-        <FormField label={t('guidelinePrices.company')}>
-          <SearchableSelect
-            options={supplierOptions}
-            value={supplierId}
-            onChange={selectSupplier}
-            placeholder={t('guidelinePrices.selectCompany') ?? ''}
-            clearable
-          />
-        </FormField>
+      <div className="mb-4 flex flex-wrap items-end gap-4 print:hidden">
+        <div className="w-full max-w-xs">
+          <FormField label={t('guidelinePrices.company')}>
+            <SearchableSelect
+              options={supplierOptions}
+              value={supplierId}
+              onChange={selectSupplier}
+              placeholder={t('guidelinePrices.selectCompany') ?? ''}
+              clearable
+            />
+          </FormField>
+        </div>
+        {supplierId && (
+          <>
+            <div className="w-40">
+              <FormField label={t('guidelinePrices.primarySort')}>
+                <Select value={primarySort} onChange={(e) => setPrimarySort(e.target.value as SortField)}>
+                  {sortOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+            <div className="w-40">
+              <FormField label={t('guidelinePrices.secondarySort')}>
+                <Select value={secondarySort} onChange={(e) => setSecondarySort(e.target.value as SortField)}>
+                  {sortOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+          </>
+        )}
       </div>
 
       {!supplierId ? (
@@ -201,12 +304,19 @@ export function GuidelinePriceDetailPage() {
           {t('guidelinePrices.pickCompanyPrompt')}
         </div>
       ) : (
-        <DataTable
-          columns={columns}
-          data={rows}
-          keyField={(r) => r.productId}
-          isLoading={supplierProductsQuery.isLoading}
-        />
+        <div ref={printRef} className="printable-document">
+          <DocumentLetterhead
+            docTypeLabel={t('guidelinePrices.tabLabel')}
+            metaLine={`${t('guidelinePrices.company')}: ${selectedSheet?.supplier?.companyName ?? ''}  |  ${title}`}
+            company={company}
+          />
+          <DataTable
+            columns={columns}
+            data={sortedRows}
+            keyField={(r) => r.productId}
+            isLoading={supplierProductsQuery.isLoading}
+          />
+        </div>
       )}
     </div>
   );

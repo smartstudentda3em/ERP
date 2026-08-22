@@ -1104,7 +1104,10 @@
     "discountValue": "قيمة الخصم",
     "netPurchasePrice": "سعر الشراء الحقيقي",
     "expectedSalePrice": "سعر البيع المتوقع",
-    "pickCompanyPrompt": "اختر شركة لعرض أصنافها"
+    "pickCompanyPrompt": "اختر شركة لعرض أصنافها",
+    "brand": "الماركة",
+    "primarySort": "الترتيب الأساسي",
+    "secondarySort": "الترتيب الفرعي"
   },
   "salesRepresentativesReports": {
     "listTabPress": "مدراء الأفرع",

@@ -1104,7 +1104,10 @@
     "discountValue": "Discount Value",
     "netPurchasePrice": "Net Purchase Price",
     "expectedSalePrice": "Expected Sale Price",
-    "pickCompanyPrompt": "Select a company to view its items"
+    "pickCompanyPrompt": "Select a company to view its items",
+    "brand": "Brand",
+    "primarySort": "Primary Sort",
+    "secondarySort": "Secondary Sort"
   },
   "salesRepresentativesReports": {
     "listTabPress": "Branch Managers",

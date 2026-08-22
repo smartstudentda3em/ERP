@@ -17,7 +17,7 @@ export class GuidelinePricesService {
   async findAll(companyId: string): Promise<GuidelinePriceSheet[]> {
     return this.repo.find({
       where: { companyId },
-      relations: ['lines', 'lines.product', 'supplier'],
+      relations: ['lines', 'lines.product', 'lines.product.brand', 'supplier'],
       order: { year: 'DESC', month: 'DESC' },
     });
   }
@@ -25,7 +25,7 @@ export class GuidelinePricesService {
   async findOne(id: string, companyId: string): Promise<GuidelinePriceSheet> {
     const sheet = await this.repo.findOne({
       where: { id, companyId },
-      relations: ['lines', 'lines.product', 'supplier'],
+      relations: ['lines', 'lines.product', 'lines.product.brand', 'supplier'],
     });
     if (!sheet) throw new NotFoundException('Guideline price sheet not found');
     return sheet;
@@ -102,16 +102,29 @@ export class GuidelinePricesService {
   async findSupplierProducts(
     supplierId: string,
     companyId: string,
-  ): Promise<{ productId: string; nameEn: string; nameAr: string | null; barcode: string | null; purchasePrice: number }[]> {
+  ): Promise<
+    {
+      productId: string;
+      nameEn: string;
+      nameAr: string | null;
+      barcode: string | null;
+      brandNameEn: string | null;
+      brandNameAr: string | null;
+      purchasePrice: number;
+    }[]
+  > {
     return this.dataSource.query(
       `SELECT DISTINCT ON (pr."productId")
          pr."productId"  AS "productId",
          pr."unitCost"   AS "purchasePrice",
          p."nameEn"      AS "nameEn",
          p."nameAr"      AS "nameAr",
-         p."barcode"     AS "barcode"
+         p."barcode"     AS "barcode",
+         b."nameEn"      AS "brandNameEn",
+         b."nameAr"      AS "brandNameAr"
        FROM purchase_receipts pr
        JOIN products p ON p.id = pr."productId"
+       LEFT JOIN brands b ON b.id = p."brandId"
        WHERE pr."supplierId" = $1 AND pr."companyId" = $2 AND pr."isFreeGoods" = false
        ORDER BY pr."productId", pr."receiptDate" DESC, pr."createdAt" DESC`,
       [supplierId, companyId],

@@ -26,9 +26,11 @@ export class CreateGuidelinePriceSheetDto {
   companies: GuidelinePriceCompanyEntryDto[];
 }
 
-/** Month/year/companyId are the sheet's identity and immutable after creation — only `lines` can
- * be edited, full replace-on-edit (matches Quotation's convention): omitted entirely leaves the
- * existing lines untouched. */
+/** Month/year/companyId/supplierId are the sheet's identity and immutable after creation —
+ * everything else can be edited. `lines` is full replace-on-edit (matches Quotation's convention):
+ * omitted entirely leaves the existing lines untouched. Same for isAuthorizedAgent/
+ * discountPercentage: each is independently optional, so the Guideline Prices table's "edit
+ * companies" modal can patch just those two fields without having to resend lines. */
 export class UpdateGuidelinePriceSheetDto {
   @IsOptional()
   @IsArray()
@@ -36,4 +38,14 @@ export class UpdateGuidelinePriceSheetDto {
   @ValidateNested({ each: true })
   @Type(() => GuidelinePriceLineDto)
   lines?: GuidelinePriceLineDto[];
+
+  @IsOptional()
+  @IsBoolean()
+  isAuthorizedAgent?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  discountPercentage?: number;
 }

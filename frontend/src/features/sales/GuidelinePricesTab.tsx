@@ -11,6 +11,7 @@ import { Modal } from '../../components/ui/Modal';
 import { FormField, Input, Select } from '../../components/ui/Input';
 import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { DataTable, Column } from '../../components/ui/DataTable';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 
@@ -44,6 +45,11 @@ interface SupplierOption {
 }
 
 interface CompanyRowForm {
+  /** Set only for a row that already exists as a real sheet — an unset sheetId means this row is
+   * brand new and hasn't been saved yet, which is what tells the save handlers below whether to
+   * PATCH (update) or POST (create) it, and lets the company cell stay locked/read-only for a row
+   * that already has real data (lines, etc.) tied to its supplier. */
+  sheetId?: string;
   supplierId: string;
   isAuthorizedAgent: boolean;
   discountPercentage: string;
@@ -54,6 +60,94 @@ function emptyCompanyRow(): CompanyRowForm {
 }
 
 const iconButtonClass = 'rounded-lg p-2 text-lg leading-none hover:bg-black/5 dark:hover:bg-white/5';
+
+/** Shared dynamic row list for both the "add" and "edit" modals below — a row's company picker is
+ * locked to plain text once it already has a real sheetId (see CompanyRowForm's doc comment); a
+ * freshly-added row keeps a live SearchableSelect. */
+function CompanyRowsEditor({
+  rows,
+  onChange,
+  supplierOptions,
+  labels,
+}: {
+  rows: CompanyRowForm[];
+  onChange: (rows: CompanyRowForm[]) => void;
+  supplierOptions: { value: string; label: string }[];
+  labels: { company: string; discount: string; agent: string; selectCompany: string; addCompany: string; delete: string };
+}) {
+  function update(i: number, patch: Partial<CompanyRowForm>) {
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+  function remove(i: number) {
+    onChange(rows.filter((_, idx) => idx !== i));
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+        <table className="app-table">
+          <thead>
+            <tr>
+              <th>{labels.company}</th>
+              <th>{labels.discount}</th>
+              <th>{labels.agent}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i}>
+                <td>
+                  {row.sheetId ? (
+                    <span>{supplierOptions.find((o) => o.value === row.supplierId)?.label ?? '—'}</span>
+                  ) : (
+                    <SearchableSelect
+                      options={supplierOptions}
+                      value={row.supplierId}
+                      onChange={(v) => update(i, { supplierId: v })}
+                      placeholder={labels.selectCompany}
+                    />
+                  )}
+                </td>
+                <td>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    required
+                    value={row.discountPercentage}
+                    onChange={(e) => update(i, { discountPercentage: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={row.isAuthorizedAgent}
+                    onChange={(e) => update(i, { isAuthorizedAgent: e.target.checked })}
+                  />
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="rounded-lg p-2 text-lg leading-none hover:bg-black/5 dark:hover:bg-white/5"
+                    onClick={() => remove(i)}
+                    aria-label={labels.delete}
+                    title={labels.delete}
+                  >
+                    🗑️
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Button type="button" variant="secondary" onClick={() => onChange([...rows, emptyCompanyRow()])}>
+        + {labels.addCompany}
+      </Button>
+    </div>
+  );
+}
 
 export function GuidelinePricesTab() {
   const { t, i18n } = useTranslation();
@@ -72,7 +166,9 @@ export function GuidelinePricesTab() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [companyRows, setCompanyRows] = useState<CompanyRowForm[]>([emptyCompanyRow()]);
-  const [manageGroupKey, setManageGroupKey] = useState<string | null>(null);
+
+  const [editGroupKey, setEditGroupKey] = useState<string | null>(null);
+  const [editCompanyRows, setEditCompanyRows] = useState<CompanyRowForm[]>([]);
 
   const sheetsQuery = useQuery({
     queryKey: ['guideline-price-sheets', companyId],
@@ -83,15 +179,24 @@ export function GuidelinePricesTab() {
   const suppliersQuery = useQuery({
     queryKey: ['suppliers', companyId],
     queryFn: () => unwrap<SupplierOption[]>(apiClient.get('/suppliers', { params: { companyId } })),
-    enabled: modalOpen && !!companyId,
+    enabled: (modalOpen || !!editGroupKey) && !!companyId,
   });
   const supplierOptions = (suppliersQuery.data ?? []).map((s) => ({ value: s.id, label: s.companyName }));
 
+  const rowLabels = {
+    company: t('guidelinePrices.company'),
+    discount: t('guidelinePrices.discountPercentage'),
+    agent: t('guidelinePrices.isAuthorizedAgent'),
+    selectCompany: t('guidelinePrices.selectCompany') ?? '',
+    addCompany: t('guidelinePrices.addCompany'),
+    delete: t('common.delete'),
+  };
+
   // One row per month/year, grouping every company's sheet for that month together — the list
   // table's job is now "which companies have a sheet this month", not per-model prices (those
-  // differ per company and are managed per-sheet from the company popover below). Insertion order
-  // follows sheetsQuery.data's own year/month DESC ordering from the backend, so groups stay
-  // correctly sorted without a separate sort step here.
+  // differ per company and are managed per-sheet from the detail page, see onRowClick below).
+  // Insertion order follows sheetsQuery.data's own year/month DESC ordering from the backend, so
+  // groups stay correctly sorted without a separate sort step here.
   const groupedRows = useMemo(() => {
     const groups = new Map<string, GroupedSheetsRow>();
     for (const sheet of sheetsQuery.data ?? []) {
@@ -103,7 +208,7 @@ export function GuidelinePricesTab() {
     return Array.from(groups.values());
   }, [sheetsQuery.data]);
 
-  const manageGroup = groupedRows.find((g) => `${g.year}-${g.month}` === manageGroupKey) ?? null;
+  const editGroup = groupedRows.find((g) => `${g.year}-${g.month}` === editGroupKey) ?? null;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -127,8 +232,64 @@ export function GuidelinePricesTab() {
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiClient.delete(`/sales/guideline-prices/${id}`),
+  function openEditGroup(group: GroupedSheetsRow) {
+    setEditGroupKey(`${group.year}-${group.month}`);
+    setEditCompanyRows(
+      group.sheets.map((s) => ({
+        sheetId: s.id,
+        supplierId: s.supplierId,
+        isAuthorizedAgent: s.isAuthorizedAgent,
+        discountPercentage: String(Number(s.discountPercentage)),
+      })),
+    );
+  }
+
+  // Reconciles the edited row list against the group's real sheets: a row that lost its sheetId's
+  // match (removed by the user) gets deleted, an existing row's discount/agent gets patched, and a
+  // brand-new row (no sheetId) gets created via the same bulk-create endpoint the "add" modal uses
+  // — all in parallel, then one shared invalidate/toast once every request settles.
+  const editSaveMutation = useMutation({
+    mutationFn: async () => {
+      if (!editGroup) return;
+      const keptIds = new Set(editCompanyRows.filter((r) => r.sheetId).map((r) => r.sheetId));
+      const removed = editGroup.sheets.filter((s) => !keptIds.has(s.id));
+      const changed = editCompanyRows.filter((r) => r.sheetId);
+      const added = editCompanyRows.filter((r) => !r.sheetId && r.supplierId);
+
+      await Promise.all([
+        ...removed.map((s) => apiClient.delete(`/sales/guideline-prices/${s.id}`)),
+        ...changed.map((r) =>
+          apiClient.patch(`/sales/guideline-prices/${r.sheetId}`, {
+            isAuthorizedAgent: r.isAuthorizedAgent,
+            discountPercentage: Number(r.discountPercentage) || 0,
+          }),
+        ),
+        ...(added.length
+          ? [
+              apiClient.post('/sales/guideline-prices', {
+                month: editGroup.month,
+                year: editGroup.year,
+                companies: added.map((r) => ({
+                  supplierId: r.supplierId,
+                  isAuthorizedAgent: r.isAuthorizedAgent,
+                  discountPercentage: Number(r.discountPercentage) || 0,
+                })),
+              }),
+            ]
+          : []),
+      ]);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['guideline-price-sheets'] });
+      setEditGroupKey(null);
+      toast.success(t('guidelinePrices.updated'));
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: (group: GroupedSheetsRow) =>
+      Promise.all(group.sheets.map((s) => apiClient.delete(`/sales/guideline-prices/${s.id}`))),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guideline-price-sheets'] });
       toast.success(t('guidelinePrices.deleted'));
@@ -136,49 +297,81 @@ export function GuidelinePricesTab() {
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
-  async function handleDelete(e: MouseEvent, sheet: GuidelinePriceSheet) {
+  async function handleDeleteGroup(e: MouseEvent, group: GroupedSheetsRow) {
     e.stopPropagation();
     const ok = await confirm({
-      message: t('common.confirmDelete', {
-        name: `${sheet.supplier?.companyName ?? ''} — ${monthNameOnly(sheet.month, i18n.language)} ${sheet.year}`,
-      }),
+      message: t('common.confirmDelete', { name: `${monthNameOnly(group.month, i18n.language)} ${group.year}` }),
     });
-    if (ok) deleteMutation.mutate(sheet.id);
-  }
-
-  function updateCompanyRow(index: number, patch: Partial<CompanyRowForm>) {
-    setCompanyRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-  }
-  function removeCompanyRow(index: number) {
-    setCompanyRows((rows) => rows.filter((_, i) => i !== index));
+    if (ok) deleteGroupMutation.mutate(group);
   }
 
   const columns: Column<GroupedSheetsRow>[] = [
     { header: t('guidelinePrices.month'), accessor: (r) => `${monthNameOnly(r.month, i18n.language)} ${r.year}` },
     {
-      header: t('guidelinePrices.company'),
-      accessor: (r) => {
-        const visible = r.sheets.slice(0, 2);
-        const overflow = r.sheets.length - visible.length;
-        return (
-          <button
-            type="button"
-            className="inline-flex flex-wrap items-center justify-center gap-1.5 hover:underline"
-            onClick={(e) => {
-              e.stopPropagation();
-              setManageGroupKey(`${r.year}-${r.month}`);
-            }}
-          >
-            <span>{visible.map((s) => s.supplier?.companyName ?? '—').join(' - ')}</span>
-            {overflow > 0 && (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                {t('guidelinePrices.moreCompanies', { count: overflow })}
-              </span>
-            )}
-          </button>
-        );
-      },
+      header: t('guidelinePrices.companies'),
+      accessor: (r) => (
+        <span className="inline-flex flex-wrap items-center justify-center gap-x-1">
+          {r.sheets.map((s, i) => (
+            <span key={s.id} className="inline-flex items-center gap-1">
+              {i > 0 && <span className="text-[var(--text-muted)]">-</span>}
+              <Tooltip
+                content={
+                  <div className="flex flex-col gap-0.5">
+                    <div>
+                      {t('guidelinePrices.discountPercentage')}: {formatAmount(s.discountPercentage)}%
+                    </div>
+                    <div>
+                      {t(s.isAuthorizedAgent ? 'guidelinePrices.isAuthorizedAgent' : 'guidelinePrices.notAuthorizedAgent')}
+                    </div>
+                  </div>
+                }
+              >
+                <span className="text-blue-600 dark:text-blue-400">{s.supplier?.companyName ?? '—'}</span>
+              </Tooltip>
+            </span>
+          ))}
+        </span>
+      ),
     },
+    ...(canEdit || canDelete
+      ? [
+          {
+            header: t('common.actions'),
+            isActions: true,
+            accessor: (r: GroupedSheetsRow) => (
+              <div className="flex flex-wrap justify-center gap-1">
+                {canEdit && (
+                  <button
+                    type="button"
+                    className={iconButtonClass}
+                    title={t('common.edit')}
+                    aria-label={t('common.edit')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditGroup(r);
+                    }}
+                  >
+                    ✏️
+                  </button>
+                )}
+                {canDelete && (
+                  <button
+                    type="button"
+                    className={iconButtonClass}
+                    title={t('common.delete')}
+                    aria-label={t('common.delete')}
+                    onClick={(e) => handleDeleteGroup(e, r)}
+                    disabled={deleteGroupMutation.isPending}
+                  >
+                    🗑️
+                  </button>
+                )}
+              </div>
+            ),
+            align: 'center' as const,
+          },
+        ]
+      : []),
   ];
 
   const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -227,66 +420,7 @@ export function GuidelinePricesTab() {
             </FormField>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
-              <table className="app-table">
-                <thead>
-                  <tr>
-                    <th>{t('guidelinePrices.company')}</th>
-                    <th>{t('guidelinePrices.discountPercentage')}</th>
-                    <th>{t('guidelinePrices.isAuthorizedAgent')}</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {companyRows.map((row, i) => (
-                    <tr key={i}>
-                      <td>
-                        <SearchableSelect
-                          options={supplierOptions}
-                          value={row.supplierId}
-                          onChange={(v) => updateCompanyRow(i, { supplierId: v })}
-                          placeholder={t('guidelinePrices.selectCompany') ?? ''}
-                        />
-                      </td>
-                      <td>
-                        <Input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          required
-                          value={row.discountPercentage}
-                          onChange={(e) => updateCompanyRow(i, { discountPercentage: e.target.value })}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={row.isAuthorizedAgent}
-                          onChange={(e) => updateCompanyRow(i, { isAuthorizedAgent: e.target.checked })}
-                        />
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="rounded-lg p-2 text-lg leading-none hover:bg-black/5 dark:hover:bg-white/5"
-                          onClick={() => removeCompanyRow(i)}
-                          aria-label={t('common.delete')}
-                          title={t('common.delete')}
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Button type="button" variant="secondary" onClick={() => setCompanyRows([...companyRows, emptyCompanyRow()])}>
-              + {t('guidelinePrices.addCompany')}
-            </Button>
-          </div>
+          <CompanyRowsEditor rows={companyRows} onChange={setCompanyRows} supplierOptions={supplierOptions} labels={rowLabels} />
 
           <div className="flex justify-end gap-2 border-t border-[var(--border)] pt-4">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
@@ -300,61 +434,33 @@ export function GuidelinePricesTab() {
       </Modal>
 
       <Modal
-        open={!!manageGroup}
-        onClose={() => setManageGroupKey(null)}
-        title={manageGroup ? `${monthNameOnly(manageGroup.month, i18n.language)} ${manageGroup.year}` : ''}
-        widthClass="max-w-2xl"
+        open={!!editGroup}
+        onClose={() => setEditGroupKey(null)}
+        title={editGroup ? `${monthNameOnly(editGroup.month, i18n.language)} ${editGroup.year}` : ''}
+        widthClass="max-w-4xl"
       >
-        <div className="flex flex-col gap-2">
-          {(manageGroup?.sheets ?? []).map((sheet) => (
-            <div
-              key={sheet.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--border)] p-3"
-            >
-              <div>
-                <div className="font-medium">{sheet.supplier?.companyName ?? '—'}</div>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
-                  <span>
-                    {t('guidelinePrices.discountPercentage')}: {formatAmount(sheet.discountPercentage)}%
-                  </span>
-                  {sheet.isAuthorizedAgent && (
-                    <span className="rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
-                      {t('guidelinePrices.isAuthorizedAgent')}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-1">
-                {canEdit && (
-                  <button
-                    type="button"
-                    className={iconButtonClass}
-                    title={t('common.edit')}
-                    aria-label={t('common.edit')}
-                    onClick={() => {
-                      setManageGroupKey(null);
-                      navigate(`/suppliers/guideline-prices/${sheet.year}/${sheet.month}?supplierId=${sheet.supplierId}`);
-                    }}
-                  >
-                    ✏️
-                  </button>
-                )}
-                {canDelete && (
-                  <button
-                    type="button"
-                    className={iconButtonClass}
-                    title={t('common.delete')}
-                    aria-label={t('common.delete')}
-                    onClick={(e) => handleDelete(e, sheet)}
-                    disabled={deleteMutation.isPending}
-                  >
-                    🗑️
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        <form
+          className="flex flex-col gap-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            editSaveMutation.mutate();
+          }}
+        >
+          <CompanyRowsEditor
+            rows={editCompanyRows}
+            onChange={setEditCompanyRows}
+            supplierOptions={supplierOptions}
+            labels={rowLabels}
+          />
+          <div className="flex justify-end gap-2 border-t border-[var(--border)] pt-4">
+            <Button type="button" variant="secondary" onClick={() => setEditGroupKey(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={editSaveMutation.isPending}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

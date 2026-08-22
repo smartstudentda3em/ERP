@@ -84,6 +84,8 @@ export class GuidelinePricesService {
           lineRepo.create({ sheetId: id, productId: line.productId, price: line.price }),
         );
       }
+      if (dto.isAuthorizedAgent !== undefined) sheet.isAuthorizedAgent = dto.isAuthorizedAgent;
+      if (dto.discountPercentage !== undefined) sheet.discountPercentage = dto.discountPercentage;
       return sheetRepo.save(sheet);
     });
   }

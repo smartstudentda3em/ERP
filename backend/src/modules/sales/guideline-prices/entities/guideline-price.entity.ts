@@ -8,10 +8,10 @@ import { Supplier } from "../../../parties/suppliers/entities/supplier.entity";
  * GuidelinePricesTab.tsx's isAirConditioning gate; there is no backend-side company check, same
  * convention as the Installments module, which is also AC-only and relies purely on frontend
  * gating + normal companyId scoping). The unique constraint is the sheet's real identity:
- * month/year/supplier are immutable after creation, only `lines` can be edited (see
- * UpdateGuidelinePriceSheetDto). `lines` starts empty at creation — the "add" flow's first step
- * only captures this header data (supplier, agent status, discount); models/prices are filled in
- * afterwards via edit. */
+ * month/year/supplier are immutable after creation — everything else (lines, isAuthorizedAgent,
+ * discountPercentage) can be edited independently (see UpdateGuidelinePriceSheetDto). `lines`
+ * starts empty at creation — the "add" flow's first step only captures this header data (supplier,
+ * agent status, discount); models/prices are filled in afterwards via the detail page. */
 @Entity("guideline_price_sheets")
 @Unique(["companyId", "year", "month", "supplierId"])
 export class GuidelinePriceSheet extends BaseEntity {

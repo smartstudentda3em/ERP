@@ -112,8 +112,11 @@ export function QuotationsPage() {
     setEditLines(
       (q.lines ?? []).map((l) => ({
         productId: l.productId,
-        quantity: String(l.quantity),
-        unitPrice: String(l.unitPrice),
+        // Number(...) before String(...) — l.quantity/l.unitPrice are typed as `number` but the
+        // API actually returns Postgres numeric columns as fixed-decimal strings (e.g.
+        // "3000.0000"); without this, the raw DB string lands straight in these editable fields.
+        quantity: String(Number(l.quantity)),
+        unitPrice: String(Number(l.unitPrice)),
         unitKind: 'UNIT' as const,
         lineTotal: String(roundTo(l.quantity * l.unitPrice)),
         pendingTotalOverride: false,

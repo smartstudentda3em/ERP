@@ -175,7 +175,11 @@ export function SalesLineEditor({
     if (patch.productId !== undefined) {
       const product = products.find((p) => p.id === patch.productId);
       line.unitKind = 'UNIT';
-      if (product && product.sellingPrice !== null) line.unitPrice = String(product.sellingPrice);
+      // Number(...) before String(...), not a bare String() — sellingPrice is typed as `number`
+      // here but the API actually returns Postgres numeric columns as fixed-4-decimal strings
+      // (e.g. "3000.0000"); Number() parses that and String() of the resulting number drops the
+      // trailing zeros, instead of the raw DB string landing straight in this editable field.
+      if (product && product.sellingPrice !== null) line.unitPrice = String(Number(product.sellingPrice));
       line.pendingTotalOverride = false;
       line.lineTotal = String(roundTo(Number(line.quantity || 0) * Number(line.unitPrice || 0)));
     } else if (patch.lineTotal !== undefined) {
@@ -214,7 +218,9 @@ export function SalesLineEditor({
     next[index] = { ...line, unitKind };
     if (product) {
       const suggested = pricingFor(product, unitKind).suggestedPrice;
-      if (suggested !== null) next[index].unitPrice = String(suggested);
+      // Same Number()-before-String() normalization as updateLine() above — suggestedPrice
+      // traces back to the same raw numeric-string product fields.
+      if (suggested !== null) next[index].unitPrice = String(Number(suggested));
     }
     next[index].pendingTotalOverride = false;
     next[index].lineTotal = String(roundTo(Number(next[index].quantity || 0) * Number(next[index].unitPrice || 0)));

@@ -22,8 +22,17 @@ export class InstallmentPlanLineDto {
 }
 
 export class CreateInstallmentPlanDto {
-  @IsUUID() customerId: string;
+  /** Optional only for Air Conditioning's quick-entry flow (typed Name/Phone/Address instead of
+   * picking an existing customer) — see customerName below. Enforced in the service, not here,
+   * since resolving/creating the customer must happen inside the same transaction as the rest of
+   * plan creation. */
+  @IsOptional() @IsUUID() customerId?: string;
   @IsUUID() warehouseId: string;
+  /** Quick-entry only — resolved to a real Customer row by phone match (reusing an existing one
+   * for a repeat buyer), same as the Sales Invoice "credit" branch. */
+  @IsOptional() @IsString() customerName?: string;
+  @IsOptional() @IsString() customerPhone?: string;
+  @IsOptional() @IsString() customerAddress?: string;
   @IsDateString() purchaseDate: string;
   @IsNumber() @Min(0) downPayment: number;
   @IsEnum(InstallmentInterestType) interestType: InstallmentInterestType;

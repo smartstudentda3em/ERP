@@ -19,6 +19,9 @@ import { localToday } from '../../lib/date-utils';
 import { SalesLineEditor, SalesLineForm, emptyLine, linesToPayload, computeGrandTotal } from './SalesLineEditor';
 import { useSalesRepLock } from './useSalesRepLock';
 import { useActiveCompany, useIsSalesRep } from '../../lib/use-active-company';
+import { computeInstallmentTerms } from '../../lib/installment-calculator';
+
+type AcSaleType = 'CASH' | 'CREDIT' | 'INSTALLMENT';
 
 interface SalesInvoice {
   id: string;
@@ -31,6 +34,7 @@ interface SalesInvoice {
   customer: { name: string };
   customerName: string | null;
   customerPhone: string | null;
+  customerAddress: string | null;
   paymentAccount: 'CASH' | 'BANK' | null;
   salesRepresentativeId: string | null;
   branchId: string | null;
@@ -82,6 +86,19 @@ export function SalesInvoicesPage() {
   const [branchId, setBranchId] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  // Air Conditioning only — quick customer entry (type Name/Phone/Address instead of searching an
+  // existing customer) plus the sale-type routing this drives: CASH is never added to the
+  // Customers list (a shared walk-in placeholder absorbs it), CREDIT resolves/creates a real
+  // Customer row (reused by phone match for a repeat buyer), INSTALLMENT skips SalesInvoice
+  // entirely and posts to /installments instead — see createMutation below.
+  const [acCustomerName, setAcCustomerName] = useState('');
+  const [acCustomerPhone, setAcCustomerPhone] = useState('');
+  const [acCustomerAddress, setAcCustomerAddress] = useState('');
+  const [acSaleType, setAcSaleType] = useState<AcSaleType>('CASH');
+  const [acDownPayment, setAcDownPayment] = useState('0');
+  const [acInterestType, setAcInterestType] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY');
+  const [acInterestRate, setAcInterestRate] = useState('0');
+  const [acTenureMonths, setAcTenureMonths] = useState('6');
   const [salesRepresentativeId, setSalesRepresentativeId] = useState('');
   const [createdById, setCreatedById] = useState(currentUser?.id ?? '');
   const [invoiceDate, setInvoiceDate] = useState(localToday());
@@ -112,6 +129,17 @@ export function SalesInvoicesPage() {
     paidAmountNumber <= 0 ? 'UNPAID' : paidAmountNumber >= grandTotal ? 'PAID' : 'PARTIALLY_PAID';
   const paymentStatusColor =
     paymentStatusKey === 'PAID' ? 'green' : paymentStatusKey === 'PARTIALLY_PAID' ? 'yellow' : 'gray';
+  const acTerms = useMemo(
+    () =>
+      computeInstallmentTerms(
+        grandTotal,
+        Number(acDownPayment) || 0,
+        acInterestType,
+        Number(acInterestRate) || 0,
+        Number(acTenureMonths) || 1,
+      ),
+    [grandTotal, acDownPayment, acInterestType, acInterestRate, acTenureMonths],
+  );
 
   const invoicesQuery = useQuery({
     queryKey: ['sales-invoices', companyId],
@@ -152,7 +180,7 @@ export function SalesInvoicesPage() {
   // Queries /auth/my-companies (via useActiveCompany) rather than the settings.company.view-gated
   // /settings/companies — a role like "مدير فرع" or "مندوب" has neither that permission nor any
   // reason to, so the gated endpoint 403'd silently and left isPrintingPress always false for them.
-  const { company: currentCompany, isPrintingPress, isStationery } = useActiveCompany();
+  const { company: currentCompany, isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
   // Stationery-only governance: even a true Administrator is locked to their own identity here —
   // no free rep/user picker — so the "المندوب أو المسؤول" field always shows exactly whoever is
   // logged in, matching Manager/مندوب's existing lock below. AC and Press keep the Administrator's
@@ -222,23 +250,46 @@ export function SalesInvoicesPage() {
   const resolvedRepId = (isAdmin ? salesRepresentativeId : ownRep?.id) || undefined;
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      apiClient.post('/sales/invoices', {
+    mutationFn: () => {
+      // AC "تقسيط" never creates a Sales Invoice at all — installment sales are their own
+      // standalone document (see InstallmentsPage.tsx), so this posts straight to /installments
+      // with the same quick-entered customer and lines instead.
+      if (isAirConditioning && acSaleType === 'INSTALLMENT') {
+        return apiClient.post('/installments', {
+          customerName: acCustomerName,
+          customerPhone: acCustomerPhone,
+          customerAddress: acCustomerAddress || undefined,
+          warehouseId,
+          purchaseDate: invoiceDate,
+          downPayment: Number(acDownPayment) || 0,
+          interestType: acInterestType,
+          interestRate: Number(acInterestRate) || 0,
+          tenureMonths: Number(acTenureMonths) || 1,
+          lines: lines
+            .filter((l) => l.productId)
+            .map((l) => ({ productId: l.productId, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice) })),
+        });
+      }
+      return apiClient.post('/sales/invoices', {
         invoiceDate,
-        customerId,
+        customerId: isAirConditioning ? undefined : customerId,
         warehouseId: isPrintingPress ? resolvedWarehouseId : warehouseId,
         companyId,
         salesRepresentativeId: resolvedRepId,
         createdById: (isAdmin ? createdById : currentUserId) || undefined,
-        paidAmount: paidAmountNumber,
+        paidAmount: isAirConditioning && acSaleType === 'CASH' ? grandTotal : paidAmountNumber,
         paymentAccount: requiresPaymentAccount ? paymentAccount : undefined,
         branchId: isPrintingPress ? branchId || undefined : undefined,
-        customerName: isPrintingPress ? customerName || undefined : undefined,
-        customerPhone: isPrintingPress ? customerPhone || undefined : undefined,
+        customerName: isPrintingPress ? customerName || undefined : isAirConditioning ? acCustomerName || undefined : undefined,
+        customerPhone: isPrintingPress ? customerPhone || undefined : isAirConditioning ? acCustomerPhone || undefined : undefined,
+        customerAddress: isAirConditioning ? acCustomerAddress || undefined : undefined,
+        quickSaleType: isAirConditioning ? acSaleType : undefined,
         lines: linesToPayload(lines),
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales-invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['installment-plans'] });
       queryClient.invalidateQueries({ queryKey: ['customer-statement'] });
       queryClient.invalidateQueries({ queryKey: ['customer-outstanding-invoices'] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
@@ -246,12 +297,21 @@ export function SalesInvoicesPage() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-recent-tx'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-sales-chart'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-top-products'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-levels'] });
       setModalOpen(false);
       setCustomerId('');
       setWarehouseId('');
       setBranchId('');
       setCustomerName('');
       setCustomerPhone('');
+      setAcCustomerName('');
+      setAcCustomerPhone('');
+      setAcCustomerAddress('');
+      setAcSaleType('CASH');
+      setAcDownPayment('0');
+      setAcInterestType('MONTHLY');
+      setAcInterestRate('0');
+      setAcTenureMonths('6');
       setSalesRepresentativeId('');
       setCreatedById(currentUser?.id ?? '');
       setLines([emptyLine()]);
@@ -358,8 +418,11 @@ export function SalesInvoicesPage() {
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('common.date'), accessor: (r) => r.invoiceDate },
     {
+      // AC's cash walk-in sales carry the real typed identity in customerName/customerPhone too
+      // (see SalesInvoicesService.create) — showing it here instead of the shared placeholder
+      // Customer row's name is what actually distinguishes one cash sale from another.
       header: isPrintingPress ? t('fields.customerName') : t('nav.customers'),
-      accessor: (r) => (isPrintingPress ? r.customerName || r.customer?.name || '—' : r.customer?.name),
+      accessor: (r) => r.customerName || r.customer?.name || '—',
     },
     ...(requiresPaymentAccount
       ? [
@@ -446,6 +509,14 @@ export function SalesInvoicesPage() {
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault();
+            // /installments has no concept of selling by package (a pre-existing limitation of
+            // that module, unrelated to this AC quick-entry feature) — better to block submission
+            // with a clear message than to silently send the raw package quantity as if it were
+            // base units and under-issue stock.
+            if (isAirConditioning && acSaleType === 'INSTALLMENT' && lines.some((l) => l.unitKind === 'PACKAGE')) {
+              setError(t('salesInvoice.installmentUnitOnly'));
+              return;
+            }
             createMutation.mutate();
           }}
         >
@@ -512,6 +583,85 @@ export function SalesInvoicesPage() {
                 )}
               </div>
             </Card>
+          ) : isAirConditioning ? (
+            <>
+              <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <FormField label={t('fields.customerName')}>
+                  <Input required value={acCustomerName} onChange={(e) => setAcCustomerName(e.target.value)} />
+                </FormField>
+                <FormField label={t('fields.phone')}>
+                  <Input required value={acCustomerPhone} onChange={(e) => setAcCustomerPhone(e.target.value)} />
+                </FormField>
+                <FormField label={t('fields.address')}>
+                  <Input value={acCustomerAddress} onChange={(e) => setAcCustomerAddress(e.target.value)} />
+                </FormField>
+                <FormField label={t('fields.warehouse')}>
+                  <Select required value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+                    <option value="">{t('actions.selectWarehouse')}</option>
+                    {(warehousesQuery.data ?? []).map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.nameEn}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+                <FormField label={t('common.date')}>
+                  <Input type="date" required value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                </FormField>
+                <FormField label={t('fields.invoiceOwner')}>
+                  <Select value={assigneeValue} disabled={!isAdmin} onChange={(e) => handleAssigneeChange(e.target.value)}>
+                    {isAdmin ? (
+                      <>
+                        <option value="">{t('actions.selectSalesRep')}</option>
+                        {(salesRepsQuery.data ?? []).map((r) => (
+                          <option key={r.id} value={`rep:${r.id}`}>
+                            {r.name}
+                          </option>
+                        ))}
+                        {(assignableUsersQuery.data ?? []).map((u) => (
+                          <option key={u.id} value={`user:${u.id}`}>
+                            {u.fullName}
+                          </option>
+                        ))}
+                      </>
+                    ) : (
+                      <option value={assigneeValue}>{lockedAssigneeLabel}</option>
+                    )}
+                  </Select>
+                </FormField>
+                {requiresPaymentAccount && acSaleType !== 'INSTALLMENT' && (
+                  <FormField label={t('fields.depositDestination')}>
+                    <Select
+                      required
+                      value={paymentAccount}
+                      onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
+                    >
+                      <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+                      <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                    </Select>
+                  </FormField>
+                )}
+              </div>
+
+              <Card className="col-span-2">
+                <CardHeader>
+                  <CardTitle>{t('salesInvoice.saleType')}</CardTitle>
+                </CardHeader>
+                <div className="flex flex-wrap gap-4">
+                  {(['CASH', 'CREDIT', 'INSTALLMENT'] as const).map((type) => (
+                    <label key={type} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="acSaleType"
+                        checked={acSaleType === type}
+                        onChange={() => setAcSaleType(type)}
+                      />
+                      {t(`salesInvoice.saleTypes.${type}`)}
+                    </label>
+                  ))}
+                </div>
+              </Card>
+            </>
           ) : (
             <>
               <div className="col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -584,6 +734,67 @@ export function SalesInvoicesPage() {
             layout={isPrintingPress ? 'grid' : 'table'}
           />
 
+          {isAirConditioning && acSaleType === 'INSTALLMENT' && (
+            <Card className="col-span-2">
+              <CardHeader>
+                <CardTitle>{t('installments.newPlan')}</CardTitle>
+              </CardHeader>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                <FormField label={t('installments.downPayment')}>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={acDownPayment}
+                    onChange={(e) => setAcDownPayment(e.target.value)}
+                  />
+                </FormField>
+                <FormField label={t('installments.interestType')}>
+                  <Select value={acInterestType} onChange={(e) => setAcInterestType(e.target.value as 'MONTHLY' | 'YEARLY')}>
+                    <option value="MONTHLY">{t('installments.monthly')}</option>
+                    <option value="YEARLY">{t('installments.yearly')}</option>
+                  </Select>
+                </FormField>
+                <FormField label={t('installments.interestRate')}>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={acInterestRate}
+                    onChange={(e) => setAcInterestRate(e.target.value)}
+                  />
+                </FormField>
+                <FormField label={t('installments.tenureMonths')}>
+                  <Input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={acTenureMonths}
+                    onChange={(e) => setAcTenureMonths(e.target.value)}
+                  />
+                </FormField>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div>
+                  <div className="text-xs text-[var(--text-muted)]">{t('installments.totalPrice')}</div>
+                  <div className="font-semibold">{formatAmount(grandTotal)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-[var(--text-muted)]">{t('installments.financedPrincipal')}</div>
+                  <div className="font-semibold">{formatAmount(acTerms.financedPrincipal)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-[var(--text-muted)]">{t('installments.totalInterest')}</div>
+                  <div className="font-semibold">{formatAmount(acTerms.totalInterestAmount)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-[var(--text-muted)]">{t('installments.installmentAmount')}</div>
+                  <div className="font-semibold">{formatAmount(acTerms.installmentAmount)}</div>
+                </div>
+              </div>
+            </Card>
+          )}
+
           {isPrintingPress ? (
             <Card className="col-span-2">
               <CardHeader>
@@ -610,31 +821,44 @@ export function SalesInvoicesPage() {
                 </div>
               </div>
             </Card>
-          ) : (
+          ) : isAirConditioning && acSaleType === 'INSTALLMENT' ? null : (
             <div className="col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Card>
                 <div className="text-xs text-[var(--text-muted)]">{t('common.total')}</div>
                 <div className="mt-1 text-lg font-semibold">{formatAmount(grandTotal)}</div>
               </Card>
               <Card>
-                <FormField label={t('fields.paidAmount')}>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={paidAmount}
-                    onChange={(e) => setPaidAmount(e.target.value)}
-                  />
-                </FormField>
+                {isAirConditioning && acSaleType === 'CASH' ? (
+                  <>
+                    <div className="text-xs text-[var(--text-muted)]">{t('fields.paidAmount')}</div>
+                    <div className="mt-1 text-lg font-semibold">{formatAmount(grandTotal)}</div>
+                  </>
+                ) : (
+                  <FormField label={t('fields.paidAmount')}>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={paidAmount}
+                      onChange={(e) => setPaidAmount(e.target.value)}
+                    />
+                  </FormField>
+                )}
               </Card>
               <Card>
                 <div className="text-xs text-[var(--text-muted)]">{t('fields.remainingAmount')}</div>
-                <div className="mt-1 text-lg font-semibold">{formatAmount(remainingAmount)}</div>
+                <div className="mt-1 text-lg font-semibold">
+                  {formatAmount(isAirConditioning && acSaleType === 'CASH' ? 0 : remainingAmount)}
+                </div>
               </Card>
               <Card>
                 <div className="text-xs text-[var(--text-muted)]">{t('common.status')}</div>
                 <div className="mt-1.5">
-                  <Badge color={paymentStatusColor}>{t(`docStatus.${paymentStatusKey}`)}</Badge>
+                  {isAirConditioning && acSaleType === 'CASH' ? (
+                    <Badge color="green">{t('salesInvoice.paidInFull')}</Badge>
+                  ) : (
+                    <Badge color={paymentStatusColor}>{t(`docStatus.${paymentStatusKey}`)}</Badge>
+                  )}
                 </div>
               </Card>
             </div>
@@ -648,7 +872,11 @@ export function SalesInvoicesPage() {
             </Button>
             <Button
               type="submit"
-              disabled={createMutation.isPending || (isPrintingPress && !resolvedWarehouseId)}
+              disabled={
+                createMutation.isPending ||
+                (isPrintingPress && !resolvedWarehouseId) ||
+                (isAirConditioning && (!acCustomerName || !acCustomerPhone))
+              }
             >
               {t('common.save')}
             </Button>

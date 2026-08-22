@@ -275,6 +275,16 @@
     "POSTED": "مرحّل",
     "REVERSED": "معكوس"
   },
+  "salesInvoice": {
+    "saleType": "نوع البيع",
+    "saleTypes": {
+      "CASH": "مدفوعة كاش",
+      "CREDIT": "متبقي عليها فلوس",
+      "INSTALLMENT": "تقسيط"
+    },
+    "paidInFull": "مدفوعة بالكامل",
+    "installmentUnitOnly": "البيع بالتقسيط متاح بالوحدة المفردة فقط — غيّر نوع البيع لأي صنف محدد بالعبوة."
+  },
   "accounting": {
     "allBranches": "جميع الفروع",
     "expenseReport": "تقرير المصروفات",

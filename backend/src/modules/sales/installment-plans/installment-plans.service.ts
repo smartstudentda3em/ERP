@@ -20,6 +20,8 @@ import { StockService } from '../../inventory/stock-movements/stock.service';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
 import { CreateInstallmentPlanDto, EarlySettleInstallmentPlanDto, RecordInstallmentPaymentDto } from './dto/installment-plan.dto';
 import { computeInstallmentTerms, generateInstallmentSchedule } from '../../../common/utils/installment-calculator';
+import { Company } from '../../settings/entities/company.entity';
+import { findOrCreateQuickCustomer } from '../../parties/customers/customer-quick-entry.util';
 
 const round = (n: number) => Math.round(n * 10000) / 10000;
 
@@ -48,6 +50,7 @@ export class InstallmentPlansService {
     @InjectRepository(InstallmentScheduleItem) private readonly itemRepo: Repository<InstallmentScheduleItem>,
     @InjectRepository(InstallmentPayment) private readonly paymentRepo: Repository<InstallmentPayment>,
     @InjectRepository(Customer) private readonly customerRepo: Repository<Customer>,
+    @InjectRepository(Company) private readonly companyRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly stockService: StockService,
@@ -60,13 +63,45 @@ export class InstallmentPlansService {
     createdById: string,
     branchId: string | null,
   ): Promise<InstallmentPlan> {
-    const customer = await this.customerRepo.findOne({ where: { id: dto.customerId } });
-    if (!customer || customer.companyId !== companyId) throw new NotFoundException('Customer not found');
-    if (customer.creditStatus === CustomerCreditStatus.BLOCKED) {
+    // Quick-entry (typed Name/Phone/Address instead of picking an existing customer) — the Sales
+    // Invoice modal's "تقسيط" branch routes here directly rather than ever creating a SalesInvoice
+    // (installment sales are a standalone document, see this file's own top-of-file doc comment).
+    // Resolved to a real Customer row inside the transaction below so a later failure (e.g.
+    // insufficient stock) rolls that customer creation back too; every other caller must still
+    // send a real customerId.
+    let customer: Customer | null = null;
+    if (dto.customerId) {
+      customer = await this.customerRepo.findOne({ where: { id: dto.customerId } });
+      if (!customer || customer.companyId !== companyId) throw new NotFoundException('Customer not found');
+    } else {
+      const company = await this.companyRepo.findOne({ where: { id: companyId } });
+      if (company?.code !== 'AC') throw new BadRequestException('customerId is required');
+      if (!dto.customerName || !dto.customerPhone) {
+        throw new BadRequestException('Customer name and phone are required');
+      }
+    }
+    if (customer?.creditStatus === CustomerCreditStatus.BLOCKED) {
       throw new ForbiddenException(customer.blockedReason || 'هذا العميل محظور من عقود التقسيط الجديدة');
     }
 
     return this.dataSource.transaction(async (manager) => {
+      // Quick-entry resolves to a real Customer row only inside the transaction (see above) — if
+      // the typed phone matches an existing customer who's since been BLOCKED, that must still be
+      // rejected exactly like the direct-customerId path above already is, so re-check it here now
+      // that the row is actually known instead of only checking the (always-null in this branch)
+      // `customer` captured before the transaction started.
+      const resolvedCustomer = customer
+        ? customer
+        : await findOrCreateQuickCustomer(manager, this.numberingSeriesService, companyId, {
+            name: dto.customerName!,
+            phone: dto.customerPhone!,
+            address: dto.customerAddress,
+          });
+      if (resolvedCustomer.creditStatus === CustomerCreditStatus.BLOCKED) {
+        throw new ForbiddenException(resolvedCustomer.blockedReason || 'هذا العميل محظور من عقود التقسيط الجديدة');
+      }
+      const resolvedCustomerId = resolvedCustomer.id;
+
       const documentNumber = await this.numberingSeriesService.getNextNumber(companyId, 'INSTALLMENT_PLAN');
 
       let totalPrice = 0;
@@ -111,7 +146,7 @@ export class InstallmentPlansService {
         // filter has something real to match against. See CashMovementsController for the same
         // fallback on manually-recorded expenses.
         branchId,
-        customerId: dto.customerId,
+        customerId: resolvedCustomerId,
         warehouseId: dto.warehouseId,
         purchaseDate: dto.purchaseDate,
         downPayment: dto.downPayment,
@@ -142,7 +177,7 @@ export class InstallmentPlansService {
             amount: dto.downPayment,
             sourceType: CashMovementSourceType.INSTALLMENT_PAYMENT,
             sourceId: saved.id,
-            partyCustomerId: dto.customerId,
+            partyCustomerId: resolvedCustomerId,
             description: `Down payment ${documentNumber}`,
             createdById,
           },

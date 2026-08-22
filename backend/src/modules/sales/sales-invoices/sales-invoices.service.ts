@@ -30,6 +30,7 @@ import { SalesRepresentative } from '../../parties/entities/sales-representative
 import { CommissionException } from '../../parties/entities/commission-exception.entity';
 import { buildExceptionsByRepId, resolveLineCommissionRate } from '../../parties/commission-rate.util';
 import { assertPaymentAccountProvided } from '../../../common/utils/payment-account.util';
+import { findOrCreateQuickCustomer, findOrCreateWalkInCustomer } from '../../parties/customers/customer-quick-entry.util';
 
 @Injectable()
 export class SalesInvoicesService {
@@ -180,12 +181,27 @@ export class SalesInvoicesService {
     companyId: string,
     userPermissions: string[] = [],
   ): Promise<SalesInvoice> {
+    const company = await this.companyRepo.findOne({ where: { id: companyId } });
+
     // A customerId belonging to another company must never be accepted — otherwise this invoice's
     // balance/statement would silently pollute a customer record the caller has no business
     // touching. 404s (not 400s) so a client can't distinguish "doesn't exist" from "exists in
     // another company", matching the findOneScoped convention used everywhere else in this codebase.
-    const customer = await this.customerRepo.findOne({ where: { id: dto.customerId, companyId } });
-    if (!customer) throw new NotFoundException('Customer not found');
+    //
+    // Air Conditioning's quick-entry flow (typed Name/Phone instead of picking an existing
+    // customer) omits customerId entirely — resolved to a real/placeholder Customer row inside the
+    // transaction below instead (see findOrCreateQuickCustomer/findOrCreateWalkInCustomer), so a
+    // later failure (e.g. insufficient stock) rolls that customer creation back too. Every other
+    // company must still send a real customerId; gated here rather than in the DTO since the rule
+    // depends on the company.
+    if (dto.customerId) {
+      const customer = await this.customerRepo.findOne({ where: { id: dto.customerId, companyId } });
+      if (!customer) throw new NotFoundException('Customer not found');
+    } else if (company?.code !== 'AC') {
+      throw new BadRequestException('customerId is required');
+    } else if (!dto.customerName || !dto.customerPhone) {
+      throw new BadRequestException('Customer name and phone are required');
+    }
 
     // Non-admins can never attribute an invoice to anyone but themselves — the client-submitted
     // salesRepresentativeId/createdById is ignored outright for them. See SalesRepAccessService.
@@ -206,7 +222,6 @@ export class SalesInvoicesService {
     const totals = computeDocumentTotals(linesNoDiscountOrTax);
     const documentNumber = await this.numberingSeriesService.getNextNumber(companyId, 'SALES_INVOICE');
 
-    const company = await this.companyRepo.findOne({ where: { id: companyId } });
     const warnOnSellBelowCost = company?.warnOnSellBelowCost ?? true;
     const canSellBelowCost = userPermissions.includes('sales.invoice.sellBelowCost');
     const isRepTreasurySale = await this.salesRepAccess.isSalesAgentRep(salesRepresentativeId);
@@ -215,6 +230,18 @@ export class SalesInvoicesService {
     }
 
     return this.dataSource.transaction(async (manager) => {
+      const resolvedCustomerId = dto.customerId
+        ? dto.customerId
+        : (
+            dto.quickSaleType === 'CREDIT'
+              ? await findOrCreateQuickCustomer(manager, this.numberingSeriesService, companyId, {
+                  name: dto.customerName!,
+                  phone: dto.customerPhone!,
+                  address: dto.customerAddress,
+                })
+              : await findOrCreateWalkInCustomer(manager, companyId)
+          ).id;
+
       let costOfGoodsSold = 0;
       let totalProfit = 0;
       const lines: SalesInvoiceLine[] = [];
@@ -298,7 +325,7 @@ export class SalesInvoicesService {
         documentNumber,
         invoiceDate: dto.invoiceDate,
         dueDate: dto.dueDate ?? null,
-        customerId: dto.customerId,
+        customerId: resolvedCustomerId,
         salesOrderId: dto.salesOrderId ?? null,
         warehouseId: dto.warehouseId,
         companyId,
@@ -306,8 +333,14 @@ export class SalesInvoicesService {
         salesRepresentativeId,
         status: SalesDocumentStatus.CONFIRMED,
         notes: dto.notes ?? null,
-        customerName: dto.customerName ?? null,
-        customerPhone: dto.customerPhone ?? null,
+        // Printing Press (always sends both a shared walk-in customerId AND typed name/phone) and
+        // AC's cash branch both keep these — AC's credit branch alone is attributed to a real
+        // resolved Customer row instead (see resolvedCustomerId above), whose own
+        // name/mobile/address already carry the identity, so these stay null there rather than
+        // duplicating (and risking drifting from) what the Customer row says.
+        customerName: dto.quickSaleType === 'CREDIT' ? null : dto.customerName ?? null,
+        customerPhone: dto.quickSaleType === 'CREDIT' ? null : dto.customerPhone ?? null,
+        customerAddress: dto.quickSaleType === 'CREDIT' ? null : dto.customerAddress ?? null,
         paymentAccount: dto.paymentAccount ?? null,
         createdById,
         costOfGoodsSold,
@@ -340,7 +373,7 @@ export class SalesInvoicesService {
             amount: paidAmount,
             sourceType: CashMovementSourceType.SALES_INVOICE,
             sourceId: finalInvoice.id,
-            partyCustomerId: dto.customerId,
+            partyCustomerId: resolvedCustomerId,
             description: `Payment ${paymentDocumentNumber}`,
             createdById,
           },
@@ -350,7 +383,7 @@ export class SalesInvoicesService {
         const payment = manager.getRepository(SalesPayment).create({
           documentNumber: paymentDocumentNumber,
           paymentDate: dto.invoiceDate,
-          customerId: dto.customerId,
+          customerId: resolvedCustomerId,
           companyId,
           branchId: dto.branchId ?? null,
           invoiceId: finalInvoice.id,

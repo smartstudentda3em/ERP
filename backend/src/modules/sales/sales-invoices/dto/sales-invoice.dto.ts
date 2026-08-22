@@ -4,6 +4,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -17,7 +18,10 @@ import { CashMovementAccount } from '../../../../entities/enums';
 export class CreateSalesInvoiceDto {
   @IsDateString() invoiceDate: string;
   @IsOptional() @IsDateString() dueDate?: string;
-  @IsUUID() customerId: string;
+  /** Optional only for Air Conditioning's quick-entry flow (typed Name/Phone instead of picking an
+   * existing customer) — see quickSaleType below. Every other caller must still send a real id;
+   * enforced in the service, not here, since the rule depends on the company. */
+  @IsOptional() @IsUUID() customerId?: string;
   @IsUUID() warehouseId: string;
   @IsUUID() companyId: string;
   @IsOptional() @IsUUID() branchId?: string;
@@ -26,9 +30,18 @@ export class CreateSalesInvoiceDto {
   /** Which user this invoice is attributed to — defaults to the logged-in user if omitted, but can be reassigned to any user. */
   @IsOptional() @IsUUID() createdById?: string;
   @IsOptional() @IsString() notes?: string;
-  /** Printing Press only — free-text customer identity, decoupled from the Customer table. */
+  /** Printing Press: free-text customer identity, decoupled from the Customer table. Air
+   * Conditioning: the customer's typed name/phone/address when customerId is omitted — see
+   * quickSaleType. */
   @IsOptional() @IsString() customerName?: string;
   @IsOptional() @IsString() customerPhone?: string;
+  /** Air Conditioning quick-entry only. */
+  @IsOptional() @IsString() customerAddress?: string;
+  /** Air Conditioning quick-entry only — which of the two non-installment sale types this is.
+   * CASH: attributed to a shared walk-in placeholder, never added to the Customers list. CREDIT:
+   * resolved/created as a real Customer row (reused by phone match), same as any other sale. Not
+   * meaningful (and ignored) when customerId is provided. */
+  @IsOptional() @IsIn(['CASH', 'CREDIT']) quickSaleType?: 'CASH' | 'CREDIT';
   /** Amount the customer paid up front, at invoice creation — anything left over posts to their AR balance. */
   @IsOptional() @IsNumber() @Min(0) paidAmount?: number;
   /** Which treasury account an upfront payment settles into — defaults to CASH when omitted, so

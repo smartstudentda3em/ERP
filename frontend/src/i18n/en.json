@@ -275,6 +275,16 @@
     "POSTED": "Posted",
     "REVERSED": "Reversed"
   },
+  "salesInvoice": {
+    "saleType": "Sale Type",
+    "saleTypes": {
+      "CASH": "Cash (Fully Paid)",
+      "CREDIT": "Credit (Remaining Balance)",
+      "INSTALLMENT": "Installment"
+    },
+    "paidInFull": "Paid in Full",
+    "installmentUnitOnly": "Installment sales only support selling by single unit — switch any package-mode line back to unit."
+  },
   "accounting": {
     "allBranches": "All Branches",
     "expenseReport": "Expense Report",

@@ -73,14 +73,22 @@ export class SalesInvoice extends BaseEntity {
   @JoinColumn({ name: "salesRepresentativeId" })
   salesRepresentative: SalesRepresentative | null;
 
-  /** Printing Press only — free-text customer identity captured directly on the invoice, since
-   * Press invoices are always attributed to the single seeded WALKIN customer rather than a real
-   * customer record (see customerId above). Not linked to the Customer table. */
+  /** Free-text customer identity captured directly on the invoice, decoupled from the Customer
+   * table. Two independent uses: Printing Press invoices are always attributed to the single
+   * seeded WALKIN customer (see customerId above) with the real identity captured here instead;
+   * Air Conditioning's "cash" quick-sale branch is attributed to a per-company WALKIN-AC
+   * placeholder the same way (see customer-quick-entry.util.ts's findOrCreateWalkInCustomer) —
+   * AC's "credit"/"installment" branches attribute to a real, resolved Customer row instead and
+   * leave these null. */
   @Column({ type: "varchar", length: 200, nullable: true })
   customerName: string | null;
 
   @Column({ type: "varchar", length: 30, nullable: true })
   customerPhone: string | null;
+
+  /** Air Conditioning "cash" quick-sale only — see customerName above. */
+  @Column({ type: "varchar", length: 300, nullable: true })
+  customerAddress: string | null;
 
   /** Printing Press only — which treasury account (cash/bank) an upfront payment settles into.
    * Persisted here (not just used transiently to build the CashMovement) so it can be shown as an

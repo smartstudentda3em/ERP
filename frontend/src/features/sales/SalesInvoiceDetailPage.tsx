@@ -56,6 +56,7 @@ interface Invoice {
   customer: { id: string; name: string };
   customerName: string | null;
   customerPhone: string | null;
+  customerAddress: string | null;
   paymentAccount: 'CASH' | 'BANK' | null;
   lines: InvoiceLine[];
 }
@@ -326,6 +327,12 @@ export function SalesInvoiceDetailPage() {
               <Card>
                 <div className="text-xs text-[var(--text-muted)]">{t('fields.phone')}</div>
                 <div className="font-medium">{inv.customerPhone}</div>
+              </Card>
+            )}
+            {inv.customerAddress && (
+              <Card>
+                <div className="text-xs text-[var(--text-muted)]">{t('fields.address')}</div>
+                <div className="font-medium">{inv.customerAddress}</div>
               </Card>
             )}
             <Card>

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { AcSupplierPayment } from './entities/ac-supplier-payment.entity';
 import { Supplier } from '../parties/suppliers/entities/supplier.entity';
 import { Company } from '../settings/entities/company.entity';
@@ -125,6 +125,11 @@ export class AcSupplierPaymentsService {
     documentNumber: string,
     createdById: string,
     manager: EntityManager,
+    // Appended to the note when this call is PurchaseReceiptsService.update() reapplying a payment
+    // whose SOURCE actually changed (e.g. البنك → رصيد المورد) — see that method's own comment for
+    // how it's built. Omitted (empty string) for a brand-new receipt or an edit that kept the same
+    // source, where the plain note is accurate on its own.
+    auditNote = '',
   ): Promise<void> {
     const repo = manager.getRepository(AcSupplierPayment);
     await repo.save(
@@ -134,7 +139,7 @@ export class AcSupplierPaymentsService {
         paymentDate: new Date().toISOString().slice(0, 10),
         amount: -amount,
         purchaseReceiptId,
-        notes: `خصم تلقائي مقابل فاتورة مشتريات رقم ${documentNumber}`,
+        notes: `خصم تلقائي مقابل فاتورة مشتريات رقم ${documentNumber}${auditNote}`,
         createdById,
       }),
     );
@@ -145,5 +150,23 @@ export class AcSupplierPaymentsService {
    * no-op (deletes zero rows) when the receipt was never paid this way. */
   async removeByPurchaseReceipt(purchaseReceiptId: string, companyId: string, manager: EntityManager): Promise<void> {
     await manager.getRepository(AcSupplierPayment).delete({ purchaseReceiptId, companyId });
+  }
+
+  /** Which of these purchase receipt ids currently has a deductForPurchase row (i.e. was paid via
+   * "رصيد المورد") — powers PurchaseReceiptsService's exposed `paymentSource` field, which the
+   * Purchasing edit form needs to correctly pre-select the payment source instead of defaulting to
+   * CASH regardless of how the receipt was actually paid. */
+  async findDeductedReceiptIds(
+    companyId: string,
+    purchaseReceiptIds: string[],
+    manager?: EntityManager,
+  ): Promise<Set<string>> {
+    if (purchaseReceiptIds.length === 0) return new Set();
+    const repo = manager ? manager.getRepository(AcSupplierPayment) : this.repo;
+    const rows = await repo.find({
+      where: { companyId, purchaseReceiptId: In(purchaseReceiptIds) },
+      select: ['purchaseReceiptId'],
+    });
+    return new Set(rows.map((r) => r.purchaseReceiptId!));
   }
 }

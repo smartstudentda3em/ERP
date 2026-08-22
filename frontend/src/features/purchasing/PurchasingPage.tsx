@@ -86,6 +86,11 @@ interface PurchaseReceipt {
   product?: Product;
   warehouse?: Warehouse;
   supplier?: Supplier;
+  /** Derived server-side from whichever side-record actually exists (a linked CashMovement, or an
+   * AC-only AcSupplierPayment deduction row) — null when nothing was paid. Lets startEdit() below
+   * correctly pre-select the real current source instead of defaulting to CASH regardless of how
+   * the receipt was actually paid. */
+  paymentSource?: 'CASH' | 'BANK' | 'REP_TREASURY' | 'SUPPLIER_BALANCE' | null;
 }
 
 const emptyForm = {
@@ -317,10 +322,18 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       packageSellingPrice: receipt.packageSellingPrice != null ? String(receipt.packageSellingPrice) : '',
       unitSellingPrice: receipt.unitSellingPrice != null ? String(receipt.unitSellingPrice) : '',
       paidAmount: String(receipt.paidAmount ?? 0),
-      // Not persisted on the receipt row (see saveMutation) — there is no original value to
-      // restore, so this always resets to the default and the required select forces a fresh,
-      // explicit choice before the edit can be saved.
-      paymentAccount: 'CASH',
+      // Pre-filled with the receipt's REAL current source (see the PurchaseReceipt.paymentSource
+      // comment) — not persisted as its own column, so the backend derives it from whichever
+      // side-record actually exists. Falls back to CASH only when there's genuinely nothing to
+      // restore (no payment yet, or the one edge case this form can't represent, REP_TREASURY —
+      // never actually set on a purchase receipt in practice). Without this the field used to
+      // silently reset to CASH on every edit regardless of how the receipt was actually paid,
+      // which would have quietly re-sourced the payment to CASH on a save that only meant to
+      // tweak an unrelated field like quantity.
+      paymentAccount:
+        receipt.paymentSource === 'BANK' || receipt.paymentSource === 'SUPPLIER_BALANCE'
+          ? receipt.paymentSource
+          : 'CASH',
       isFreeGoods: receipt.isFreeGoods ?? false,
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -334,6 +347,10 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
     queryClient.invalidateQueries({ queryKey: ['stock-levels'] });
     queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+    // AC only, harmless no-op elsewhere — a create/edit/delete that touches "رصيد المورد" changes
+    // this supplier's balance, both this page's own badge and AcSupplierDetailPage.tsx's "دفعات
+    // المورد" tab/reconciliation cards need to reflect it immediately, not after a manual refresh.
+    queryClient.invalidateQueries({ queryKey: ['ac-supplier-payments'] });
   }
 
   const saveMutation = useMutation({

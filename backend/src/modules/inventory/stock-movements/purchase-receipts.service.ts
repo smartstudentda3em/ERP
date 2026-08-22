@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { PurchaseReceipt } from './entities/purchase-receipt.entity';
 import { StockService } from './stock.service';
-import { CashMovementSourceType, CashMovementType, StockMovementType } from '../../../entities/enums';
+import { CashMovementAccount, CashMovementSourceType, CashMovementType, StockMovementType } from '../../../entities/enums';
 import { CreatePurchaseReceiptDto, UpdatePurchaseReceiptDto } from './dto/stock.dto';
 import { Product } from '../products/entities/product.entity';
 import { Warehouse } from '../../settings/entities/warehouse.entity';
@@ -11,7 +11,19 @@ import { Supplier } from '../../parties/suppliers/entities/supplier.entity';
 import { Company } from '../../settings/entities/company.entity';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
+import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 import { AcSupplierPaymentsService } from '../../ac-supplier-ledger/ac-supplier-payments.service';
+
+/** The 3 payment sources a receipt's paid-now amount can come from — null means fully on credit
+ * (paidAmount is 0, or the receipt predates any of this). See attachPaymentSources. */
+type PaymentSource = CashMovementAccount | 'SUPPLIER_BALANCE' | null;
+
+const PAYMENT_SOURCE_LABELS_AR: Record<Exclude<PaymentSource, null>, string> = {
+  [CashMovementAccount.CASH]: 'الخزينة النقدي',
+  [CashMovementAccount.BANK]: 'البنك',
+  [CashMovementAccount.REP_TREASURY]: 'خزينة المندوب',
+  SUPPLIER_BALANCE: 'رصيد المورد',
+};
 
 @Injectable()
 export class PurchaseReceiptsService {
@@ -59,8 +71,35 @@ export class PurchaseReceiptsService {
     }
   }
 
-  findAll(companyId: string, productId?: string, warehouseId?: string) {
-    return this.repo.find({
+  /**
+   * Which treasury account (or "رصيد المورد") each of these receipts' paid-now amount actually
+   * came from — null for a receipt with nothing paid (or predating this field's existence).
+   * Neither PurchaseReceipt nor its DTOs persist a paymentAccount column directly; it's always
+   * derived from whichever side-record exists (a linked CashMovement, or an AcSupplierPayment
+   * deduction row) — this is what lets the Purchasing edit form correctly pre-select the real
+   * current source instead of defaulting to CASH regardless of how the receipt was actually paid.
+   */
+  private async attachPaymentSources<T extends PurchaseReceipt>(
+    receipts: T[],
+    companyId: string,
+    manager?: EntityManager,
+  ): Promise<(T & { paymentSource: PaymentSource })[]> {
+    if (receipts.length === 0) return [];
+    const ids = receipts.map((r) => r.id);
+    const cashMovementRepo = manager ? manager.getRepository(CashMovement) : this.dataSource.getRepository(CashMovement);
+    const movements = await cashMovementRepo.find({
+      where: { companyId, sourceType: CashMovementSourceType.PURCHASE_RECEIPT, sourceId: In(ids) },
+    });
+    const accountByReceiptId = new Map(movements.map((m) => [m.sourceId!, m.account]));
+    const deductedIds = await this.acSupplierPaymentsService.findDeductedReceiptIds(companyId, ids, manager);
+    return receipts.map((r) => ({
+      ...r,
+      paymentSource: accountByReceiptId.get(r.id) ?? (deductedIds.has(r.id) ? ('SUPPLIER_BALANCE' as const) : null),
+    }));
+  }
+
+  async findAll(companyId: string, productId?: string, warehouseId?: string) {
+    const receipts = await this.repo.find({
       where: {
         companyId,
         ...(productId ? { productId } : {}),
@@ -69,16 +108,18 @@ export class PurchaseReceiptsService {
       relations: ['product', 'warehouse', 'supplier', 'branch'],
       order: { createdAt: 'DESC' },
     });
+    return this.attachPaymentSources(receipts, companyId);
   }
 
   /** Scoped to the caller's company — an id that belongs to another company 404s exactly like an id that doesn't exist at all, so ids can't be probed cross-company. */
-  async findOne(id: string, companyId: string): Promise<PurchaseReceipt> {
+  async findOne(id: string, companyId: string) {
     const receipt = await this.repo.findOne({
       where: { id, companyId },
       relations: ['product', 'warehouse', 'supplier', 'branch'],
     });
     if (!receipt) throw new NotFoundException('Purchase receipt not found');
-    return receipt;
+    const [withSource] = await this.attachPaymentSources([receipt], companyId);
+    return withSource;
   }
 
   /**
@@ -237,6 +278,13 @@ export class PurchaseReceiptsService {
    * The reversal issue() call throws if the warehouse no longer holds enough of the ORIGINAL
    * product/quantity (e.g. some of it was already sold or transferred elsewhere), which correctly
    * blocks an edit that can't be honestly reconciled rather than silently corrupting stock.
+   *
+   * The payment source (بنكي/كاش/رصيد المورد) follows the exact same reverse-then-reapply shape:
+   * removeBySource + removeByPurchaseReceipt unconditionally clear BOTH possible old records before
+   * anything new posts, so switching source on edit never double-counts or leaves a stale entry on
+   * the old one. oldPaymentSource (captured before either removal) is compared against the newly
+   * submitted source purely to annotate the new record when they actually differ — see auditNote
+   * below — it plays no part in the reversal logic itself.
    */
   async update(
     id: string,
@@ -247,6 +295,11 @@ export class PurchaseReceiptsService {
     return this.dataSource.transaction(async (manager) => {
       const existing = await manager.getRepository(PurchaseReceipt).findOne({ where: { id, companyId } });
       if (!existing) throw new NotFoundException('Purchase receipt not found');
+
+      // Captured before anything below removes it — needed to tell whether this edit actually
+      // switches the payment source (vs. just re-submitting the same one, or changing an unrelated
+      // field like quantity) so the new transactions-log entry can record that as its own reason.
+      const [{ paymentSource: oldPaymentSource }] = await this.attachPaymentSources([existing], companyId, manager);
 
       const product = await manager.getRepository(Product).findOne({ where: { id: dto.productId, companyId } });
       if (!product) throw new NotFoundException('Product not found');
@@ -362,7 +415,14 @@ export class PurchaseReceiptsService {
       const savedReceipt = await manager.getRepository(PurchaseReceipt).save(existing);
 
       // Old payment record (either kind) already removed and balance already asserted sufficient
-      // above, before any stock mutation ran — this just posts the new one.
+      // above, before any stock mutation ran — this just posts the new one. If the payment SOURCE
+      // itself changed (not just the amount/date), the new record's own note/description says so —
+      // this is the "transactions log records the reason and date" trail for that switch.
+      const newPaymentSource: PaymentSource = paidAmount === 0 ? null : dto.paidFromSupplierBalance ? 'SUPPLIER_BALANCE' : dto.paymentAccount ?? null;
+      const sourceChanged = oldPaymentSource !== null && newPaymentSource !== null && oldPaymentSource !== newPaymentSource;
+      const auditNote = sourceChanged
+        ? ` — تم تعديل مصدر الدفع من ${PAYMENT_SOURCE_LABELS_AR[oldPaymentSource]} إلى ${PAYMENT_SOURCE_LABELS_AR[newPaymentSource]} بتاريخ ${new Date().toISOString().slice(0, 10)}`
+        : '';
       if (paidAmount > 0) {
         if (dto.paidFromSupplierBalance) {
           await this.acSupplierPaymentsService.deductForPurchase(
@@ -373,6 +433,7 @@ export class PurchaseReceiptsService {
             existing.documentNumber,
             updatedById,
             manager,
+            auditNote,
           );
         } else {
           await this.cashMovementsService.record(
@@ -386,7 +447,7 @@ export class PurchaseReceiptsService {
               sourceType: CashMovementSourceType.PURCHASE_RECEIPT,
               sourceId: id,
               partySupplierId: dto.supplierId,
-              description: `Purchase receipt ${existing.documentNumber}`,
+              description: `Purchase receipt ${existing.documentNumber}${auditNote}`,
               createdById: updatedById,
             },
             manager,

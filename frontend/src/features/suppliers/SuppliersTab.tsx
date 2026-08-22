@@ -11,6 +11,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input, FormField, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
 
 interface Currency {
   id: string;
@@ -50,6 +51,7 @@ export function SuppliersTab() {
   const { isPrintingPress, isAirConditioning } = useActiveCompany();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const canCreate = useAuthStore((s) => s.hasPermission('suppliers.create'));
   const [modalOpen, setModalOpen] = useState(false);
@@ -111,6 +113,7 @@ export function SuppliersTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
     },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
   function openCreate() {

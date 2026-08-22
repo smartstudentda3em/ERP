@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, QueryFailedError, Repository } from 'typeorm';
-import { BaseCrudService } from '../../../common/services/base-crud.service';
+import { BaseCrudService, rethrowFriendlyDbError } from '../../../common/services/base-crud.service';
 import { Product } from './entities/product.entity';
 import { CreateProductDto, UpdateProductDto, CreateCatalogProductDto, UpdateCatalogProductDto } from './dto/product.dto';
 import { StockMovement } from '../stock-movements/entities/stock-movement.entity';
@@ -189,9 +189,18 @@ export class ProductsService extends BaseCrudService<Product> {
     }
   }
 
+  /** No application-level dependent check needed — this entity is RESTRICT-protected at the DB
+   * level from nearly every transactional table (SalesInvoiceLine, PurchaseReceipt, StockMovement,
+   * StockAudit, StockAdjustment, Quotation, GuidelinePriceLine, ImportCargoItem, SalesOrder,
+   * InstallmentPlan, StockTransfer). rethrowFriendlyDbError turns that DB-level block into the same
+   * clear message every other delete-protected entity in this codebase gives. */
   async removeScoped(id: string, companyId: string): Promise<void> {
     const product = await this.findOneScoped(id, companyId);
-    await this.repo.remove(product);
+    try {
+      await this.repo.remove(product);
+    } catch (err) {
+      rethrowFriendlyDbError(err);
+    }
   }
 
   findByBarcodeForCompany(barcode: string, companyId: string) {

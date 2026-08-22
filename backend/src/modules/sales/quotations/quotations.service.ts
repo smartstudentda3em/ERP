@@ -9,6 +9,7 @@ import { NumberingSeriesService } from '../../settings/numbering-series.controll
 import { SalesRepAccessService } from '../../../common/services/sales-rep-access.service';
 import { SalesInvoicesService } from '../sales-invoices/sales-invoices.service';
 import { SalesInvoice } from '../sales-invoices/entities/sales-invoice.entity';
+import { SalesOrder } from '../sales-orders/entities/sales-order.entity';
 
 /** Once a quotation has moved past this set of statuses, editing/deleting it is restricted to a
  * true Administrator — mirrors the request's "مسودة/معلق يعدّل بحرية، مقبول/محوّل مقيّد بالأدمن". */
@@ -177,10 +178,20 @@ export class QuotationsService {
     });
   }
 
+  /** assertMayModify/assertOwnBranch are WHO-gates (is this caller allowed to touch it at all) —
+   * this is the system-wide WHAT-depends-on-it check: SalesOrder.quotationId is `onDelete: "SET
+   * NULL"` (a quotation link is informational on a sales order, not something the DB alone should
+   * refuse to touch), so even a true Administrator must be blocked here, not just a regular user —
+   * otherwise deleting an already-converted quotation silently severs a real sales order's
+   * traceability back to the quotation it came from. */
   async remove(id: string, companyId: string, isSystemRole: boolean, userId: string): Promise<void> {
     const quotation = await this.findOne(id, companyId);
     this.assertMayModify(quotation, isSystemRole);
     await this.assertOwnBranch(quotation, companyId, isSystemRole, userId);
+    const hasSalesOrder = await this.dataSource.getRepository(SalesOrder).exist({ where: { quotationId: id } });
+    if (hasSalesOrder) {
+      throw new BadRequestException('لا يمكن حذف عرض السعر هذا — يوجد أمر بيع مرتبط به في النظام.');
+    }
     await this.repo.remove(quotation);
   }
 

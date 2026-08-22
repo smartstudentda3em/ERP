@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { BaseCrudService } from '../../../common/services/base-crud.service';
+import { BaseCrudService, rethrowFriendlyDbError } from '../../../common/services/base-crud.service';
 import { Supplier } from './entities/supplier.entity';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
@@ -43,8 +43,15 @@ export class SuppliersService extends BaseCrudService<Supplier> {
     return this.repo.save(supplier);
   }
 
+  /** No application-level dependent check needed — RESTRICT-protected at the DB level from
+   * PurchaseReceipt/SupplierPayment/AcSupplierPayment/AcSupplierTaxPayment/ImportCargoItem.
+   * rethrowFriendlyDbError turns that DB-level block into a clear message instead of a raw 500. */
   async removeScoped(id: string, companyId: string): Promise<void> {
     const supplier = await this.findOneScoped(id, companyId);
-    await this.repo.remove(supplier);
+    try {
+      await this.repo.remove(supplier);
+    } catch (err) {
+      rethrowFriendlyDbError(err);
+    }
   }
 }

@@ -120,6 +120,7 @@ export function CustomersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -154,6 +155,7 @@ export function CustomersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
     },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
   // "مندوب"/"مدير فرع": a stripped-down view+create-only tab, never this full admin table with

@@ -14,6 +14,7 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge, statusColor } from '../../components/ui/Badge';
 import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/DateRangeFilter';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 import { SalesLineEditor, SalesLineForm, emptyLine, linesToPayload, computeGrandTotal } from './SalesLineEditor';
 import { useSalesRepLock } from './useSalesRepLock';
@@ -92,6 +93,7 @@ export function SalesInvoicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
   const confirm = useConfirm();
+  const toast = useToast();
 
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   const [editCustomerId, setEditCustomerId] = useState('');
@@ -338,6 +340,7 @@ export function SalesInvoicesPage() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-top-products'] });
       queryClient.invalidateQueries({ queryKey: ['sales-lines-report'] });
     },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
   async function handleDeleteInvoice(e: MouseEvent, invoice: SalesInvoice) {

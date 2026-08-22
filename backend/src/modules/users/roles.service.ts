@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Role } from './entities/role.entity';
@@ -55,9 +55,18 @@ export class RolesService {
     return this.roleRepo.save(role);
   }
 
+  /** System-wide delete-protection rule: the ManyToMany join table (user_roles) has no RESTRICT of
+   * its own — TypeORM just drops the join rows when either side is removed, which would silently
+   * leave any user CURRENTLY holding only this role with zero roles and zero permissions (locked
+   * out of the app with no visible reason). Checked explicitly here rather than relying on the join
+   * table's own cascade behavior. */
   async remove(id: string): Promise<void> {
     const role = await this.findOne(id);
     if (role.isSystemRole) throw new ConflictException('System roles cannot be deleted');
+    const [{ count }] = await this.roleRepo.query('SELECT COUNT(*)::int AS count FROM user_roles WHERE "roleId" = $1', [id]);
+    if (Number(count) > 0) {
+      throw new BadRequestException('لا يمكن حذف هذا الدور — يوجد مستخدمون مسندون إليه حالياً. يجب إزالة الدور من هؤلاء المستخدمين أولاً.');
+    }
     await this.roleRepo.remove(role);
   }
 }

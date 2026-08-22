@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -18,12 +19,44 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { BaseCrudService } from '../../common/services/base-crud.service';
 import { Company } from './entities/company.entity';
+import { Branch } from './entities/branch.entity';
 import { CreateCompanyDto, UpdateCompanyDto } from './dto/settings.dto';
+import { Customer } from '../parties/customers/entities/customer.entity';
+import { Supplier } from '../parties/suppliers/entities/supplier.entity';
+import { Product } from '../inventory/products/entities/product.entity';
 
 @Injectable()
 export class CompaniesService extends BaseCrudService<Company> {
-  constructor(@InjectRepository(Company) repo: Repository<Company>) {
+  constructor(
+    @InjectRepository(Company) repo: Repository<Company>,
+    @InjectRepository(Branch) private readonly branchesRepo: Repository<Branch>,
+    @InjectRepository(Customer) private readonly customersRepo: Repository<Customer>,
+    @InjectRepository(Supplier) private readonly suppliersRepo: Repository<Supplier>,
+    @InjectRepository(Product) private readonly productsRepo: Repository<Product>,
+  ) {
     super(repo);
+  }
+
+  /** System-wide delete-protection rule, at its most consequential: nearly every table in this
+   * schema cascades from Company (`onDelete: "CASCADE"`) — a real tenant with any actual business
+   * data would have every one of its customers, suppliers, products, invoices, receipts, and
+   * payroll history permanently destroyed in a single request, with the DB itself offering zero
+   * resistance (CASCADE succeeds, it doesn't refuse). This check blocks deleting a company that has
+   * ANY of its four most fundamental building blocks — a branch, a customer, a supplier, or a
+   * product — already set up, which in practice means any company that's ever been used for real
+   * work. Only a company that was created and never touched can still be deleted. */
+  private async assertNoRealData(companyId: string): Promise<void> {
+    const [hasBranch, hasCustomer, hasSupplier, hasProduct] = await Promise.all([
+      this.branchesRepo.exist({ where: { companyId } }),
+      this.customersRepo.exist({ where: { companyId } }),
+      this.suppliersRepo.exist({ where: { companyId } }),
+      this.productsRepo.exist({ where: { companyId } }),
+    ]);
+    if (hasBranch || hasCustomer || hasSupplier || hasProduct) {
+      throw new BadRequestException(
+        'لا يمكن حذف هذه الشركة — توجد بيانات حقيقية مسجلة عليها (فروع، عملاء، موردين، أو أصناف). حذفها سيؤدي إلى فقدان كل هذه البيانات نهائياً.',
+      );
+    }
   }
 
   /**
@@ -67,8 +100,9 @@ export class CompaniesService extends BaseCrudService<Company> {
     return this.update(id, dto);
   }
 
-  removeScoped(user: AuthenticatedUser, id: string): Promise<void> {
+  async removeScoped(user: AuthenticatedUser, id: string): Promise<void> {
     this.assertAccessible(user, id);
+    await this.assertNoRealData(id);
     return this.remove(id);
   }
 }

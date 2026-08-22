@@ -7,6 +7,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CompanyScopedCrudService } from '../../common/services/base-crud.service';
 import { Partner } from './entities/partner.entity';
 import { Company } from './entities/company.entity';
+import { CashMovement } from '../treasury/entities/cash-movement.entity';
 import { CreatePartnerDto, UpdatePartnerDto } from './dto/settings.dto';
 
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
@@ -17,8 +18,25 @@ export class PartnersService extends CompanyScopedCrudService<Partner> {
   constructor(
     @InjectRepository(Partner) repo: Repository<Partner>,
     @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
+    @InjectRepository(CashMovement) private readonly cashMovementsRepo: Repository<CashMovement>,
   ) {
     super(repo);
+  }
+
+  /** System-wide delete-protection rule: a partner with any real capital-injection/dividend
+   * history (CashMovement.partnerId) can never be deleted — that FK is `onDelete: "SET NULL"`
+   * (a partner isn't itself a financial document, so hard-blocking every edit elsewhere via
+   * RESTRICT wasn't right), which means the DB alone would silently strip that history out of the
+   * partner's own balance/dividend reports instead of refusing. This is the explicit
+   * application-level check that fills that gap. */
+  async removeForCompany(id: string, companyId: string): Promise<void> {
+    const hasHistory = await this.cashMovementsRepo.exist({ where: { partnerId: id, companyId } });
+    if (hasHistory) {
+      throw new BadRequestException(
+        'لا يمكن حذف هذا الشريك — لديه حركات مالية (مساهمات أو أرباح) مسجلة في النظام. يجب حذف هذه الحركات أولاً.',
+      );
+    }
+    return super.removeForCompany(id, companyId);
   }
 
   /**

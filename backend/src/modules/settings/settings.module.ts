@@ -14,6 +14,14 @@ import { Unit } from './entities/unit.entity';
 import { PackageType } from './entities/package-type.entity';
 import { ExpenseCategory } from './entities/expense-category.entity';
 import { Partner } from './entities/partner.entity';
+import { CashMovement } from '../treasury/entities/cash-movement.entity';
+import { Product } from '../inventory/products/entities/product.entity';
+import { Customer } from '../parties/customers/entities/customer.entity';
+import { Supplier } from '../parties/suppliers/entities/supplier.entity';
+import { SalesInvoice } from '../sales/sales-invoices/entities/sales-invoice.entity';
+import { PurchaseReceipt } from '../inventory/stock-movements/entities/purchase-receipt.entity';
+import { Quotation } from '../sales/quotations/entities/quotation.entity';
+import { InstallmentPlan } from '../sales/installment-plans/entities/installment-plan.entity';
 
 import { CompaniesController, CompaniesService } from './companies.controller';
 import { BranchesController, BranchesService } from './branches.controller';
@@ -51,6 +59,14 @@ import {
       PackageType,
       ExpenseCategory,
       Partner,
+      CashMovement,
+      Product,
+      Customer,
+      Supplier,
+      SalesInvoice,
+      PurchaseReceipt,
+      Quotation,
+      InstallmentPlan,
     ]),
   ],
   controllers: [

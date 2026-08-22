@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Injectable, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Injectable, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,6 +8,7 @@ import { CompanyScopedCrudService } from '../../common/services/base-crud.servic
 import { ProductCategory } from './entities/product-category.entity';
 import { Brand } from './entities/brand.entity';
 import { Unit } from './entities/unit.entity';
+import { Product } from '../inventory/products/entities/product.entity';
 import {
   CreateCatalogItemDto,
   UpdateCatalogItemDto,
@@ -19,8 +20,27 @@ import {
 
 @Injectable()
 export class ProductCategoriesService extends CompanyScopedCrudService<ProductCategory> {
-  constructor(@InjectRepository(ProductCategory) repo: Repository<ProductCategory>) {
+  constructor(
+    @InjectRepository(ProductCategory) repo: Repository<ProductCategory>,
+    @InjectRepository(Product) private readonly productsRepo: Repository<Product>,
+  ) {
     super(repo);
+  }
+
+  /** System-wide delete-protection rule: Unit/Brand/PackageType all cascade-delete from their
+   * category (their own onDelete: "CASCADE"), which would otherwise let a category with real
+   * products still classified under it vanish along with everything built on it, silently
+   * re-categorizing those products to none (Product.categoryId is "SET NULL", not RESTRICT — a
+   * product's category is informational, not something the DB alone should refuse to touch). This
+   * explicit check is what actually stops that. */
+  async removeForCompany(id: string, companyId: string): Promise<void> {
+    const inUse = await this.productsRepo.exist({ where: { categoryId: id, companyId } });
+    if (inUse) {
+      throw new BadRequestException(
+        'لا يمكن حذف هذه الفئة — توجد أصناف مسجلة تحتها في النظام. يجب نقل أو حذف هذه الأصناف أولاً.',
+      );
+    }
+    return super.removeForCompany(id, companyId);
   }
 }
 

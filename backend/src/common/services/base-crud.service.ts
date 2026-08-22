@@ -5,16 +5,21 @@ import { DeepPartial, FindOptionsWhere, QueryFailedError, Repository } from 'typ
  * Every master-data screen in Settings is a thin generic form (SimpleMasterList.tsx) driving one
  * of these CRUD endpoints — none of them handle DB errors themselves, so an unmapped Postgres
  * error code reaches the client as a raw 500 with Postgres's own wording (or worse, was swallowed
- * entirely client-side before SimpleMasterList's onError was added). This translates the two
- * ways a save can fail at the DB layer after passing DTO validation into exceptions the frontend's
- * getErrorMessage()/toast already knows how to show:
+ * entirely client-side before SimpleMasterList's onError was added). This translates the ways a
+ * save/delete can fail at the DB layer into exceptions the frontend's getErrorMessage()/toast
+ * already knows how to show:
  *  - 23505 unique_violation — e.g. a currency code, tax code, branch code already in use.
  *  - 22001 string_data_right_truncation — a value too long for its column (surfaced as a
  *    validation-style message rather than "value too long for type character varying(10)").
+ *  - 23503 foreign_key_violation — thrown on DELETE when another table's `onDelete: "RESTRICT"`
+ *    FK still points at this row (a real transaction/document referencing it) — this is the
+ *    system-wide "can't delete something other records depend on" rule; every entity relying on a
+ *    RESTRICT constraint for its delete protection gets this same clear message instead of an
+ *    opaque 500, without needing its own bespoke dependent-row check.
  * Any other Postgres error code still propagates as-is (an unmapped 500 is correct there — it's
  * not something the caller could have fixed by re-entering the form).
  */
-function rethrowFriendlyDbError(err: unknown): never {
+export function rethrowFriendlyDbError(err: unknown): never {
   if (err instanceof QueryFailedError) {
     const code = (err as QueryFailedError & { code?: string }).code;
     if (code === '23505') {
@@ -22,6 +27,11 @@ function rethrowFriendlyDbError(err: unknown): never {
     }
     if (code === '22001') {
       throw new BadRequestException('أحد الحقول يتجاوز الحد الأقصى المسموح به لعدد الأحرف.');
+    }
+    if (code === '23503') {
+      throw new BadRequestException(
+        'لا يمكن الحذف — هذا العنصر مرتبط بعمليات أخرى مسجلة في النظام. يجب حذف أو فك الارتباط بهذه العمليات أولاً.',
+      );
     }
   }
   throw err;
@@ -66,7 +76,11 @@ export abstract class BaseCrudService<T extends { id: string }> {
 
   async remove(id: string): Promise<void> {
     const entity = await this.findOne(id);
-    await this.repo.remove(entity);
+    try {
+      await this.repo.remove(entity);
+    } catch (err) {
+      rethrowFriendlyDbError(err);
+    }
   }
 }
 
@@ -111,6 +125,10 @@ export abstract class CompanyScopedCrudService<
 
   async removeForCompany(id: string, companyId: string): Promise<void> {
     const entity = await this.findOneForCompany(id, companyId);
-    await this.repo.remove(entity);
+    try {
+      await this.repo.remove(entity);
+    } catch (err) {
+      rethrowFriendlyDbError(err);
+    }
   }
 }

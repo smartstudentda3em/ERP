@@ -30,6 +30,9 @@ import { quarterDateRange } from '../treasury/partners-treasury.controller';
 import { Employee } from '../hr/entities/employee.entity';
 import { PayrollRun, PayrollRunLine } from '../hr/entities/payroll-run.entity';
 import { Branch } from '../settings/entities/branch.entity';
+import { SalesInvoice } from '../sales/sales-invoices/entities/sales-invoice.entity';
+import { SalesPayment } from '../sales/sales-payments/entities/sales-payment.entity';
+import { Quotation } from '../sales/quotations/entities/quotation.entity';
 
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
@@ -245,8 +248,32 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
    * is hard-deleted in the same transaction (the FK's onDelete: SET NULL then detaches the now-stale
    * salesRepresentativeId link automatically). Matches EmployeesService.remove()'s own rule that an
    * employee with real history is retired by deactivating, not deleting.
+   *
+   * System-wide delete-protection rule: SalesInvoice/SalesPayment/Quotation/CashMovement's own
+   * salesRepresentativeId are ALL `onDelete: "SET NULL"` (a rep tag is informational on those, not
+   * something the DB alone should refuse to touch) — left unchecked, deleting a rep with real sales
+   * history, or one still holding an uncleared REP_TREASURY cash balance (commissions collected in
+   * the field but not yet settled into Cash/Bank), would silently strip that attribution out of
+   * every rep-level report and orphan real, uncleared money with no owner. Blocked explicitly here.
    */
   async removeForCompany(id: string, companyId: string): Promise<void> {
+    const [hasInvoices, hasPayments, hasQuotations, repTreasuryBalance] = await Promise.all([
+      this.dataSource.getRepository(SalesInvoice).exist({ where: { salesRepresentativeId: id, companyId } }),
+      this.dataSource.getRepository(SalesPayment).exist({ where: { salesRepresentativeId: id, companyId } }),
+      this.dataSource.getRepository(Quotation).exist({ where: { salesRepresentativeId: id, companyId } }),
+      this.cashMovementsService.getBalance(companyId, CashMovementAccount.REP_TREASURY, undefined, undefined, undefined, id),
+    ]);
+    if (hasInvoices || hasPayments || hasQuotations) {
+      throw new BadRequestException(
+        'لا يمكن حذف هذا المندوب — توجد فواتير أو دفعات أو عروض أسعار مسجلة باسمه في النظام.',
+      );
+    }
+    if (Number(repTreasuryBalance) !== 0) {
+      throw new BadRequestException(
+        'لا يمكن حذف هذا المندوب — لديه رصيد غير مُسوّى في خزينة المندوب. يجب تسوية هذا الرصيد أولاً.',
+      );
+    }
+
     await this.dataSource.transaction(async (manager) => {
       const repRepo = manager.getRepository(SalesRepresentative);
       const rep = await repRepo.findOne({ where: { id, companyId } as any });

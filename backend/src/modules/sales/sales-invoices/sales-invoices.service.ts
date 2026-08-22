@@ -18,6 +18,7 @@ import {
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
 import { StockService } from '../../inventory/stock-movements/stock.service';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
+import { rethrowFriendlyDbError } from '../../../common/services/base-crud.service';
 import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 import { Product } from '../../inventory/products/entities/product.entity';
 import { Company } from '../../settings/entities/company.entity';
@@ -407,12 +408,17 @@ export class SalesInvoicesService {
    * back at the exact cost it was issued at (restoring the weighted-average cost to what it was
    * before), any payment recorded against it and its linked CashMovement are removed, then the
    * invoice itself (its lines cascade at the DB level).
+   *
+   * No application-level check for a linked SalesReturn — that entity's `invoiceId` FK is
+   * `onDelete: "RESTRICT"`, so an invoice with a return already recorded against it is blocked at
+   * the DB layer; the try/catch below just turns that into a clear message instead of a raw 500.
    */
   async remove(id: string, deletedById: string, companyId: string): Promise<void> {
     const invoice = await this.repo.findOne({ where: { id, companyId }, relations: ['lines'] });
     if (!invoice) throw new NotFoundException('Sales invoice not found');
 
-    await this.dataSource.transaction(async (manager) => {
+    try {
+      await this.dataSource.transaction(async (manager) => {
       const products = await manager
         .getRepository(Product)
         .find({ where: { id: In(invoice.lines.map((l) => l.productId)) } });
@@ -447,8 +453,11 @@ export class SalesInvoicesService {
       }
       if (payments.length) await manager.getRepository(SalesPayment).remove(payments);
 
-      await manager.getRepository(SalesInvoice).remove(invoice);
-    });
+        await manager.getRepository(SalesInvoice).remove(invoice);
+      });
+    } catch (err) {
+      rethrowFriendlyDbError(err);
+    }
   }
 
   /**

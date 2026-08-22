@@ -13,6 +13,7 @@ import { NumberingSeriesService } from '../../settings/numbering-series.controll
 import { CashMovementsService } from '../../treasury/cash-movements.service';
 import { CashMovement } from '../../treasury/entities/cash-movement.entity';
 import { AcSupplierPaymentsService } from '../../ac-supplier-ledger/ac-supplier-payments.service';
+import { SupplierPayment } from '../../parties/suppliers/entities/supplier-payment.entity';
 
 /** The 3 payment sources a receipt's paid-now amount can come from — null means fully on credit
  * (paidAmount is 0, or the receipt predates any of this). See attachPaymentSources. */
@@ -464,8 +465,22 @@ export class PurchaseReceiptsService {
    * warehouse no longer holds enough, e.g. some of it was already sold elsewhere), removes its
    * linked cash movement (restoring whatever was paid back into the treasury balance), then
    * deletes the receipt row itself.
+   *
+   * System-wide delete-protection rule: SupplierPayment.purchaseReceiptId is a plain uuid column
+   * with no FK/relation at all (see that entity) — a partial "دفع المتبقي" payment tied to this
+   * receipt would otherwise be left pointing at a row that no longer exists, silently, with nothing
+   * in the schema to stop it. Checked explicitly here since the database can't enforce it itself.
    */
   async remove(id: string, companyId: string, removedById: string): Promise<void> {
+    const hasSupplierPayment = await this.dataSource
+      .getRepository(SupplierPayment)
+      .exist({ where: { purchaseReceiptId: id, companyId } });
+    if (hasSupplierPayment) {
+      throw new BadRequestException(
+        'لا يمكن حذف إذن الاستلام هذا — توجد دفعة مورد مسجلة مرتبطة به. يجب حذف هذه الدفعة أولاً.',
+      );
+    }
+
     await this.dataSource.transaction(async (manager) => {
       const receipt = await manager.getRepository(PurchaseReceipt).findOne({ where: { id, companyId } });
       if (!receipt) throw new NotFoundException('Purchase receipt not found');

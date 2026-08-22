@@ -233,6 +233,7 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales-representatives'] });
     },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
 
   async function handleDelete(e: MouseEvent, rep: SalesRepresentative) {

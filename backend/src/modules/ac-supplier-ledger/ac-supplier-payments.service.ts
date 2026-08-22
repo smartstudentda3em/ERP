@@ -95,11 +95,25 @@ export class AcSupplierPaymentsService {
   }
 
   /** Reverses whatever treasury movement create() posted (a no-op if this row predates that
-   * change, or is one of deductForPurchase's own internal entries, which never had one). */
+   * change).
+   *
+   * System-wide delete-protection rule: a row with `purchaseReceiptId` set is one of
+   * deductForPurchase's own internal entries, not a normal user payment — deleting it directly here
+   * would silently give the supplier's balance back WITHOUT reversing the purchase receipt it was
+   * consumed by, corrupting both sides (the receipt would still show "paid via رصيد المورد" while
+   * the ledger no longer reflects that money ever having been spent). The only correct way to
+   * reverse one of these is through the owning purchase receipt itself (edit its payment source, or
+   * delete the receipt) — PurchaseReceiptsService.update()/remove() are what actually call
+   * removeByPurchaseReceipt(). */
   async remove(id: string, companyId: string): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       const existing = await manager.getRepository(AcSupplierPayment).findOne({ where: { id, companyId } });
       if (!existing) throw new NotFoundException('Payment not found');
+      if (existing.purchaseReceiptId) {
+        throw new BadRequestException(
+          'لا يمكن حذف هذا القيد مباشرة — هو خصم تلقائي مرتبط بفاتورة مشتريات. يجب تعديل أو حذف فاتورة المشتريات نفسها.',
+        );
+      }
       await this.cashMovementsService.removeBySource(companyId, CashMovementSourceType.SUPPLIER_PAYMENT, id, manager);
       await manager.getRepository(AcSupplierPayment).remove(existing);
     });

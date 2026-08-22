@@ -5,7 +5,7 @@ import { apiClient, unwrap } from '../../lib/api-client';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
-import { Badge } from '../../components/ui/Badge';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { Input, FormField, Select } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { DataTable, Column } from '../../components/ui/DataTable';
@@ -399,14 +399,25 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     { header: t('fields.supplier'), accessor: (r) => r.supplier?.companyName ?? '—' },
     {
       header: t('fields.product'),
-      accessor: (r) => (
-        <div className="flex items-center gap-2">
-          {r.product?.nameEn ? <bdi dir="ltr">{r.product.nameEn}</bdi> : '—'}
-          {/* Air Conditioning only — flags a "بضاعة مجانية" receipt right where it's entered, so
-              its 0 total isn't mistaken for a data-entry mistake when scanning this table. */}
-          {r.isFreeGoods && <Badge color="green">{t('purchasing.freeGoods')}</Badge>}
-        </div>
-      ),
+      // Air Conditioning only — a "بضاعة مجانية" receipt used to spell the full label out as a
+      // Badge right next to the product name, crowding the cell. Now it's a quiet green tint on
+      // the cell with a small dot instead of text; hovering the tinted area reveals the full
+      // label via the shared Tooltip component rather than it always being on screen.
+      accessor: (r) => {
+        const cell = (
+          <div
+            className={
+              r.isFreeGoods
+                ? 'flex items-center gap-2 rounded-md bg-green-50 px-2 py-1 dark:bg-green-900/20'
+                : 'flex items-center gap-2'
+            }
+          >
+            {r.product?.nameEn ? <bdi dir="ltr">{r.product.nameEn}</bdi> : '—'}
+            {r.isFreeGoods && <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />}
+          </div>
+        );
+        return r.isFreeGoods ? <Tooltip content={t('purchasing.freeGoods')}>{cell}</Tooltip> : cell;
+      },
     },
     // AC (Air Conditioning) company only — same underlying product.barcode field shown as "القدرة"
     // on the Products screen (see ProductsPage.tsx); every other company's table is unaffected.

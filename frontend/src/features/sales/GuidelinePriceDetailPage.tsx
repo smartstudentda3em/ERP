@@ -264,7 +264,6 @@ export function GuidelinePriceDetailPage() {
   }
 
   const columns: Column<ProductRow>[] = [
-    ...(isAllMode ? [{ header: t('guidelinePrices.company'), accessor: (r: ProductRow) => r.companyName }] : []),
     { header: t('guidelinePrices.capacity'), accessor: (r) => r.capacity },
     { header: t('guidelinePrices.brand'), accessor: (r) => r.brand },
     { header: t('guidelinePrices.itemName'), accessor: (r) => r.name },

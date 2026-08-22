@@ -301,11 +301,11 @@ body {
 
 /* Column order is fixed by GuidelinePriceDetailPage.tsx's own `columns` array, not
    user-configurable, so targeting these exact positions is as reliable as the :last-child
-   convention used elsewhere in this file — nth-child 1/2/4/10 are the only ones still visible
-   (hideOnPrint hides 3 SKU, 5/6/7/8 cost columns, and 9 factory selling price, all via
-   display:none): 1 القدرة, 2 الماركة, 4 اسم الصنف, 10 سعر البيع المتوقع. Narrower shares for
-   capacity/brand (short values) leave the item-name and price columns the room they actually need
-   instead of four equal-width columns. */
+   convention used elsewhere in this file — nth-child 1/2/3/4/10 are the only ones still visible
+   (hideOnPrint hides 5/6/7/8 cost columns and 9 factory selling price, all via display:none):
+   1 القدرة, 2 الماركة, 3 رمز الصنف, 4 اسم الصنف, 10 سعر البيع المتوقع. Narrower shares for
+   capacity/brand/sku (short values) leave the item-name and price columns the room they actually
+   need instead of five equal-width columns. */
 @media print {
   .guideline-price-print {
     page: guideline-price-report;
@@ -319,12 +319,14 @@ body {
   }
   /* Every row stays on one line (no wrapping to a second line); if a value is still too long for
      its fixed column width, it's clipped with an ellipsis instead of visually spilling out past
-     the cell's own border. */
+     the cell's own border. vertical-align:middle keeps every cell's text equidistant from the top
+     and bottom of its row box regardless of that row's own line-height/font-size mix. */
   .guideline-price-print th,
   .guideline-price-print td {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    vertical-align: middle;
   }
   /* Letterhead's company-name row (which for التكييفات shows just "التكييفات" as the Arabic
      name) and its address/phone contact bar are dropped from this one page's print/PDF only —
@@ -346,21 +348,26 @@ body {
   }
   .guideline-price-print .app-table th:nth-child(1),
   .guideline-price-print .app-table td:nth-child(1) {
-    width: 12%;
+    width: 10%;
     font-size: 11px;
   }
   .guideline-price-print .app-table th:nth-child(2),
   .guideline-price-print .app-table td:nth-child(2) {
+    width: 13%;
+    font-size: 11px;
+  }
+  .guideline-price-print .app-table th:nth-child(3),
+  .guideline-price-print .app-table td:nth-child(3) {
     width: 15%;
     font-size: 11px;
   }
   .guideline-price-print .app-table th:nth-child(4),
   .guideline-price-print .app-table td:nth-child(4) {
-    width: 43%;
+    width: 35%;
   }
   .guideline-price-print .app-table th:nth-child(10),
   .guideline-price-print .app-table td:nth-child(10) {
-    width: 30%;
+    width: 27%;
     text-align: center;
   }
   .guideline-price-print .app-table thead th {
@@ -399,6 +406,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  vertical-align: middle;
 }
 .guideline-price-print.pdf-export-mode .letterhead-name-row,
 .guideline-price-print.pdf-export-mode .letterhead-contact-bar {
@@ -415,21 +423,26 @@ body {
 }
 .guideline-price-print.pdf-export-mode .app-table th:nth-child(1),
 .guideline-price-print.pdf-export-mode .app-table td:nth-child(1) {
-  width: 12%;
+  width: 10%;
   font-size: 15px;
 }
 .guideline-price-print.pdf-export-mode .app-table th:nth-child(2),
 .guideline-price-print.pdf-export-mode .app-table td:nth-child(2) {
+  width: 13%;
+  font-size: 15px;
+}
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(3),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(3) {
   width: 15%;
   font-size: 15px;
 }
 .guideline-price-print.pdf-export-mode .app-table th:nth-child(4),
 .guideline-price-print.pdf-export-mode .app-table td:nth-child(4) {
-  width: 43%;
+  width: 35%;
 }
 .guideline-price-print.pdf-export-mode .app-table th:nth-child(10),
 .guideline-price-print.pdf-export-mode .app-table td:nth-child(10) {
-  width: 30%;
+  width: 27%;
   text-align: center;
 }
 .guideline-price-print.pdf-export-mode .app-table thead th {

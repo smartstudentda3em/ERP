@@ -1109,6 +1109,7 @@
     "updated": "Guideline prices updated successfully",
     "deleted": "Guideline prices deleted successfully",
     "capacity": "Capacity",
+    "sku": "SKU",
     "itemName": "Item Name",
     "purchasePrice": "Purchase Price",
     "discountValue": "Discount Value",

@@ -37,6 +37,12 @@ interface GuidelinePriceSheet {
   lines: GuidelinePriceLine[];
 }
 
+interface GroupedSheetsRow {
+  month: number;
+  year: number;
+  sheets: GuidelinePriceSheet[];
+}
+
 interface SupplierOption {
   id: string;
   companyName: string;
@@ -73,6 +79,7 @@ export function GuidelinePricesTab() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLines, setEditLines] = useState<GuidelinePriceLineForm[]>([emptyGuidelinePriceLine()]);
+  const [manageGroupKey, setManageGroupKey] = useState<string | null>(null);
 
   const sheetsQuery = useQuery({
     queryKey: ['guideline-price-sheets', companyId],
@@ -87,22 +94,23 @@ export function GuidelinePricesTab() {
   });
   const supplierOptions = (suppliersQuery.data ?? []).map((s) => ({ value: s.id, label: s.companyName }));
 
-  // Dynamic columns: the union of every product ever priced across all sheets, in first-seen
-  // order — the table's whole point is one column per AC model with each month as a row.
-  const productColumns = useMemo(() => {
-    const seen = new Map<string, string>();
+  // One row per month/year, grouping every company's sheet for that month together — the list
+  // table's job is now "which companies have a sheet this month", not per-model prices (those
+  // differ per company and are managed per-sheet from the company popover below). Insertion order
+  // follows sheetsQuery.data's own year/month DESC ordering from the backend, so groups stay
+  // correctly sorted without a separate sort step here.
+  const groupedRows = useMemo(() => {
+    const groups = new Map<string, GroupedSheetsRow>();
     for (const sheet of sheetsQuery.data ?? []) {
-      for (const line of sheet.lines) {
-        if (!seen.has(line.productId)) {
-          seen.set(
-            line.productId,
-            line.product?.sku ? `${line.product.sku} — ${line.product.nameEn}` : line.product?.nameEn ?? '—',
-          );
-        }
-      }
+      const key = `${sheet.year}-${sheet.month}`;
+      const group = groups.get(key);
+      if (group) group.sheets.push(sheet);
+      else groups.set(key, { month: sheet.month, year: sheet.year, sheets: [sheet] });
     }
-    return Array.from(seen.entries());
+    return Array.from(groups.values());
   }, [sheetsQuery.data]);
+
+  const manageGroup = groupedRows.find((g) => `${g.year}-${g.month}` === manageGroupKey) ?? null;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -161,7 +169,9 @@ export function GuidelinePricesTab() {
   async function handleDelete(e: MouseEvent, sheet: GuidelinePriceSheet) {
     e.stopPropagation();
     const ok = await confirm({
-      message: t('common.confirmDelete', { name: `${monthNameOnly(sheet.month, i18n.language)} ${sheet.year}` }),
+      message: t('common.confirmDelete', {
+        name: `${sheet.supplier?.companyName ?? ''} — ${monthNameOnly(sheet.month, i18n.language)} ${sheet.year}`,
+      }),
     });
     if (ok) deleteMutation.mutate(sheet.id);
   }
@@ -173,56 +183,29 @@ export function GuidelinePricesTab() {
     setCompanyRows((rows) => rows.filter((_, i) => i !== index));
   }
 
-  const columns: Column<GuidelinePriceSheet>[] = [
+  const columns: Column<GroupedSheetsRow>[] = [
     { header: t('guidelinePrices.month'), accessor: (r) => `${monthNameOnly(r.month, i18n.language)} ${r.year}` },
-    { header: t('guidelinePrices.company'), accessor: (r) => r.supplier?.companyName ?? '—' },
-    ...productColumns.map(([productId, label]) => ({
-      header: label,
-      accessor: (r: GuidelinePriceSheet) => {
-        const line = r.lines.find((l) => l.productId === productId);
-        return line ? formatAmount(line.price) : '—';
+    {
+      header: t('guidelinePrices.company'),
+      accessor: (r) => {
+        const visible = r.sheets.slice(0, 2);
+        const overflow = r.sheets.length - visible.length;
+        return (
+          <button
+            type="button"
+            className="inline-flex flex-wrap items-center justify-center gap-1.5 hover:underline"
+            onClick={() => setManageGroupKey(`${r.year}-${r.month}`)}
+          >
+            <span>{visible.map((s) => s.supplier?.companyName ?? '—').join(' - ')}</span>
+            {overflow > 0 && (
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                {t('guidelinePrices.moreCompanies', { count: overflow })}
+              </span>
+            )}
+          </button>
+        );
       },
-      align: 'right' as const,
-    })),
-    ...(canEdit || canDelete
-      ? [
-          {
-            header: t('common.actions'),
-            isActions: true,
-            accessor: (r: GuidelinePriceSheet) => (
-              <div className="flex flex-wrap justify-center gap-1">
-                {canEdit && (
-                  <button
-                    type="button"
-                    className={iconButtonClass}
-                    title={t('common.edit')}
-                    aria-label={t('common.edit')}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openEdit(r);
-                    }}
-                  >
-                    ✏️
-                  </button>
-                )}
-                {canDelete && (
-                  <button
-                    type="button"
-                    className={iconButtonClass}
-                    title={t('common.delete')}
-                    aria-label={t('common.delete')}
-                    onClick={(e) => handleDelete(e, r)}
-                    disabled={deleteMutation.isPending}
-                  >
-                    🗑️
-                  </button>
-                )}
-              </div>
-            ),
-            align: 'center' as const,
-          },
-        ]
-      : []),
+    },
   ];
 
   const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -237,8 +220,8 @@ export function GuidelinePricesTab() {
 
       <DataTable
         columns={columns}
-        data={sheetsQuery.data ?? []}
-        keyField={(r) => r.id}
+        data={groupedRows}
+        keyField={(r) => `${r.year}-${r.month}`}
         isLoading={sheetsQuery.isLoading}
       />
 
@@ -340,6 +323,64 @@ export function GuidelinePricesTab() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!manageGroup}
+        onClose={() => setManageGroupKey(null)}
+        title={manageGroup ? `${monthNameOnly(manageGroup.month, i18n.language)} ${manageGroup.year}` : ''}
+        widthClass="max-w-2xl"
+      >
+        <div className="flex flex-col gap-2">
+          {(manageGroup?.sheets ?? []).map((sheet) => (
+            <div
+              key={sheet.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--border)] p-3"
+            >
+              <div>
+                <div className="font-medium">{sheet.supplier?.companyName ?? '—'}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+                  <span>
+                    {t('guidelinePrices.discountPercentage')}: {formatAmount(sheet.discountPercentage)}%
+                  </span>
+                  {sheet.isAuthorizedAgent && (
+                    <span className="rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                      {t('guidelinePrices.isAuthorizedAgent')}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-1">
+                {canEdit && (
+                  <button
+                    type="button"
+                    className={iconButtonClass}
+                    title={t('common.edit')}
+                    aria-label={t('common.edit')}
+                    onClick={() => {
+                      setManageGroupKey(null);
+                      openEdit(sheet);
+                    }}
+                  >
+                    ✏️
+                  </button>
+                )}
+                {canDelete && (
+                  <button
+                    type="button"
+                    className={iconButtonClass}
+                    title={t('common.delete')}
+                    aria-label={t('common.delete')}
+                    onClick={(e) => handleDelete(e, sheet)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    🗑️
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </Modal>
 
       <Modal open={!!editingId} onClose={() => setEditingId(null)} title={t('common.edit')} widthClass="max-w-4xl">

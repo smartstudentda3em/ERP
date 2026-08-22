@@ -1093,6 +1093,7 @@
     "isAuthorizedAgent": "وكيل معتمد لهذه الشركة",
     "discountPercentage": "نسبة الخصم",
     "addCompany": "إضافة شركة أخرى",
+    "moreCompanies": "+{{count}} أخرى",
     "model": "الموديل",
     "price": "السعر الاسترشادي",
     "selectModel": "اختر الموديل…",

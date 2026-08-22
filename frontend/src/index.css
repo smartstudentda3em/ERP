@@ -294,10 +294,17 @@ body {
    these rules can never leak onto some unrelated table elsewhere in the app. */
 @page guideline-price-report {
   size: A4 portrait;
-  /* Vertical 15mm, horizontal 18mm — comfortably clears the "at least 15-20mm" side-margin ask
-     without the header/table ever touching the paper edge. */
+  /* Real browser printing honors @page natively — vertical 15mm, horizontal 18mm keeps the table
+     comfortably clear of the paper edge on this path with no extra CSS needed. */
   margin: 15mm 18mm;
 }
+
+/* Column order is fixed by GuidelinePriceDetailPage.tsx's own `columns` array, not
+   user-configurable, so targeting these exact positions is as reliable as the :last-child
+   convention used elsewhere in this file — nth-child 1/2/3/8 are the only ones still visible
+   (hideOnPrint hides 4/5/6/7 via display:none): 1 القدرة, 2 الماركة, 3 اسم الصنف, 8 سعر البيع
+   المتوقع. Narrower shares for capacity/brand (short values) leave the item-name and price columns
+   the room they actually need instead of four equal-width columns. */
 @media print {
   .guideline-price-print {
     page: guideline-price-report;
@@ -307,10 +314,6 @@ body {
   }
   .guideline-price-print .app-table {
     width: 100%;
-    /* Fixed layout divides the page width evenly across whichever columns are actually visible
-       (hideOnPrint'd cells are display:none, so they're excluded from the layout algorithm
-       entirely) — this is what gives the remaining 4 columns even, comfortable widths instead of
-       auto-sizing tight around content. */
     table-layout: fixed;
   }
   .guideline-price-print th,
@@ -327,6 +330,25 @@ body {
     font-size: 12px;
     padding: 6px 6px;
   }
+  .guideline-price-print .app-table th:nth-child(1),
+  .guideline-price-print .app-table td:nth-child(1) {
+    width: 12%;
+    font-size: 11px;
+  }
+  .guideline-price-print .app-table th:nth-child(2),
+  .guideline-price-print .app-table td:nth-child(2) {
+    width: 15%;
+    font-size: 11px;
+  }
+  .guideline-price-print .app-table th:nth-child(3),
+  .guideline-price-print .app-table td:nth-child(3) {
+    width: 43%;
+  }
+  .guideline-price-print .app-table th:nth-child(8),
+  .guideline-price-print .app-table td:nth-child(8) {
+    width: 30%;
+    text-align: center;
+  }
   .guideline-price-print .app-table thead th {
     background-color: #1e3a5f !important;
     color: #ffffff !important;
@@ -341,6 +363,16 @@ body {
   }
 }
 
+/* html2canvas captures the live screen DOM, not the browser's print layout engine — it never sees
+   @page at all, so without its own margin the PDF path was rendering the table flush against the
+   captured canvas's edges (and, since the footer note sits right after the table with nothing
+   reserving space below it, pushed hard against the bottom too). Padding on the captured container
+   itself is the only way to give this path the same breathing room @page gives real printing —
+   values in mm still convert to real page-proportional space once pdf-export.ts scales the
+   captured canvas down to A4 width. */
+.guideline-price-print.pdf-export-mode {
+  padding: 15mm 18mm;
+}
 .guideline-price-print.pdf-export-mode .overflow-x-auto {
   overflow: visible;
 }
@@ -362,6 +394,25 @@ body {
   font-size: 17px;
   padding: 8px 6px;
 }
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(1),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(1) {
+  width: 12%;
+  font-size: 15px;
+}
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(2),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(2) {
+  width: 15%;
+  font-size: 15px;
+}
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(3),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(3) {
+  width: 43%;
+}
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(8),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(8) {
+  width: 30%;
+  text-align: center;
+}
 .guideline-price-print.pdf-export-mode .app-table thead th {
   background-color: #1e3a5f !important;
   color: #ffffff !important;
@@ -373,6 +424,9 @@ body {
 }
 .guideline-price-print.pdf-export-mode .app-table tbody tr:nth-child(even) td {
   background-color: #eef2f7 !important;
+}
+.guideline-price-print.pdf-export-mode .section-title {
+  margin-bottom: 4mm;
 }
 
 /* Generic screen↔print/PDF content swap — .screen-only shows normally and disappears from both

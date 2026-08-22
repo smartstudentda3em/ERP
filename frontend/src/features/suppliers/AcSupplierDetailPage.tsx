@@ -198,19 +198,13 @@ export function AcSupplierDetailPage() {
     [cashReceipts],
   );
 
-  // "دفعات المورد" is deliberately fully decoupled: this tab shows ONLY the standalone,
-  // non-treasury-linked AcSupplierPayment log — never the legacy treasury-tied SupplierPayment
-  // rows (those carry a real Cash/Bank method and cashMovementId, so mixing them in here would
-  // contradict "مسجلة بشكل مستقل تماماً خاص بالمورد فقط"). Legacy money is still counted in the
-  // reconciliation cards above (totalRegisteredSupplierPaymentsAllTime) too, just scoped to the
-  // year/quarter filter here instead of the full history.
+  // "دفعات المورد" tab: every row (both real "تسجيل دفعة" entries and the negative
+  // ترحيل/consumption ones) narrowed to the year/quarter filter, for browsing one period's
+  // activity. The reconciliation card above uses the unfiltered, positive-only version of this
+  // same data — see totalRegisteredSupplierPaymentsAllTime.
   const filteredPayments = useMemo(
     () => (acPaymentsQuery.data ?? []).filter((p) => inDateRange(p.paymentDate, dateRange)),
     [acPaymentsQuery.data, dateRange],
-  );
-  const totalPayments = useMemo(
-    () => filteredPayments.reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
-    [filteredPayments],
   );
 
   const filteredTaxPayments = useMemo(
@@ -230,15 +224,21 @@ export function AcSupplierDetailPage() {
    * Free-goods receipts are excluded from "الفواتير المشتراة بالسعر الأساسي" by construction
    * (their totalAmount is always 0), matching point 3's required separation.
    *
-   * "إجمالي دفعات المورد المسجلة" is the standalone AcSupplierPayment ledger's own all-time sum —
-   * every "تسجيل دفعة" (a real treasury debit, see payMutation) plus every retroactive
-   * ترحيل/تسويات row (the CASH→رصيد المورد migration, and PurchaseReceiptsService.deductForPurchase's
-   * own consumption entries) — the exact same figure the "دفعات المورد" tab's own badge shows, just
-   * unfiltered by the year/quarter picker above. This replaced an earlier legacy-only calculation
-   * (per-receipt paidAmount + the old treasury-tied SupplierPayment log) by explicit request, since
-   * that one no longer reflects reality once a purchase can be paid from رصيد المورد instead of the
-   * treasury. SupplierStatementPage.tsx is untouched and still uses the legacy calculation — this
-   * screen alone now pivots around the AC-only ledger.
+   * "إجمالي دفعات المورد المسجلة" is the standalone AcSupplierPayment ledger's POSITIVE rows only —
+   * real money the company actually handed the supplier (every "تسجيل دفعة", see payMutation).
+   * Deliberately EXCLUDES the ledger's negative rows: PurchaseReceiptsService.deductForPurchase's
+   * consumption entries (a purchase paid via "رصيد المورد") and the one-off CASH→رصيد المورد
+   * migration's retroactive rows — those were never new money leaving the company, just
+   * already-received credit being marked as spent, so summing them in here would understate this
+   * card and swing it negative for no accounting reason (confirmed in production: a supplier with
+   * one real 1,000,000 payment and 1,042,800 of migrated consumption showed as -42,800 here, which
+   * reads as "the company somehow owes the SUPPLIER money" rather than what actually happened).
+   *
+   * الرصيد المتبقي الفعلي = إجمالي الفواتير المشتراة − هذا الرقم still holds exactly as before —
+   * every purchase not covered by real money (whether still fully unpaid, or settled by consuming
+   * previously-paid رصيد المورد credit) correctly stays counted as owed, since only genuine deposits
+   * reduce it now. SupplierStatementPage.tsx is untouched and still uses its own, separate
+   * calculation — this screen alone pivots around the AC-only ledger.
    */
   const allCashReceipts = useMemo(() => allSupplierReceipts.filter((r) => !r.isFreeGoods), [allSupplierReceipts]);
   const totalCashPurchasesAllTime = useMemo(
@@ -246,7 +246,10 @@ export function AcSupplierDetailPage() {
     [allCashReceipts],
   );
   const totalRegisteredSupplierPaymentsAllTime = useMemo(
-    () => (acPaymentsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
+    () =>
+      (acPaymentsQuery.data ?? [])
+        .filter((p) => Number(p.amount) > 0)
+        .reduce((sum, p) => sum + Number(p.amount), 0),
     [acPaymentsQuery.data],
   );
   const netBalanceOwed = totalCashPurchasesAllTime - totalRegisteredSupplierPaymentsAllTime;
@@ -462,11 +465,10 @@ export function AcSupplierDetailPage() {
 
       {tab === 'payments' && (
         <>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="rounded-lg bg-[var(--table-header-bg)] px-3 py-1.5 text-sm font-medium">
-              {t('suppliers.totalIndependentPayments')}:{' '}
-              <span className="font-semibold">{money(totalPayments)}</span>
-            </div>
+          {/* The period total used to be repeated here too ("إجمالي دفعات المورد المسجلة: X") —
+              removed by explicit request as an unwarranted duplicate of the reconciliation card
+              above, which already shows this same figure (all-time, not period-filtered). */}
+          <div className="mb-4 flex justify-end">
             <Button onClick={() => setPayOpen(true)}>+ {t('actions.recordPayment')}</Button>
           </div>
           <DataTable

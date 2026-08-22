@@ -315,14 +315,24 @@ export function GuidelinePriceDetailPage() {
     {
       header: t('guidelinePrices.expectedSalePrice'),
       accessor: (r) => (
-        <Input
-          type="number"
-          min="0"
-          step="0.01"
-          value={prices[r.key] ?? ''}
-          onChange={(e) => setPrices((p) => ({ ...p, [r.key]: e.target.value }))}
-          disabled={!canEdit}
-        />
+        <>
+          {/* Print/PDF gets plain text instead of the live input — html2canvas clones the DOM to
+              capture it, and a cloned <input> doesn't carry over its live JS `.value` (React
+              controlled inputs never set the `value` attribute the clone would need), so the
+              field was rendering blank/stale in the exported PDF. */}
+          <span className="print-only">
+            {prices[r.key] ? formatAmount(Number(prices[r.key])) : '—'}
+          </span>
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            value={prices[r.key] ?? ''}
+            onChange={(e) => setPrices((p) => ({ ...p, [r.key]: e.target.value }))}
+            disabled={!canEdit}
+            className="screen-only"
+          />
+        </>
       ),
     },
   ];
@@ -431,7 +441,13 @@ export function GuidelinePriceDetailPage() {
             rowStyle={(r) => rowBackgrounds.get(r.key)}
           />
           {footerNote && (
-            <div className="mt-4 border-t border-[var(--border)] pt-3 text-sm text-[var(--text-muted)]">
+            // "section-title" is one of pdf-export.ts's own recognized page-break boundaries, so
+            // the paginator snaps a break to just above this block instead of ever cutting through
+            // it; break-inside/page-break-inside do the same for the real browser print path.
+            <div
+              className="section-title mt-4 border-t border-[var(--border)] pt-3 text-sm text-[var(--text-muted)]"
+              style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
+            >
               {footerNote}
             </div>
           )}

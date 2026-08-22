@@ -294,7 +294,9 @@ body {
    these rules can never leak onto some unrelated table elsewhere in the app. */
 @page guideline-price-report {
   size: A4 portrait;
-  margin: 12mm;
+  /* Vertical 15mm, horizontal 18mm — comfortably clears the "at least 15-20mm" side-margin ask
+     without the header/table ever touching the paper edge. */
+  margin: 15mm 18mm;
 }
 @media print {
   .guideline-price-print {
@@ -303,8 +305,13 @@ body {
   .guideline-price-print .overflow-x-auto {
     overflow: visible;
   }
-  .guideline-price-print table {
+  .guideline-price-print .app-table {
     width: 100%;
+    /* Fixed layout divides the page width evenly across whichever columns are actually visible
+       (hideOnPrint'd cells are display:none, so they're excluded from the layout algorithm
+       entirely) — this is what gives the remaining 4 columns even, comfortable widths instead of
+       auto-sizing tight around content. */
+    table-layout: fixed;
   }
   .guideline-price-print th,
   .guideline-price-print td {
@@ -337,8 +344,9 @@ body {
 .guideline-price-print.pdf-export-mode .overflow-x-auto {
   overflow: visible;
 }
-.guideline-price-print.pdf-export-mode table {
+.guideline-price-print.pdf-export-mode .app-table {
   width: 100%;
+  table-layout: fixed;
 }
 .guideline-price-print.pdf-export-mode th,
 .guideline-price-print.pdf-export-mode td {
@@ -365,6 +373,37 @@ body {
 }
 .guideline-price-print.pdf-export-mode .app-table tbody tr:nth-child(even) td {
   background-color: #eef2f7 !important;
+}
+
+/* Generic screen↔print/PDF content swap — .screen-only shows normally and disappears from both
+   print output paths; .print-only is the reverse. Used where an interactive control (e.g. an
+   <input>) needs to become plain text on the document: html2canvas clones the DOM to capture it,
+   and a cloned <input> doesn't carry over its live JS `.value` (only the initial `value`
+   attribute, which React controlled inputs never set), so form fields routinely render blank or
+   stale in the exported PDF — swapping to a plain text node for print/PDF sidesteps that
+   entirely, not just here but wherever else this pattern is needed. */
+/* No base rule here on purpose — the element keeps its natural display (inline-block for an
+   <input>, block for a <div>, etc.) on screen; only print/PDF override it to display:none. Setting
+   display:inline unconditionally here would have silently broken width/padding on any block-level
+   or inline-block element (e.g. an <input>'s w-full) that opts into this class. */
+@media print {
+  .screen-only {
+    display: none !important;
+  }
+}
+.pdf-export-mode .screen-only {
+  display: none !important;
+}
+.print-only {
+  display: none;
+}
+@media print {
+  .print-only {
+    display: inline !important;
+  }
+}
+.pdf-export-mode .print-only {
+  display: inline !important;
 }
 
 /* Printing should never inherit the dark theme's colors — force light/print-safe values for every

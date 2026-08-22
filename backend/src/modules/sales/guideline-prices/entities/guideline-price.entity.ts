@@ -2,14 +2,18 @@ import { Column, Entity, JoinColumn, ManyToOne, OneToMany, Unique } from "typeor
 import { BaseEntity } from "../../../../entities/base.entity";
 import { Product } from "../../../inventory/products/entities/product.entity";
 import { Company } from "../../../settings/entities/company.entity";
+import { Supplier } from "../../../parties/suppliers/entities/supplier.entity";
 
-/** One "price sheet" per calendar month — AC-only (see GuidelinePricesTab.tsx's isAirConditioning
- * gate; there is no backend-side company check, same convention as the Installments module, which
- * is also AC-only and relies purely on frontend gating + normal companyId scoping). The unique
- * constraint is the sheet's real identity: month/year are immutable after creation, only `lines`
- * can be edited (see UpdateGuidelinePriceSheetDto). */
+/** One "price sheet" per calendar month per supplier company — AC-only (see
+ * GuidelinePricesTab.tsx's isAirConditioning gate; there is no backend-side company check, same
+ * convention as the Installments module, which is also AC-only and relies purely on frontend
+ * gating + normal companyId scoping). The unique constraint is the sheet's real identity:
+ * month/year/supplier are immutable after creation, only `lines` can be edited (see
+ * UpdateGuidelinePriceSheetDto). `lines` starts empty at creation — the "add" flow's first step
+ * only captures this header data (supplier, agent status, discount); models/prices are filled in
+ * afterwards via edit. */
 @Entity("guideline_price_sheets")
-@Unique(["companyId", "year", "month"])
+@Unique(["companyId", "year", "month", "supplierId"])
 export class GuidelinePriceSheet extends BaseEntity {
   @Column("uuid")
   companyId: string;
@@ -23,6 +27,19 @@ export class GuidelinePriceSheet extends BaseEntity {
 
   @Column({ type: "smallint" })
   year: number;
+
+  @Column("uuid")
+  supplierId: string;
+
+  @ManyToOne(() => Supplier, { onDelete: "RESTRICT" })
+  @JoinColumn({ name: "supplierId" })
+  supplier: Supplier;
+
+  @Column({ type: "boolean", default: false })
+  isAuthorizedAgent: boolean;
+
+  @Column({ type: "numeric", precision: 5, scale: 2, default: 0 })
+  discountPercentage: number;
 
   @Column("uuid")
   createdById: string;

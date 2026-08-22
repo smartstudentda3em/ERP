@@ -8,6 +8,7 @@ import { monthNameOnly } from '../../lib/date-utils';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { FormField, Input, Select } from '../../components/ui/Input';
+import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
@@ -29,7 +30,16 @@ interface GuidelinePriceSheet {
   id: string;
   month: number;
   year: number;
+  supplierId: string;
+  isAuthorizedAgent: boolean;
+  discountPercentage: number;
+  supplier: { companyName: string };
   lines: GuidelinePriceLine[];
+}
+
+interface SupplierOption {
+  id: string;
+  companyName: string;
 }
 
 const iconButtonClass = 'rounded-lg p-2 text-lg leading-none hover:bg-black/5 dark:hover:bg-white/5';
@@ -49,7 +59,9 @@ export function GuidelinePricesTab() {
   const [modalOpen, setModalOpen] = useState(false);
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
-  const [lines, setLines] = useState<GuidelinePriceLineForm[]>([emptyGuidelinePriceLine()]);
+  const [supplierId, setSupplierId] = useState('');
+  const [isAuthorizedAgent, setIsAuthorizedAgent] = useState(false);
+  const [discountPercentage, setDiscountPercentage] = useState('');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLines, setEditLines] = useState<GuidelinePriceLineForm[]>([emptyGuidelinePriceLine()]);
@@ -59,6 +71,13 @@ export function GuidelinePricesTab() {
     queryFn: () => unwrap<GuidelinePriceSheet[]>(apiClient.get('/sales/guideline-prices', { params: { companyId } })),
     enabled: !!companyId,
   });
+
+  const suppliersQuery = useQuery({
+    queryKey: ['suppliers', companyId],
+    queryFn: () => unwrap<SupplierOption[]>(apiClient.get('/suppliers', { params: { companyId } })),
+    enabled: modalOpen && !!companyId,
+  });
+  const supplierOptions = (suppliersQuery.data ?? []).map((s) => ({ value: s.id, label: s.companyName }));
 
   // Dynamic columns: the union of every product ever priced across all sheets, in first-seen
   // order — the table's whole point is one column per AC model with each month as a row.
@@ -79,11 +98,19 @@ export function GuidelinePricesTab() {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      apiClient.post('/sales/guideline-prices', { month, year, lines: guidelineLinesToPayload(lines) }),
+      apiClient.post('/sales/guideline-prices', {
+        month,
+        year,
+        supplierId,
+        isAuthorizedAgent,
+        discountPercentage: Number(discountPercentage) || 0,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guideline-price-sheets'] });
       setModalOpen(false);
-      setLines([emptyGuidelinePriceLine()]);
+      setSupplierId('');
+      setIsAuthorizedAgent(false);
+      setDiscountPercentage('');
       toast.success(t('guidelinePrices.created'));
     },
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
@@ -131,6 +158,7 @@ export function GuidelinePricesTab() {
 
   const columns: Column<GuidelinePriceSheet>[] = [
     { header: t('guidelinePrices.month'), accessor: (r) => `${monthNameOnly(r.month, i18n.language)} ${r.year}` },
+    { header: t('guidelinePrices.company'), accessor: (r) => r.supplier?.companyName ?? '—' },
     ...productColumns.map(([productId, label]) => ({
       header: label,
       accessor: (r: GuidelinePriceSheet) => {
@@ -223,9 +251,36 @@ export function GuidelinePricesTab() {
                 onChange={(e) => setYear(Number(e.target.value) || now.getFullYear())}
               />
             </FormField>
+            <FormField label={t('guidelinePrices.company')}>
+              <SearchableSelect
+                options={supplierOptions}
+                value={supplierId}
+                onChange={setSupplierId}
+                placeholder={t('guidelinePrices.selectCompany') ?? ''}
+                required
+              />
+            </FormField>
+            <FormField label={t('guidelinePrices.discountPercentage')}>
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                required
+                value={discountPercentage}
+                onChange={(e) => setDiscountPercentage(e.target.value)}
+              />
+            </FormField>
           </div>
 
-          <GuidelinePriceLineEditor lines={lines} onChange={setLines} />
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={isAuthorizedAgent}
+              onChange={(e) => setIsAuthorizedAgent(e.target.checked)}
+            />
+            {t('guidelinePrices.isAuthorizedAgent')}
+          </label>
 
           <div className="flex justify-end gap-2 border-t border-[var(--border)] pt-4">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>

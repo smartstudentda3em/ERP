@@ -17,31 +17,37 @@ export class GuidelinePricesService {
   async findAll(companyId: string): Promise<GuidelinePriceSheet[]> {
     return this.repo.find({
       where: { companyId },
-      relations: ['lines', 'lines.product'],
+      relations: ['lines', 'lines.product', 'supplier'],
       order: { year: 'DESC', month: 'DESC' },
     });
   }
 
   async findOne(id: string, companyId: string): Promise<GuidelinePriceSheet> {
-    const sheet = await this.repo.findOne({ where: { id, companyId }, relations: ['lines', 'lines.product'] });
+    const sheet = await this.repo.findOne({
+      where: { id, companyId },
+      relations: ['lines', 'lines.product', 'supplier'],
+    });
     if (!sheet) throw new NotFoundException('Guideline price sheet not found');
     return sheet;
   }
 
   async create(dto: CreateGuidelinePriceSheetDto, createdById: string, companyId: string): Promise<GuidelinePriceSheet> {
     const existing = await this.repo.findOne({
-      where: { companyId, month: dto.month, year: dto.year },
+      where: { companyId, month: dto.month, year: dto.year, supplierId: dto.supplierId },
     });
     if (existing) {
-      throw new BadRequestException('A guideline price sheet already exists for this month');
+      throw new BadRequestException('A guideline price sheet already exists for this supplier and month');
     }
 
     const sheet = this.repo.create({
       companyId,
       month: dto.month,
       year: dto.year,
+      supplierId: dto.supplierId,
+      isAuthorizedAgent: dto.isAuthorizedAgent,
+      discountPercentage: dto.discountPercentage,
       createdById,
-      lines: dto.lines.map((line) =>
+      lines: (dto.lines ?? []).map((line) =>
         Object.assign(new GuidelinePriceLine(), { productId: line.productId, price: line.price }),
       ),
     });

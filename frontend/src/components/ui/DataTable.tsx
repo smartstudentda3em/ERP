@@ -17,6 +17,11 @@ export interface Column<T> {
    * layout it renders as its own full-width strip below the other fields instead of being squeezed
    * into a label/value line, where a handful of buttons had no room and wrapped mid-word. */
   isActions?: boolean;
+  /** Shows normally on screen but is dropped from both the printed page and the exported PDF
+   * (`.print-pdf-hidden-col` in index.css, paired for @media print and .pdf-export-mode since
+   * html2canvas doesn't honor @media print) — for a column useful while editing but not meant for
+   * a document handed to someone else. */
+  hideOnPrint?: boolean;
 }
 
 export interface ServerPagination {
@@ -123,7 +128,11 @@ export function DataTable<T>({
               {columns.map((col, i) => {
                 const sortable = !!sort && !!col.sortKey;
                 const active = sortable && sort!.sortBy === col.sortKey;
-                const thClassNames = [sortable ? 'cursor-pointer select-none' : '', col.highlight ? 'col-highlight' : '']
+                const thClassNames = [
+                  sortable ? 'cursor-pointer select-none' : '',
+                  col.highlight ? 'col-highlight' : '',
+                  col.hideOnPrint ? 'print-pdf-hidden-col' : '',
+                ]
                   .filter(Boolean)
                   .join(' ');
                 return (
@@ -163,7 +172,14 @@ export function DataTable<T>({
                   onClick={() => onRowClick?.(row)}
                 >
                   {columns.map((col, i) => (
-                    <td key={i} className={col.highlight ? 'col-highlight' : undefined}>
+                    <td
+                      key={i}
+                      className={
+                        [col.highlight ? 'col-highlight' : '', col.hideOnPrint ? 'print-pdf-hidden-col' : '']
+                          .filter(Boolean)
+                          .join(' ') || undefined
+                      }
+                    >
                       {col.accessor(row)}
                     </td>
                   ))}
@@ -201,7 +217,10 @@ export function DataTable<T>({
                 <div className="mb-2.5 text-base font-semibold">{titleCol.accessor(row)}</div>
                 <div className="flex flex-col gap-2">
                   {fieldCols.map((col, i) => (
-                    <div key={i} className="flex items-start justify-between gap-3 text-sm">
+                    <div
+                      key={i}
+                      className={`flex items-start justify-between gap-3 text-sm ${col.hideOnPrint ? 'print-pdf-hidden-col' : ''}`}
+                    >
                       <span className="shrink-0 text-[var(--text-muted)]">{col.header}</span>
                       <span className={`text-end font-medium ${col.highlight ? 'text-[var(--accent,var(--primary-600))]' : ''}`}>
                         {col.accessor(row)}

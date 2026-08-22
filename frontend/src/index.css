@@ -247,6 +247,19 @@ body {
   display: none !important;
 }
 
+/* DataTable.tsx's Column.hideOnPrint — marks an arbitrary, non-contiguous column (position not
+   known in advance, unlike the fixed-last-column case above) as useful on screen but never shown
+   in the printed page or exported PDF. Same @media print / .pdf-export-mode pairing as above,
+   since html2canvas doesn't honor @media print at all. */
+@media print {
+  .print-pdf-hidden-col {
+    display: none !important;
+  }
+}
+.pdf-export-mode .print-pdf-hidden-col {
+  display: none !important;
+}
+
 /* Printing should never inherit the dark theme's colors — force light/print-safe values for every
    CSS-variable-driven surface (background, text, borders, table header) regardless of which theme
    was active on screen when the user printed. */

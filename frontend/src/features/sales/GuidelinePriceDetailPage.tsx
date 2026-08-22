@@ -296,18 +296,21 @@ export function GuidelinePriceDetailPage() {
     { header: t('guidelinePrices.capacity'), accessor: (r) => r.capacity },
     { header: t('guidelinePrices.brand'), accessor: (r) => r.brand },
     { header: t('guidelinePrices.itemName'), accessor: (r) => r.name },
-    { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice) },
+    { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice), hideOnPrint: true },
     {
       header: t('guidelinePrices.discountValue'),
       accessor: (r) => formatAmount(r.purchasePrice * (r.discountPercentage / 100)),
+      hideOnPrint: true,
     },
     {
       header: t('guidelinePrices.taxValue'),
       accessor: (r) => formatAmount(r.purchasePrice * (r.taxRate / 100)),
+      hideOnPrint: true,
     },
     {
       header: t('guidelinePrices.netPurchasePrice'),
       accessor: (r) => formatAmount(r.purchasePrice * (1 - r.discountPercentage / 100)),
+      hideOnPrint: true,
     },
     {
       header: t('guidelinePrices.expectedSalePrice'),

@@ -444,8 +444,10 @@ export function AcSupplierDetailPage() {
         </div>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.netBalanceOwed')}</div>
-          <div className={`mt-1 text-lg font-semibold ${netBalanceStatus.className}`}>{money(netBalanceOwed)}</div>
-          <div className={`mt-0.5 text-xs font-medium ${netBalanceStatus.className}`}>{netBalanceStatus.label}</div>
+          <div className="mt-1 flex items-center justify-center gap-1.5">
+            <span className="text-lg font-semibold">{money(Math.abs(netBalanceOwed))}</span>
+            <span className={`text-xs font-medium ${netBalanceStatus.className}`}>{netBalanceStatus.label}</span>
+          </div>
         </div>
       </div>
 

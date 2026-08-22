@@ -202,6 +202,7 @@
     "cogs": "تكلفة البضاعة المباعة",
     "suggestedPrice": "السعر المقترح",
     "actualSellingPrice": "سعر البيع الفعلي",
+    "invoiceSellingPrice": "سعر البيع",
     "referenceOnly": "للاسترشاد فقط",
     "profit": "الربح",
     "profitPerUnit": "ربح الوحدة",

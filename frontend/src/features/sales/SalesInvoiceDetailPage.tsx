@@ -82,7 +82,7 @@ export function SalesInvoiceDetailPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isAirConditioning } = useActiveCompany();
   // The mobile app (مندوب/مدير فرع) never gets a "طباعة" button — there's no printer attached to
   // a phone, and if they really do want a paper copy they'd print from the desktop site anyway.
   // Print stays for every other role (Administrator, Manager, desktop browsing in general).
@@ -363,8 +363,8 @@ export function SalesInvoiceDetailPage() {
                     <th>{t('fields.product')}</th>
                     <th>{t('fields.quantity')}</th>
                     <th>{t('fields.unit')}</th>
-                    <th>{t('fields.suggestedPrice')}</th>
-                    <th>{t('fields.actualSellingPrice')}</th>
+                    {!isAirConditioning && <th>{t('fields.suggestedPrice')}</th>}
+                    <th>{isAirConditioning ? t('fields.invoiceSellingPrice') : t('fields.actualSellingPrice')}</th>
                     <th>{t('common.total')}</th>
                   </tr>
                 </thead>
@@ -387,7 +387,7 @@ export function SalesInvoiceDetailPage() {
                           </div>
                         )}
                       </td>
-                      <td className="text-[var(--text-muted)]">{money(l.suggestedPrice)}</td>
+                      {!isAirConditioning && <td className="text-[var(--text-muted)]">{money(l.suggestedPrice)}</td>}
                       <td className="font-medium">{money(l.unitPrice)}</td>
                       <td>{money(l.lineTotal)}</td>
                     </tr>

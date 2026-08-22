@@ -137,9 +137,23 @@ export function WarehousesPage() {
     queryFn: () => unwrap<LookupOption[]>(apiClient.get('/settings/brands')),
   });
 
+  // Same search/category/brand/status filters as productsQuery below (deliberately excluding the
+  // consumed-quantity date range — that only ever drives a per-row column, never a summary card),
+  // so these cards always describe exactly the filtered rows showing in the table, not the whole
+  // warehouse. React Query refetches automatically whenever any of these change.
   const summaryQuery = useQuery({
-    queryKey: ['warehouse-summary', selectedWarehouseId],
-    queryFn: () => unwrap<Summary>(apiClient.get(`/inventory/warehouse-view/${selectedWarehouseId}/summary`)),
+    queryKey: ['warehouse-summary', selectedWarehouseId, debouncedProductSearch, categoryId, brandId, status],
+    queryFn: () =>
+      unwrap<Summary>(
+        apiClient.get(`/inventory/warehouse-view/${selectedWarehouseId}/summary`, {
+          params: {
+            search: debouncedProductSearch || undefined,
+            categoryId: categoryId || undefined,
+            brandId: brandId || undefined,
+            status: status || undefined,
+          },
+        }),
+      ),
     enabled: !!selectedWarehouseId,
   });
 

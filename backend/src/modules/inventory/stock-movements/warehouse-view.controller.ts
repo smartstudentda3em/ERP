@@ -12,8 +12,12 @@ export class WarehouseViewController {
 
   @Get(':warehouseId/summary')
   @Permissions('inventory.stock.view')
-  summary(@Param('warehouseId', ParseUUIDPipe) warehouseId: string, @CurrentUser('companyId') companyId: string) {
-    return this.service.getSummary(warehouseId, companyId);
+  summary(
+    @Param('warehouseId', ParseUUIDPipe) warehouseId: string,
+    @CurrentUser('companyId') companyId: string,
+    @Query() query: WarehouseProductsQueryDto,
+  ) {
+    return this.service.getSummary(warehouseId, companyId, query);
   }
 
   @Get(':warehouseId/products')

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { StockLevel } from './entities/stock-level.entity';
 import { StockMovement } from './entities/stock-movement.entity';
 import { Product } from '../products/entities/product.entity';
@@ -74,9 +74,36 @@ export class WarehouseViewService {
     return qb.where('sl."warehouseId" = :warehouseId AND sl."companyId" = :companyId', { warehouseId, companyId });
   }
 
-  async getSummary(warehouseId: string, companyId: string) {
+  /** Shared between getSummary and getProducts so the summary cards can never drift out of sync
+   * with what the table below is actually showing — same search/category/brand/status conditions,
+   * applied the same way, in both places. */
+  private applyProductFilters(
+    qb: SelectQueryBuilder<StockLevel>,
+    query: Pick<WarehouseProductsQueryDto, 'search' | 'categoryId' | 'brandId' | 'status'>,
+  ): void {
+    if (query.search) {
+      qb.andWhere(
+        '(p.sku ILIKE :search OR p.barcode ILIKE :search OR p."nameEn" ILIKE :search OR p."nameAr" ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+    if (query.categoryId) qb.andWhere('p."categoryId" = :categoryId', { categoryId: query.categoryId });
+    if (query.brandId) qb.andWhere('p."brandId" = :brandId', { brandId: query.brandId });
+    if (query.status === 'out') qb.andWhere(`${COMPANY_QTY_SUBQUERY} <= 0`);
+    else if (query.status === 'low')
+      qb.andWhere(`${COMPANY_QTY_SUBQUERY} > 0 AND ${COMPANY_QTY_SUBQUERY} <= p."reorderLevel"`);
+    else if (query.status === 'in') qb.andWhere(`${COMPANY_QTY_SUBQUERY} > p."reorderLevel"`);
+  }
+
+  async getSummary(
+    warehouseId: string,
+    companyId: string,
+    query: Pick<WarehouseProductsQueryDto, 'search' | 'categoryId' | 'brandId' | 'status'>,
+  ) {
     await this.assertWarehouseInCompany(warehouseId, companyId);
-    const rows = await this.baseQuery(warehouseId, companyId)
+    const qb = this.baseQuery(warehouseId, companyId);
+    this.applyProductFilters(qb, query);
+    const rows = await qb
       .select('sl.quantityOnHand', 'quantityOnHand')
       .addSelect('sl.averageCost', 'averageCost')
       .addSelect('p.reorderLevel', 'reorderLevel')
@@ -131,19 +158,7 @@ export class WarehouseViewService {
     const limit = query.limit ?? 25;
 
     const qb = this.baseQuery(warehouseId, companyId, true);
-
-    if (query.search) {
-      qb.andWhere(
-        '(p.sku ILIKE :search OR p.barcode ILIKE :search OR p."nameEn" ILIKE :search OR p."nameAr" ILIKE :search)',
-        { search: `%${query.search}%` },
-      );
-    }
-    if (query.categoryId) qb.andWhere('p."categoryId" = :categoryId', { categoryId: query.categoryId });
-    if (query.brandId) qb.andWhere('p."brandId" = :brandId', { brandId: query.brandId });
-    if (query.status === 'out') qb.andWhere(`${COMPANY_QTY_SUBQUERY} <= 0`);
-    else if (query.status === 'low')
-      qb.andWhere(`${COMPANY_QTY_SUBQUERY} > 0 AND ${COMPANY_QTY_SUBQUERY} <= p."reorderLevel"`);
-    else if (query.status === 'in') qb.andWhere(`${COMPANY_QTY_SUBQUERY} > p."reorderLevel"`);
+    this.applyProductFilters(qb, query);
 
     const total = await qb.getCount();
 

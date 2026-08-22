@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,6 +17,7 @@ import { useToast } from '../../components/ui/Toast';
 import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 
 const ALL_COMPANIES = '__ALL__';
+const FOOTER_NOTE_STORAGE_KEY = 'guideline-price-print-footer-note';
 
 interface GuidelinePriceLine {
   id: string;
@@ -102,6 +103,14 @@ export function GuidelinePriceDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  // A standing personal note the user sets once and reuses across every print/PDF from this page
+  // (not tied to any one month/company) — persisted to localStorage so it survives reloads and
+  // stays editable any time, with no backend field needed for what's just a display preference.
+  const [footerNote, setFooterNote] = useState(() => localStorage.getItem(FOOTER_NOTE_STORAGE_KEY) ?? '');
+  function updateFooterNote(value: string) {
+    setFooterNote(value);
+    localStorage.setItem(FOOTER_NOTE_STORAGE_KEY, value);
+  }
 
   const sheetsQuery = useQuery({
     queryKey: ['guideline-price-sheets', companyId],
@@ -203,6 +212,26 @@ export function GuidelinePriceDetailPage() {
       return sortValue(a, secondarySort).localeCompare(sortValue(b, secondarySort), 'ar');
     });
   }, [rows, primarySort, secondarySort]);
+
+  // Alternates a tint on/off each time the primary-sort value changes as sortedRows is walked in
+  // order, so every run of rows sharing that value reads as one visually distinct band — set as an
+  // explicit inline background (transparent included) on every row rather than leaving some
+  // undefined, so this fully overrides the table's default nth-child zebra striping instead of the
+  // two competing for the same rows.
+  const rowBackgrounds = useMemo(() => {
+    const map = new Map<string, CSSProperties>();
+    let lastValue: string | null = null;
+    let groupIndex = -1;
+    for (const r of sortedRows) {
+      const value = primarySort === 'capacity' ? r.capacity : r.brand;
+      if (value !== lastValue) {
+        groupIndex++;
+        lastValue = value;
+      }
+      map.set(r.key, { backgroundColor: groupIndex % 2 === 1 ? 'var(--table-stripe)' : 'transparent' });
+    }
+    return map;
+  }, [sortedRows, primarySort]);
 
   const [prices, setPrices] = useState<Record<string, string>>({});
 
@@ -367,6 +396,18 @@ export function GuidelinePriceDetailPage() {
         )}
       </div>
 
+      {supplierId && (
+        <div className="mb-4 print:hidden">
+          <FormField label={t('guidelinePrices.footerNoteLabel')}>
+            <Input
+              value={footerNote}
+              onChange={(e) => updateFooterNote(e.target.value)}
+              placeholder={t('guidelinePrices.footerNotePlaceholder') ?? ''}
+            />
+          </FormField>
+        </div>
+      )}
+
       {!supplierId ? (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-8 text-center text-sm text-[var(--text-muted)]">
           {t('guidelinePrices.pickCompanyPrompt')}
@@ -383,7 +424,14 @@ export function GuidelinePriceDetailPage() {
             data={sortedRows}
             keyField={(r) => r.key}
             isLoading={productsQuery.isLoading}
+            pageSize={Number.MAX_SAFE_INTEGER}
+            rowStyle={(r) => rowBackgrounds.get(r.key)}
           />
+          {footerNote && (
+            <div className="mt-4 border-t border-[var(--border)] pt-3 text-sm text-[var(--text-muted)]">
+              {footerNote}
+            </div>
+          )}
         </div>
       )}
     </div>

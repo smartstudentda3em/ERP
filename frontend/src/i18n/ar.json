@@ -1109,7 +1109,9 @@
     "primarySort": "الترتيب الأساسي",
     "secondarySort": "الترتيب الفرعي",
     "taxValue": "قيمة الضريبة",
-    "allCompanies": "جميع الشركات"
+    "allCompanies": "جميع الشركات",
+    "footerNoteLabel": "جملة تذييل الطباعة",
+    "footerNotePlaceholder": "اكتب جملة تظهر أسفل صفحة الطباعة…"
   },
   "salesRepresentativesReports": {
     "listTabPress": "مدراء الأفرع",

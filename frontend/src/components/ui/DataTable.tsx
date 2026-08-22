@@ -1,4 +1,4 @@
-import { ReactNode, useMemo, useState } from 'react';
+import { CSSProperties, ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input } from './Input';
 
@@ -41,6 +41,12 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   serverPagination?: ServerPagination;
   sort?: SortState;
+  /** Optional per-row inline style (e.g. alternating group backgrounds) — takes precedence over
+   * the default `.app-table tbody tr:nth-child(even)` zebra striping wherever it returns a
+   * `backgroundColor`, since inline styles win regardless of the stylesheet rule's specificity.
+   * Applied to both the desktop table row and the phone card. Every other caller leaves this
+   * unset, so nothing changes for them. */
+  rowStyle?: (row: T) => CSSProperties | undefined;
 }
 
 export function DataTable<T>({
@@ -53,6 +59,7 @@ export function DataTable<T>({
   onRowClick,
   serverPagination,
   sort,
+  rowStyle,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
@@ -152,6 +159,7 @@ export function DataTable<T>({
                 <tr
                   key={keyField(row)}
                   className={onRowClick ? 'cursor-pointer' : undefined}
+                  style={rowStyle?.(row)}
                   onClick={() => onRowClick?.(row)}
                 >
                   {columns.map((col, i) => (
@@ -187,6 +195,7 @@ export function DataTable<T>({
               <div
                 key={keyField(row)}
                 className={`rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 ${onRowClick ? 'cursor-pointer active:bg-[var(--surface-2,var(--table-header-bg))]' : ''}`}
+                style={rowStyle?.(row)}
                 onClick={() => onRowClick?.(row)}
               >
                 <div className="mb-2.5 text-base font-semibold">{titleCol.accessor(row)}</div>

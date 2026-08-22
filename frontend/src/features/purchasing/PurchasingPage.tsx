@@ -99,7 +99,9 @@ const emptyForm = {
   unitSellingPrice: '',
   paidAmount: '',
   // Printing Press only — every other company's payment always settles into BANK (see saveMutation).
-  paymentAccount: 'CASH' as 'CASH' | 'BANK',
+  // 'SUPPLIER_BALANCE' is Air Conditioning only (see the payment-source field below and
+  // saveMutation's paidFromSupplierBalance mapping).
+  paymentAccount: 'CASH' as 'CASH' | 'BANK' | 'SUPPLIER_BALANCE',
   // Air Conditioning only — see the "بضاعة مجانية" checkbox below.
   isFreeGoods: false,
 };
@@ -197,6 +199,23 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       ),
     enabled: requiresPaymentAccount && !!companyId,
   });
+
+  // Air Conditioning only — live balance for the "رصيد المورد" payment-source badge below, same
+  // standalone AcSupplierPayment log as AcSupplierDetailPage.tsx's "دفعات المورد" tab. Summed
+  // client-side from the same rows that tab shows (deductions from a prior purchase already come
+  // back as negative amounts, so this naturally reflects what's actually left).
+  const supplierBalanceQuery = useQuery({
+    queryKey: ['ac-supplier-payments', companyId, form.supplierId],
+    queryFn: () =>
+      unwrap<{ amount: number }[]>(
+        apiClient.get('/ac-supplier-payments', { params: { companyId, supplierId: form.supplierId } }),
+      ),
+    enabled: isAirConditioning && !!companyId && !!form.supplierId,
+  });
+  const supplierBalance = useMemo(
+    () => (supplierBalanceQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
+    [supplierBalanceQuery.data],
+  );
 
   const filteredWarehouses = useMemo(() => {
     const all = warehousesQuery.data ?? [];
@@ -333,7 +352,16 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
         // Printing Press only: the user picks Cash Treasury vs. Bank Account explicitly (see the
         // form field below). Every other company keeps the prior fixed behavior — settled through
         // the bank account, with no cash-box option — since that was never user-selectable here.
-        paymentAccount: paidAmount > 0 ? (requiresPaymentAccount ? form.paymentAccount : 'BANK') : undefined,
+        // Air Conditioning's third option, "رصيد المورد", is NOT a treasury account at all — see
+        // paidFromSupplierBalance below, which is what the backend actually branches on.
+        paymentAccount:
+          paidAmount > 0 && form.paymentAccount !== 'SUPPLIER_BALANCE'
+            ? (requiresPaymentAccount ? form.paymentAccount : 'BANK')
+            : undefined,
+        // Air Conditioning only — omitted entirely for every other company, matching the backend's
+        // own AC-only rejection in PurchaseReceiptsService.assertSupplierBalancePaymentAllowed.
+        paidFromSupplierBalance:
+          isAirConditioning && paidAmount > 0 && form.paymentAccount === 'SUPPLIER_BALANCE' ? true : undefined,
         // Air Conditioning only — omitted entirely for every other company, matching the backend's
         // own AC-only rejection in PurchaseReceiptsService.assertFreeGoodsAllowed.
         isFreeGoods: isAirConditioning ? form.isFreeGoods : undefined,
@@ -789,20 +817,45 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
                       {t('treasury.paymentAccounts.CASH')}: {formatAmount(branchBalanceQuery.data?.cashBalance ?? 0)}
                     </span>
                   </div>
+                  {/* Air Conditioning only — "رصيد المورد": pays out of the selected supplier's own
+                      standalone AcSupplierPayment balance (the "دفعات المورد" tab on their detail
+                      screen) instead of a treasury account. Requires a supplier to already be
+                      selected above, since the balance is per-supplier. */}
+                  {isAirConditioning && (
+                    <div
+                      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                        form.paymentAccount === 'SUPPLIER_BALANCE'
+                          ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                          : 'border-[var(--border)] text-[var(--text-muted)]'
+                      }`}
+                    >
+                      <span>🧾</span>
+                      <span>
+                        {t('purchasing.paymentSourceSupplierBalance')}: {formatAmount(supplierBalance)}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <Select
                   required
                   value={form.paymentAccount}
-                  onChange={(e) => setForm({ ...form, paymentAccount: e.target.value as 'CASH' | 'BANK' })}
+                  onChange={(e) =>
+                    setForm({ ...form, paymentAccount: e.target.value as 'CASH' | 'BANK' | 'SUPPLIER_BALANCE' })
+                  }
                 >
                   <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
                   <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                  {isAirConditioning && (
+                    <option value="SUPPLIER_BALANCE">{t('purchasing.paymentSourceSupplierBalance')}</option>
+                  )}
                 </Select>
                 {(() => {
                   const available =
                     form.paymentAccount === 'BANK'
                       ? branchBalanceQuery.data?.bankBalance
-                      : branchBalanceQuery.data?.cashBalance;
+                      : form.paymentAccount === 'CASH'
+                        ? branchBalanceQuery.data?.cashBalance
+                        : supplierBalance;
                   if (available === undefined || paidAmount <= available) return null;
                   return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
                 })()}

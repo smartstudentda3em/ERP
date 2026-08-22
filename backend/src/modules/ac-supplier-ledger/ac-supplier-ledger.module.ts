@@ -17,5 +17,8 @@ import { AcSupplierTaxPaymentsService } from './ac-supplier-tax-payments.service
   imports: [TypeOrmModule.forFeature([AcSupplierPayment, AcSupplierTaxPayment, Supplier, Company])],
   controllers: [AcSupplierPaymentsController, AcSupplierTaxPaymentsController],
   providers: [AcSupplierPaymentsService, AcSupplierTaxPaymentsService],
+  // AcSupplierPaymentsService is also used directly by PurchaseReceiptsService (InventoryModule)
+  // for the "رصيد المورد" payment-source deduction — see that service's create()/update()/remove().
+  exports: [AcSupplierPaymentsService],
 })
 export class AcSupplierLedgerModule {}

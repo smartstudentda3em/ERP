@@ -36,6 +36,7 @@ import { SupplierPaymentsService } from './supplier-payments/supplier-payments.s
 import { SettingsModule } from '../settings/settings.module';
 import { TreasuryModule } from '../treasury/treasury.module';
 import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
+import { AcSupplierLedgerModule } from '../ac-supplier-ledger/ac-supplier-ledger.module';
 
 @Module({
   imports: [
@@ -62,6 +63,9 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
     SettingsModule,
     TreasuryModule,
     SalesRepAccessModule,
+    // PurchaseReceiptsService's "رصيد المورد" payment source (AC-only) deducts directly from this
+    // module's standalone AcSupplierPayment ledger — see AcSupplierPaymentsService.deductForPurchase.
+    AcSupplierLedgerModule,
   ],
   controllers: [
     ProductsController,

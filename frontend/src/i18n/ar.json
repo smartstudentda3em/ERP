@@ -746,6 +746,7 @@
     "packageSellingPriceOptional": "سعر بيع العبوة (اختياري)",
     "paidAmountNow": "المبلغ المدفوع الآن",
     "paymentSource": "مصدر الدفع / طريقة السحب",
+    "paymentSourceSupplierBalance": "رصيد المورد",
     "insufficientBalanceWarning": "تنبيه: المبلغ المدفوع أكبر من الرصيد المتاح في هذا الحساب",
     "outstandingToSupplier": "المتبقي كمستحق للمورد",
     "noReceiptsYet": "لا توجد إذون استلام مسجلة بعد",

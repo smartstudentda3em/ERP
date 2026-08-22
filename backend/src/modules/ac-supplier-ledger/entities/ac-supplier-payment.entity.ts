@@ -36,6 +36,16 @@ export class AcSupplierPayment extends BaseEntity {
   @Column({ type: "text", nullable: true })
   notes: string | null;
 
+  /** Set only on a row auto-inserted by PurchaseReceiptsService when an AC purchase is paid via
+   * "رصيد المورد" (a NEGATIVE amount consuming this ledger's balance) — lets that same purchase
+   * receipt's later edit/delete find and remove exactly this row (see
+   * AcSupplierPaymentsService.removeByPurchaseReceipt). No FK/relation to PurchaseReceipt on
+   * purpose, mirroring CashMovement's sourceType/sourceId pattern — keeps this module fully
+   * decoupled from the inventory module at the entity level. Null for every normal, user-entered
+   * payment row. */
+  @Column({ type: "uuid", nullable: true })
+  purchaseReceiptId: string | null;
+
   @Column("uuid")
   createdById: string;
 }

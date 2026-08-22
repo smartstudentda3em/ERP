@@ -66,8 +66,14 @@ export class CreatePurchaseReceiptDto {
   @IsOptional() @IsNumber() @Min(0) unitSellingPrice?: number;
   /** Amount actually paid to the supplier up front (cash/transfer) at receipt time — the rest posts to the supplier's outstanding balance. Omitted/0 means fully on credit (آجل). */
   @IsOptional() @IsNumber() @Min(0) paidAmount?: number;
-  /** Which treasury account the up-front payment came out of — required only when paidAmount > 0. */
+  /** Which treasury account the up-front payment came out of — required only when paidAmount > 0
+   * and paidFromSupplierBalance is not set. */
   @IsOptional() @IsEnum(CashMovementAccount) paymentAccount?: CashMovementAccount;
+  /** Air Conditioning company only — pays the up-front amount out of the supplier's own standalone
+   * "دفعات المورد" balance (AcSupplierPayment log) instead of a treasury account. Mutually exclusive
+   * with paymentAccount: when set, paymentAccount is ignored and no treasury account is touched at
+   * all. See PurchaseReceiptsService for the AC-only gate and the balance-sufficiency check. */
+  @IsOptional() @IsBoolean() paidFromSupplierBalance?: boolean;
   /** Printing Press only: which branch this purchase targets. Ignored by every other company. */
   @IsOptional() @IsUUID() branchId?: string;
   /** Air Conditioning company only — see PurchaseReceiptsService.assertFreeGoodsAllowed for the

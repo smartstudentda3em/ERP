@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AcSupplierPayment } from './entities/ac-supplier-payment.entity';
 import { Supplier } from '../parties/suppliers/entities/supplier.entity';
 import { Company } from '../settings/entities/company.entity';
@@ -62,5 +62,52 @@ export class AcSupplierPaymentsService {
     const existing = await this.repo.findOne({ where: { id, companyId } });
     if (!existing) throw new NotFoundException('Payment not found');
     await this.repo.remove(existing);
+  }
+
+  /**
+   * Called only from PurchaseReceiptsService when an AC purchase receipt's paid-now amount is
+   * drawn from "رصيد المورد" instead of a treasury account — inserts a NEGATIVE row into this same
+   * standalone ledger so the "دفعات المورد" tab's table and running total directly reflect the
+   * consumption, with no separate UI needed. Bypasses CreateAcSupplierPaymentDto's @Min(0.01)
+   * validator on purpose: this is an internal deduction, never a normal user-entered payment. Runs
+   * inside the caller's own transaction (manager), and throws if the supplier's current balance
+   * can't cover it — mirrors CashMovementsService.assertSufficientBalance for the treasury path.
+   */
+  async deductForPurchase(
+    supplierId: string,
+    companyId: string,
+    amount: number,
+    purchaseReceiptId: string,
+    documentNumber: string,
+    createdById: string,
+    manager: EntityManager,
+  ): Promise<void> {
+    const repo = manager.getRepository(AcSupplierPayment);
+    const row = await repo
+      .createQueryBuilder('p')
+      .select('COALESCE(SUM(p.amount), 0)', 'sum')
+      .where('p."supplierId" = :supplierId AND p."companyId" = :companyId', { supplierId, companyId })
+      .getRawOne<{ sum: string }>();
+    if (Number(row?.sum ?? 0) < amount) {
+      throw new BadRequestException('رصيد المورد غير كافٍ لتغطية هذا المبلغ');
+    }
+    await repo.save(
+      repo.create({
+        supplierId,
+        companyId,
+        paymentDate: new Date().toISOString().slice(0, 10),
+        amount: -amount,
+        purchaseReceiptId,
+        notes: `خصم تلقائي مقابل فاتورة مشتريات رقم ${documentNumber}`,
+        createdById,
+      }),
+    );
+  }
+
+  /** Reverses deductForPurchase — called before an AC purchase receipt paid from "رصيد المورد" is
+   * edited or deleted, mirroring CashMovementsService.removeBySource for the treasury path. A
+   * no-op (deletes zero rows) when the receipt was never paid this way. */
+  async removeByPurchaseReceipt(purchaseReceiptId: string, companyId: string, manager: EntityManager): Promise<void> {
+    await manager.getRepository(AcSupplierPayment).delete({ purchaseReceiptId, companyId });
   }
 }

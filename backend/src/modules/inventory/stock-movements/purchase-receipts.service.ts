@@ -11,6 +11,7 @@ import { Supplier } from '../../parties/suppliers/entities/supplier.entity';
 import { Company } from '../../settings/entities/company.entity';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
 import { CashMovementsService } from '../../treasury/cash-movements.service';
+import { AcSupplierPaymentsService } from '../../ac-supplier-ledger/ac-supplier-payments.service';
 
 @Injectable()
 export class PurchaseReceiptsService {
@@ -21,7 +22,20 @@ export class PurchaseReceiptsService {
     private readonly stockService: StockService,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly cashMovementsService: CashMovementsService,
+    private readonly acSupplierPaymentsService: AcSupplierPaymentsService,
   ) {}
+
+  /** Air Conditioning company only — "رصيد المورد" as the paid-now payment source: skips the
+   * treasury (CashMovementsService) entirely and instead consumes the supplier's own standalone
+   * "دفعات المورد" balance (see AcSupplierPaymentsService.deductForPurchase). Rejects the flag
+   * outright for any other company, mirroring assertFreeGoodsAllowed's pattern. */
+  private async assertSupplierBalancePaymentAllowed(companyId: string, dto: { paidFromSupplierBalance?: boolean }): Promise<void> {
+    if (!dto.paidFromSupplierBalance) return;
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code !== 'AC') {
+      throw new BadRequestException('Paying from supplier balance is only supported for the Air Conditioning company');
+    }
+  }
 
   /** Air Conditioning company only — a supplier's in-kind/target-discount goods enter stock at
    * their real quantity but must carry zero financial value, so they never affect what's owed to
@@ -105,16 +119,19 @@ export class PurchaseReceiptsService {
       if (paidAmount > totalAmount) {
         throw new BadRequestException('Paid amount cannot exceed the receipt total');
       }
-      if (paidAmount > 0 && !dto.paymentAccount) {
+      if (paidAmount > 0 && !dto.paymentAccount && !dto.paidFromSupplierBalance) {
         throw new BadRequestException('paymentAccount is required when paidAmount is greater than 0');
       }
+      await this.assertSupplierBalancePaymentAllowed(companyId, dto);
       // Checked before any stock/receipt mutation runs — a rejected payment must abort the whole
       // operation before a single unit is added to the warehouse, not just before the cash
       // movement is recorded. (On this real backend everything below is inside the same DB
       // transaction, so a throw here or later would both roll back identically — this ordering
       // just avoids doing pointless work, and is required exactly as written by the offline mock,
-      // which has no transaction/rollback to fall back on.)
-      if (paidAmount > 0) {
+      // which has no transaction/rollback to fall back on.) The supplier-balance path's own
+      // sufficiency check happens later, inside deductForPurchase, once the document number (used
+      // in its note) is known.
+      if (paidAmount > 0 && !dto.paidFromSupplierBalance) {
         await this.cashMovementsService.assertSufficientBalance(
           companyId,
           dto.paymentAccount!,
@@ -172,27 +189,39 @@ export class PurchaseReceiptsService {
       });
       const savedReceipt = await manager.getRepository(PurchaseReceipt).save(receipt);
 
-      // Only the amount actually paid up front (cash/transfer) leaves the treasury — the rest is
-      // owed to the supplier and settled later via a separate supplier payment. A fully-credit
-      // (آجل) receipt with paidAmount 0 correctly debits nothing here. Balance was already
-      // asserted sufficient above, before the stock receive — this just posts the movement.
+      // Only the amount actually paid up front leaves the treasury or the supplier's own standalone
+      // balance — the rest is owed to the supplier and settled later. A fully-credit (آجل) receipt
+      // with paidAmount 0 correctly posts nothing here. Balance was already asserted sufficient
+      // above (treasury path) or is asserted inside deductForPurchase (supplier-balance path).
       if (paidAmount > 0) {
-        await this.cashMovementsService.record(
-          {
+        if (dto.paidFromSupplierBalance) {
+          await this.acSupplierPaymentsService.deductForPurchase(
+            dto.supplierId,
             companyId,
-            branchId: dto.branchId ?? null,
-            movementDate: dto.receiptDate,
-            type: CashMovementType.EXPENSE,
-            account: dto.paymentAccount!,
-            amount: paidAmount,
-            sourceType: CashMovementSourceType.PURCHASE_RECEIPT,
-            sourceId: savedReceipt.id,
-            partySupplierId: dto.supplierId,
-            description: `Purchase receipt ${documentNumber}`,
+            paidAmount,
+            savedReceipt.id,
+            documentNumber,
             createdById,
-          },
-          manager,
-        );
+            manager,
+          );
+        } else {
+          await this.cashMovementsService.record(
+            {
+              companyId,
+              branchId: dto.branchId ?? null,
+              movementDate: dto.receiptDate,
+              type: CashMovementType.EXPENSE,
+              account: dto.paymentAccount!,
+              amount: paidAmount,
+              sourceType: CashMovementSourceType.PURCHASE_RECEIPT,
+              sourceId: savedReceipt.id,
+              partySupplierId: dto.supplierId,
+              description: `Purchase receipt ${documentNumber}`,
+              createdById,
+            },
+            manager,
+          );
+        }
       }
 
       return savedReceipt;
@@ -246,22 +275,27 @@ export class PurchaseReceiptsService {
       if (paidAmount > totalAmount) {
         throw new BadRequestException('Paid amount cannot exceed the receipt total');
       }
-      if (paidAmount > 0 && !dto.paymentAccount) {
+      if (paidAmount > 0 && !dto.paymentAccount && !dto.paidFromSupplierBalance) {
         throw new BadRequestException('paymentAccount is required when paidAmount is greater than 0');
       }
+      await this.assertSupplierBalancePaymentAllowed(companyId, dto);
 
       // Checked (and the old payment removed) before any stock mutation runs — a rejected payment
       // must abort the whole edit before the original stock effect is even reversed, not just
-      // before the new cash movement is recorded. Removing the old movement first means this check
-      // already reflects that removal (no manual add-back needed) — see removeBySource's own
-      // comment for why delete-then-recreate is used instead of patching amounts in place.
+      // before the new cash movement is recorded. Both prior payment records are removed
+      // unconditionally, regardless of which source this edit is about to use — the original
+      // payment may have used the OTHER source (e.g. treasury → رصيد المورد or vice versa), so both
+      // must be cleared before reapplying. Removing them first means the checks below already
+      // reflect that removal (no manual add-back needed) — see removeBySource's own comment for why
+      // delete-then-recreate is used instead of patching amounts in place.
       await this.cashMovementsService.removeBySource(
         companyId,
         CashMovementSourceType.PURCHASE_RECEIPT,
         id,
         manager,
       );
-      if (paidAmount > 0) {
+      await this.acSupplierPaymentsService.removeByPurchaseReceipt(id, companyId, manager);
+      if (paidAmount > 0 && !dto.paidFromSupplierBalance) {
         await this.cashMovementsService.assertSufficientBalance(
           companyId,
           dto.paymentAccount!,
@@ -327,25 +361,37 @@ export class PurchaseReceiptsService {
       });
       const savedReceipt = await manager.getRepository(PurchaseReceipt).save(existing);
 
-      // Old movement already removed and balance already asserted sufficient above, before any
-      // stock mutation ran — this just posts the new movement.
+      // Old payment record (either kind) already removed and balance already asserted sufficient
+      // above, before any stock mutation ran — this just posts the new one.
       if (paidAmount > 0) {
-        await this.cashMovementsService.record(
-          {
+        if (dto.paidFromSupplierBalance) {
+          await this.acSupplierPaymentsService.deductForPurchase(
+            dto.supplierId,
             companyId,
-            branchId: dto.branchId ?? null,
-            movementDate: dto.receiptDate,
-            type: CashMovementType.EXPENSE,
-            account: dto.paymentAccount!,
-            amount: paidAmount,
-            sourceType: CashMovementSourceType.PURCHASE_RECEIPT,
-            sourceId: id,
-            partySupplierId: dto.supplierId,
-            description: `Purchase receipt ${existing.documentNumber}`,
-            createdById: updatedById,
-          },
-          manager,
-        );
+            paidAmount,
+            id,
+            existing.documentNumber,
+            updatedById,
+            manager,
+          );
+        } else {
+          await this.cashMovementsService.record(
+            {
+              companyId,
+              branchId: dto.branchId ?? null,
+              movementDate: dto.receiptDate,
+              type: CashMovementType.EXPENSE,
+              account: dto.paymentAccount!,
+              amount: paidAmount,
+              sourceType: CashMovementSourceType.PURCHASE_RECEIPT,
+              sourceId: id,
+              partySupplierId: dto.supplierId,
+              description: `Purchase receipt ${existing.documentNumber}`,
+              createdById: updatedById,
+            },
+            manager,
+          );
+        }
       }
 
       return savedReceipt;
@@ -383,6 +429,7 @@ export class PurchaseReceiptsService {
         id,
         manager,
       );
+      await this.acSupplierPaymentsService.removeByPurchaseReceipt(id, companyId, manager);
 
       await manager.getRepository(PurchaseReceipt).remove(receipt);
     });

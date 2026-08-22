@@ -746,6 +746,7 @@
     "packageSellingPriceOptional": "Package Selling Price (optional)",
     "paidAmountNow": "Amount Paid Now",
     "paymentSource": "Payment Source / Withdrawal Method",
+    "paymentSourceSupplierBalance": "Supplier Balance",
     "insufficientBalanceWarning": "Warning: the paid amount exceeds the available balance in this account",
     "outstandingToSupplier": "Outstanding to Supplier",
     "noReceiptsYet": "No purchase receipts recorded yet",

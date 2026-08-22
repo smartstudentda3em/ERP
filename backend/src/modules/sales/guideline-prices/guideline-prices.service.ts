@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { GuidelinePriceSheet, GuidelinePriceLine } from './entities/guideline-price.entity';
 import { CreateGuidelinePriceSheetDto, UpdateGuidelinePriceSheetDto } from './dto/guideline-price.dto';
 
@@ -31,27 +31,42 @@ export class GuidelinePricesService {
     return sheet;
   }
 
-  async create(dto: CreateGuidelinePriceSheetDto, createdById: string, companyId: string): Promise<GuidelinePriceSheet> {
-    const existing = await this.repo.findOne({
-      where: { companyId, month: dto.month, year: dto.year, supplierId: dto.supplierId },
-    });
-    if (existing) {
-      throw new BadRequestException('A guideline price sheet already exists for this supplier and month');
+  /** One sheet per company row, all in one transaction — either every row in the submitted batch
+   * is created, or none are (a duplicate/invalid row anywhere in the batch rolls the whole save
+   * back rather than leaving a partial set of sheets for that month). */
+  async create(
+    dto: CreateGuidelinePriceSheetDto,
+    createdById: string,
+    companyId: string,
+  ): Promise<GuidelinePriceSheet[]> {
+    const supplierIds = dto.companies.map((c) => c.supplierId);
+    if (new Set(supplierIds).size !== supplierIds.length) {
+      throw new BadRequestException('The same company was selected more than once');
     }
 
-    const sheet = this.repo.create({
-      companyId,
-      month: dto.month,
-      year: dto.year,
-      supplierId: dto.supplierId,
-      isAuthorizedAgent: dto.isAuthorizedAgent,
-      discountPercentage: dto.discountPercentage,
-      createdById,
-      lines: (dto.lines ?? []).map((line) =>
-        Object.assign(new GuidelinePriceLine(), { productId: line.productId, price: line.price }),
-      ),
+    const existing = await this.repo.find({
+      where: { companyId, month: dto.month, year: dto.year, supplierId: In(supplierIds) },
+      relations: ['supplier'],
     });
-    return this.repo.save(sheet);
+    if (existing.length) {
+      throw new BadRequestException(
+        `A guideline price sheet already exists for this month for: ${existing.map((s) => s.supplier.companyName).join(', ')}`,
+      );
+    }
+
+    const sheets = dto.companies.map((c) =>
+      this.repo.create({
+        companyId,
+        month: dto.month,
+        year: dto.year,
+        supplierId: c.supplierId,
+        isAuthorizedAgent: c.isAuthorizedAgent,
+        discountPercentage: c.discountPercentage,
+        createdById,
+        lines: [] as GuidelinePriceLine[],
+      }),
+    );
+    return this.repo.save(sheets);
   }
 
   async update(id: string, dto: UpdateGuidelinePriceSheetDto, companyId: string): Promise<GuidelinePriceSheet> {

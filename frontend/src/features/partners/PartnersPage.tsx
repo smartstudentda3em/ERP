@@ -380,6 +380,17 @@ export function PartnersPage() {
 
   const { dateFrom, dateTo } = useMemo(() => quarterDateRange(year, quarter), [year, quarter]);
 
+  // The real "الأرصدة المستحقة" figure — customer accounts receivable as of the selected quarter's
+  // end date, computed the exact same way the standalone Outstanding Balances module does (see
+  // CustomersService.getOutstandingTotal's doc comment, which names this screen as its intended
+  // consumer). Not gated to tab === 'dividends' for the same "print report needs it regardless of
+  // the active tab" reason as availableQuery/partnersBreakdownQuery above.
+  const outstandingBalanceQuery = useQuery({
+    queryKey: ['customers-outstanding-total', companyId, dateTo],
+    queryFn: () => unwrap<number>(apiClient.get('/customers/outstanding-total', { params: { companyId, asOfDate: dateTo } })),
+    enabled: !!companyId,
+  });
+
   // Not gated to tab === 'dividends': the combined print/PDF report always needs this section's
   // data regardless of which tab is actually active on screen when the user clicks print/export.
   const availableQuery = useQuery({
@@ -470,15 +481,19 @@ export function PartnersPage() {
     ? selectedPartnerBreakdown.alreadyPaidToPartner
     : (availableQuery.data?.alreadyDistributed ?? 0);
   const displayedAvailable = selectedPartnerBreakdown ? selectedPartnerBreakdown.availableToDistribute : available;
-  // Same source the "الرصيد المستحق" table column itself sums from (partnersBalancesQuery), so
-  // the top summary card and the table below can never disagree — previously this card was wired
-  // to the customers' outstanding-balance total instead (a different, unrelated figure), which is
-  // why it could show 0.00 while the table showed a real per-partner balance.
+  // "الأرصدة المستحقة" here means customer accounts receivable (money owed TO the company by its
+  // customers), not partners' own capital balances — a previous version of this card was wired to
+  // partnersBalancesQuery.data.total instead, which sums partners' lifetime capital injections (an
+  // entirely different, ever-growing figure) under this label, which is why it could show a large
+  // nonzero number here while the real Outstanding Balances module correctly showed 0. There is no
+  // schema link between a specific customer invoice and a specific partner, so a filtered single
+  // partner sees their own ownership share of the company-wide receivable total rather than an
+  // invoice-level breakdown — consistent with every other column in this table already being that
+  // partner's share of a company-wide figure (netProfitShare, alreadyPaidToPartner, etc.).
+  const outstandingBalanceTotal = outstandingBalanceQuery.data ?? 0;
   const displayedOutstandingBalance = selectedPartnerBreakdown
-    ? (partnersBalancesQuery.data?.balances ?? [])
-        .filter((b) => selectedPartnerBreakdown.partnerIds.includes(b.partnerId))
-        .reduce((sum, b) => sum + b.balance, 0)
-    : (partnersBalancesQuery.data?.total ?? 0);
+    ? outstandingBalanceTotal * (selectedPartnerBreakdown.sharePercentage / 100)
+    : outstandingBalanceTotal;
   const dividendAmount = Number(dividendForm.amount || 0);
 
   // Fetched from the same cap the backend will actually enforce, so the read-only max-allowed
@@ -545,12 +560,7 @@ export function PartnersPage() {
     },
     {
       header: t('partners.outstandingBalanceForPartner'),
-      accessor: (r) =>
-        money(
-          (partnersBalancesQuery.data?.balances ?? [])
-            .filter((b) => r.partnerIds.includes(b.partnerId))
-            .reduce((sum, b) => sum + b.balance, 0),
-        ),
+      accessor: (r) => money((outstandingBalanceQuery.data ?? 0) * (r.sharePercentage / 100)),
       align: 'right',
     },
   ];
@@ -875,7 +885,7 @@ export function PartnersPage() {
               {t('partners.availableToDistribute')}: {money(available)}
             </div>
             <div>
-              {t('partners.outstandingBalances')}: {money(partnersBalancesQuery.data?.total ?? 0)}
+              {t('partners.outstandingBalances')}: {money(outstandingBalanceQuery.data ?? 0)}
             </div>
           </div>
           <table className="app-table">

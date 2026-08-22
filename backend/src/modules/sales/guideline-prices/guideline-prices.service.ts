@@ -17,7 +17,7 @@ export class GuidelinePricesService {
   async findAll(companyId: string): Promise<GuidelinePriceSheet[]> {
     return this.repo.find({
       where: { companyId },
-      relations: ['lines', 'lines.product', 'lines.product.brand', 'supplier'],
+      relations: ['lines', 'lines.product', 'lines.product.brand', 'lines.product.tax', 'supplier'],
       order: { year: 'DESC', month: 'DESC' },
     });
   }
@@ -25,7 +25,7 @@ export class GuidelinePricesService {
   async findOne(id: string, companyId: string): Promise<GuidelinePriceSheet> {
     const sheet = await this.repo.findOne({
       where: { id, companyId },
-      relations: ['lines', 'lines.product', 'lines.product.brand', 'supplier'],
+      relations: ['lines', 'lines.product', 'lines.product.brand', 'lines.product.tax', 'supplier'],
     });
     if (!sheet) throw new NotFoundException('Guideline price sheet not found');
     return sheet;
@@ -110,6 +110,7 @@ export class GuidelinePricesService {
       barcode: string | null;
       brandNameEn: string | null;
       brandNameAr: string | null;
+      taxRate: number | null;
       purchasePrice: number;
     }[]
   > {
@@ -121,10 +122,12 @@ export class GuidelinePricesService {
          p."nameAr"      AS "nameAr",
          p."barcode"     AS "barcode",
          b."nameEn"      AS "brandNameEn",
-         b."nameAr"      AS "brandNameAr"
+         b."nameAr"      AS "brandNameAr",
+         t."rate"        AS "taxRate"
        FROM purchase_receipts pr
        JOIN products p ON p.id = pr."productId"
        LEFT JOIN brands b ON b.id = p."brandId"
+       LEFT JOIN taxes t ON t.id = p."taxId"
        WHERE pr."supplierId" = $1 AND pr."companyId" = $2 AND pr."isFreeGoods" = false
        ORDER BY pr."productId", pr."receiptDate" DESC, pr."createdAt" DESC`,
       [supplierId, companyId],

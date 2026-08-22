@@ -16,6 +16,8 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { useToast } from '../../components/ui/Toast';
 import { DocumentLetterhead, LetterheadCompany } from './DocumentLetterhead';
 
+const ALL_COMPANIES = '__ALL__';
+
 interface GuidelinePriceLine {
   id: string;
   productId: string;
@@ -25,6 +27,7 @@ interface GuidelinePriceLine {
     nameAr?: string | null;
     barcode?: string | null;
     brand?: { nameEn: string; nameAr?: string | null } | null;
+    tax?: { rate: number } | null;
   } | null;
 }
 
@@ -45,15 +48,21 @@ interface SupplierProductPrice {
   barcode: string | null;
   brandNameEn: string | null;
   brandNameAr: string | null;
+  taxRate: number | null;
   purchasePrice: number;
 }
 
 interface ProductRow {
+  key: string;
   productId: string;
+  sheetId: string;
+  companyName: string;
   name: string;
   capacity: string;
   brand: string;
   purchasePrice: number;
+  taxRate: number;
+  discountPercentage: number;
 }
 
 interface Company extends LetterheadCompany {
@@ -67,14 +76,20 @@ type SortField = 'capacity' | 'brand';
  * merged row has no single company, so this page owns picking WHICH of that month's companies to
  * work on (top filter, scoped to only the companies that already have a sheet for this month/year
  * — also reachable via that same table's ✏️ edit-companies popover, which deep-links here with
- * ?supplierId= pre-filled).
+ * ?supplierId= pre-filled). "جميع الشركات" merges every company's own product list into one table
+ * — each row keeps its own company/discount%/tax since those are per-sheet, not global, so the
+ * same product bought from two different companies gets two independent rows (keyed by
+ * `${sheetId}::${productId}`, not just productId — real UUIDs contain dashes, so `::` is used as
+ * the split-safe separator instead).
  *
- * The product list auto-populates from that supplier's own Purchasing history (real paid receipts
+ * The product list auto-populates from each company's own Purchasing history (real paid receipts
  * only — free-goods receipts are excluded server-side since their price is always forced to 0),
  * plus any product that already has a saved guideline price line even without purchase history.
- * Discount value / net purchase price are pure display math (purchasePrice × sheet's own
- * discountPercentage) — nothing new to persist there. "سعر البيع المتوقع" is the only editable
- * column and is exactly GuidelinePriceLine.price, saved via the existing lines-replace PATCH.
+ * Discount value / tax value / net purchase price are pure display math off that row's own
+ * discountPercentage/taxRate — nothing new to persist there. "سعر البيع المتوقع" is the only
+ * editable column and is exactly GuidelinePriceLine.price; saving groups the edited cells by their
+ * owning sheet and PATCHes each sheet's lines independently (a sheet no cell was touched for is
+ * left completely alone).
  */
 export function GuidelinePriceDetailPage() {
   const { year, month } = useParams();
@@ -101,52 +116,81 @@ export function GuidelinePriceDetailPage() {
   const company = companiesQuery.data?.find((c) => c.id === companyId) ?? companiesQuery.data?.[0];
 
   const groupSheets = (sheetsQuery.data ?? []).filter((s) => String(s.year) === year && String(s.month) === month);
-  const supplierOptions = groupSheets.map((s) => ({ value: s.supplierId, label: s.supplier?.companyName ?? '—' }));
+  const supplierOptions = [
+    ...(groupSheets.length ? [{ value: ALL_COMPANIES, label: t('guidelinePrices.allCompanies') }] : []),
+    ...groupSheets.map((s) => ({ value: s.supplierId, label: s.supplier?.companyName ?? '—' })),
+  ];
   const title = year && month ? `${monthNameOnly(Number(month), i18n.language)} ${year}` : '';
 
   const [supplierId, setSupplierId] = useState(searchParams.get('supplierId') ?? '');
   const selectedSheet = groupSheets.find((s) => s.supplierId === supplierId) ?? null;
+  const isAllMode = supplierId === ALL_COMPANIES;
+  const activeSheets = isAllMode ? groupSheets : selectedSheet ? [selectedSheet] : [];
 
   function selectSupplier(id: string) {
     setSupplierId(id);
     setSearchParams(id ? { supplierId: id } : {}, { replace: true });
   }
 
-  const supplierProductsQuery = useQuery({
-    queryKey: ['guideline-price-supplier-products', supplierId],
-    queryFn: () =>
-      unwrap<SupplierProductPrice[]>(
-        apiClient.get('/sales/guideline-prices/supplier-products', { params: { supplierId } }),
-      ),
-    enabled: !!supplierId,
+  const productsQuery = useQuery({
+    queryKey: ['guideline-price-supplier-products', activeSheets.map((s) => s.id).join(',')],
+    queryFn: async () => {
+      const perSheet = await Promise.all(
+        activeSheets.map(async (sheet) => ({
+          sheet,
+          products: await unwrap<SupplierProductPrice[]>(
+            apiClient.get('/sales/guideline-prices/supplier-products', { params: { supplierId: sheet.supplierId } }),
+          ),
+        })),
+      );
+      return perSheet;
+    },
+    enabled: activeSheets.length > 0,
   });
 
   // Union of Purchasing history (the normal case) and any product that already has a saved line
-  // for this sheet — keeps a manually-priced product visible even if it has no purchase history.
+  // for its sheet — keeps a manually-priced product visible even if it has no purchase history.
   const rows: ProductRow[] = useMemo(() => {
     const map = new Map<string, ProductRow>();
-    for (const p of supplierProductsQuery.data ?? []) {
-      map.set(p.productId, {
-        productId: p.productId,
-        name: p.nameAr || p.nameEn,
-        capacity: p.barcode ?? '—',
-        brand: p.brandNameAr || p.brandNameEn || '—',
-        purchasePrice: Number(p.purchasePrice) || 0,
-      });
-    }
-    for (const line of selectedSheet?.lines ?? []) {
-      if (!map.has(line.productId)) {
-        map.set(line.productId, {
-          productId: line.productId,
-          name: line.product?.nameAr || line.product?.nameEn || '—',
-          capacity: line.product?.barcode ?? '—',
-          brand: line.product?.brand?.nameAr || line.product?.brand?.nameEn || '—',
-          purchasePrice: 0,
+    for (const { sheet, products } of productsQuery.data ?? []) {
+      for (const p of products) {
+        const key = `${sheet.id}::${p.productId}`;
+        map.set(key, {
+          key,
+          productId: p.productId,
+          sheetId: sheet.id,
+          companyName: sheet.supplier?.companyName ?? '—',
+          name: p.nameAr || p.nameEn,
+          capacity: p.barcode ?? '—',
+          brand: p.brandNameAr || p.brandNameEn || '—',
+          taxRate: Number(p.taxRate) || 0,
+          discountPercentage: Number(sheet.discountPercentage) || 0,
+          purchasePrice: Number(p.purchasePrice) || 0,
         });
       }
     }
+    for (const sheet of activeSheets) {
+      for (const line of sheet.lines ?? []) {
+        const key = `${sheet.id}::${line.productId}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            productId: line.productId,
+            sheetId: sheet.id,
+            companyName: sheet.supplier?.companyName ?? '—',
+            name: line.product?.nameAr || line.product?.nameEn || '—',
+            capacity: line.product?.barcode ?? '—',
+            brand: line.product?.brand?.nameAr || line.product?.brand?.nameEn || '—',
+            taxRate: Number(line.product?.tax?.rate) || 0,
+            discountPercentage: Number(sheet.discountPercentage) || 0,
+            purchasePrice: 0,
+          });
+        }
+      }
+    }
     return Array.from(map.values());
-  }, [supplierProductsQuery.data, selectedSheet]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productsQuery.data]);
 
   const [primarySort, setPrimarySort] = useState<SortField>('capacity');
   const [secondarySort, setSecondarySort] = useState<SortField>('brand');
@@ -164,17 +208,30 @@ export function GuidelinePriceDetailPage() {
 
   useEffect(() => {
     const initial: Record<string, string> = {};
-    for (const line of selectedSheet?.lines ?? []) initial[line.productId] = String(Number(line.price));
+    for (const sheet of activeSheets) {
+      for (const line of sheet.lines ?? []) {
+        initial[`${sheet.id}::${line.productId}`] = String(Number(line.price));
+      }
+    }
     setPrices(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSheet?.id]);
+  }, [supplierId]);
 
   const saveMutation = useMutation({
-    mutationFn: () => {
-      const lines = Object.entries(prices)
-        .filter(([, price]) => price !== '')
-        .map(([productId, price]) => ({ productId, price: Number(price) }));
-      return apiClient.patch(`/sales/guideline-prices/${selectedSheet!.id}`, { lines });
+    mutationFn: async () => {
+      const bySheet = new Map<string, { productId: string; price: number }[]>();
+      for (const [key, priceStr] of Object.entries(prices)) {
+        if (priceStr === '') continue;
+        const [sheetId, productId] = key.split('::');
+        const list = bySheet.get(sheetId) ?? [];
+        list.push({ productId, price: Number(priceStr) });
+        bySheet.set(sheetId, list);
+      }
+      await Promise.all(
+        Array.from(bySheet.entries()).map(([sheetId, lines]) =>
+          apiClient.patch(`/sales/guideline-prices/${sheetId}`, { lines }),
+        ),
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guideline-price-sheets'] });
@@ -191,7 +248,11 @@ export function GuidelinePriceDetailPage() {
       await new Promise(requestAnimationFrame);
       await exportElementToPdf(
         printRef.current,
-        buildPdfFileName('الأسعار الاسترشادية', selectedSheet?.supplier?.companyName, `${title} ${localToday()}`),
+        buildPdfFileName(
+          'الأسعار الاسترشادية',
+          isAllMode ? t('guidelinePrices.allCompanies') : selectedSheet?.supplier?.companyName,
+          `${title} ${localToday()}`,
+        ),
         'portrait',
       );
     } catch {
@@ -202,17 +263,23 @@ export function GuidelinePriceDetailPage() {
     }
   }
 
-  const discountRate = (selectedSheet?.discountPercentage ?? 0) / 100;
-
   const columns: Column<ProductRow>[] = [
+    ...(isAllMode ? [{ header: t('guidelinePrices.company'), accessor: (r: ProductRow) => r.companyName }] : []),
     { header: t('guidelinePrices.capacity'), accessor: (r) => r.capacity },
     { header: t('guidelinePrices.itemName'), accessor: (r) => r.name },
     { header: t('guidelinePrices.brand'), accessor: (r) => r.brand },
     { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice) },
-    { header: t('guidelinePrices.discountValue'), accessor: (r) => formatAmount(r.purchasePrice * discountRate) },
+    {
+      header: t('guidelinePrices.discountValue'),
+      accessor: (r) => formatAmount(r.purchasePrice * (r.discountPercentage / 100)),
+    },
+    {
+      header: t('guidelinePrices.taxValue'),
+      accessor: (r) => formatAmount(r.purchasePrice * (r.taxRate / 100)),
+    },
     {
       header: t('guidelinePrices.netPurchasePrice'),
-      accessor: (r) => formatAmount(r.purchasePrice * (1 - discountRate)),
+      accessor: (r) => formatAmount(r.purchasePrice * (1 - r.discountPercentage / 100)),
     },
     {
       header: t('guidelinePrices.expectedSalePrice'),
@@ -221,8 +288,8 @@ export function GuidelinePriceDetailPage() {
           type="number"
           min="0"
           step="0.01"
-          value={prices[r.productId] ?? ''}
-          onChange={(e) => setPrices((p) => ({ ...p, [r.productId]: e.target.value }))}
+          value={prices[r.key] ?? ''}
+          onChange={(e) => setPrices((p) => ({ ...p, [r.key]: e.target.value }))}
           disabled={!canEdit}
         />
       ),
@@ -233,6 +300,8 @@ export function GuidelinePriceDetailPage() {
     { value: 'capacity', label: t('guidelinePrices.capacity') },
     { value: 'brand', label: t('guidelinePrices.brand') },
   ];
+
+  const metaCompanyLabel = isAllMode ? t('guidelinePrices.allCompanies') : selectedSheet?.supplier?.companyName ?? '';
 
   return (
     <div>
@@ -250,7 +319,7 @@ export function GuidelinePriceDetailPage() {
                 </Button>
               </>
             )}
-            {canEdit && selectedSheet && (
+            {canEdit && supplierId && (
               <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
                 {t('common.save')}
               </Button>
@@ -307,14 +376,14 @@ export function GuidelinePriceDetailPage() {
         <div ref={printRef} className="printable-document">
           <DocumentLetterhead
             docTypeLabel={t('guidelinePrices.tabLabel')}
-            metaLine={`${t('guidelinePrices.company')}: ${selectedSheet?.supplier?.companyName ?? ''}  |  ${title}`}
+            metaLine={`${t('guidelinePrices.company')}: ${metaCompanyLabel}  |  ${title}`}
             company={company}
           />
           <DataTable
             columns={columns}
             data={sortedRows}
-            keyField={(r) => r.productId}
-            isLoading={supplierProductsQuery.isLoading}
+            keyField={(r) => r.key}
+            isLoading={productsQuery.isLoading}
           />
         </div>
       )}

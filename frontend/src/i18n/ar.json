@@ -1107,7 +1107,9 @@
     "pickCompanyPrompt": "اختر شركة لعرض أصنافها",
     "brand": "الماركة",
     "primarySort": "الترتيب الأساسي",
-    "secondarySort": "الترتيب الفرعي"
+    "secondarySort": "الترتيب الفرعي",
+    "taxValue": "قيمة الضريبة",
+    "allCompanies": "جميع الشركات"
   },
   "salesRepresentativesReports": {
     "listTabPress": "مدراء الأفرع",

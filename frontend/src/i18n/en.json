@@ -1107,7 +1107,9 @@
     "pickCompanyPrompt": "Select a company to view its items",
     "brand": "Brand",
     "primarySort": "Primary Sort",
-    "secondarySort": "Secondary Sort"
+    "secondarySort": "Secondary Sort",
+    "taxValue": "Tax Value",
+    "allCompanies": "All Companies"
   },
   "salesRepresentativesReports": {
     "listTabPress": "Branch Managers",

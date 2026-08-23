@@ -47,6 +47,7 @@ body {
   background-color: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.75rem;
+  transition: box-shadow 150ms ease, border-color 150ms ease, transform 150ms ease;
 }
 
 /*

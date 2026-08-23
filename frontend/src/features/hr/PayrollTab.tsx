@@ -141,9 +141,9 @@ export function PayrollTab() {
       apiClient.post('/hr/payroll-runs', {
         year: runPeriod.year,
         month: runPeriod.month,
-        // Press-only: required so the backend can debit this run's net salaries from the right
-        // account and check its balance before posting anything (see PayrollService.create()).
-        paymentAccount: isPrintingPress ? paymentAccount : undefined,
+        // Required for every company so approve() always has a real account to check the balance
+        // of and debit from later (see PayrollService.create()/approve()).
+        paymentAccount,
         lines: lines.map((l) => ({
           employeeId: l.employeeId,
           absenceDays: Number(l.absenceDays) || 0,
@@ -337,7 +337,7 @@ export function PayrollTab() {
           {t('hr.backToList')}
         </Button>
 
-        <div className={`mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 ${isPrintingPress ? 'lg:grid-cols-3' : ''}`}>
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('hr.payrollMonth')}</div>
             <div className="mt-1 font-semibold">
@@ -348,20 +348,18 @@ export function PayrollTab() {
             <div className="text-xs text-[var(--text-muted)]">{t('hr.totalNetSalary')}</div>
             <div className="mt-1 font-semibold">{formatAmount(totalNetSalary)}</div>
           </Card>
-          {isPrintingPress && (
-            <Card>
-              <div className="text-xs text-[var(--text-muted)]">{t('treasury.paymentAccount')}</div>
-              <Select
-                className="mt-1"
-                required
-                value={paymentAccount}
-                onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
-              >
-                <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
-                <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
-              </Select>
-            </Card>
-          )}
+          <Card>
+            <div className="text-xs text-[var(--text-muted)]">{t('treasury.paymentAccount')}</div>
+            <Select
+              className="mt-1"
+              required
+              value={paymentAccount}
+              onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
+            >
+              <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+              <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+            </Select>
+          </Card>
         </div>
 
         <DataTable columns={lineColumns} data={lines} keyField={(r) => r.employeeId} searchable={false} isLoading={employeesQuery.isLoading} />

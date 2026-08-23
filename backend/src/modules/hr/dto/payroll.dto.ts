@@ -25,8 +25,9 @@ export class CreatePayrollRunDto {
   @IsInt() @Min(2000) year: number;
   @IsInt() @Min(1) @Max(12) month: number;
   @IsOptional() @IsString() notes?: string;
-  /** Required for the Printing Press only (enforced in PayrollService.create(), not here, since the
-   * requirement depends on the caller's company) — the account net salaries are disbursed from. */
+  /** Required for every company (enforced in PayrollService.create(), not here, matching this
+   * codebase's convention of service-layer business validation) — the cash/bank account net
+   * salaries are disbursed from. */
   @IsOptional() @IsEnum(CashMovementAccount) paymentAccount?: CashMovementAccount;
 
   @IsArray()

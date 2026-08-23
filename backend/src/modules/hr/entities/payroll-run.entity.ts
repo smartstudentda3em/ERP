@@ -61,10 +61,11 @@ export class PayrollRun extends BaseEntity {
   @Column({ type: "timestamptz", nullable: true })
   approvedAt: Date | null;
 
-  /** The Printing Press's chosen disbursement source (الكاش/البنك) — null for every other company,
-   * which never posts payroll through a balance-checked account. Set once at create() time (Press
-   * runs are created pre-approved, see PayrollService.create()) and reused by update()'s re-posting
-   * after an edit, so a corrected run never silently redirects its debit to a different account. */
+  /** The chosen disbursement source (الكاش/البنك) net salaries are debited from — required for
+   * every company since PayrollService.create() validates it before saving. Set once at create()
+   * time and reused by approve()/update()'s (re-)posting, so a corrected run never silently
+   * redirects its debit to a different account. Stays nullable only because a handful of runs
+   * created before this requirement existed have no value; approve() falls back to CASH for those. */
   @Column({ type: "enum", enum: CashMovementAccount, nullable: true })
   paymentAccount: CashMovementAccount | null;
 

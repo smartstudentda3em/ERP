@@ -36,6 +36,7 @@ interface PayrollRunDetail {
   month: number;
   status: 'CONFIRMED' | 'APPROVED';
   notes?: string | null;
+  paymentAccount?: 'CASH' | 'BANK' | null;
   createdByName?: string;
   approvedByName?: string;
   approvedAt?: string | null;
@@ -227,7 +228,7 @@ export function PayrollRunDetailPage() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Card>
           <div className="text-xs text-[var(--text-muted)]">{t('table.documentNumber')}</div>
           <div className="mt-1 font-semibold">{run.documentNumber}</div>
@@ -241,6 +242,12 @@ export function PayrollRunDetailPage() {
         <Card>
           <div className="text-xs text-[var(--text-muted)]">{t('hr.totalNetSalary')}</div>
           <div className="mt-1 font-semibold">{formatAmount(totalNetSalary)}</div>
+        </Card>
+        <Card>
+          <div className="text-xs text-[var(--text-muted)]">{t('treasury.paymentAccount')}</div>
+          <div className="mt-1 font-semibold">
+            {run.paymentAccount ? t(`treasury.paymentAccounts.${run.paymentAccount}`) : '—'}
+          </div>
         </Card>
         <Card>
           <div className="text-xs text-[var(--text-muted)]">{t('hr.approvedBy')}</div>

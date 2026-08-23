@@ -44,15 +44,17 @@ export class PayrollService {
    * per company/year/month (see the unique index on PayrollRun) — this is the "منع التكرار المالي"
    * guard at the creation step.
    *
-   * For every company except the Printing Press, this still just saves a CONFIRMED run and touches
-   * no CashMovement — a separate manual approve() posts the expense later, unchanged from before.
-   * For the Press, dto.paymentAccount is required and this method disburses immediately: the balance
-   * of that account is checked against the run's total net salary BEFORE anything is persisted (so
-   * an insufficient balance leaves no orphaned CONFIRMED run behind), then the run is saved already
-   * APPROVED with its CashMovement(s) posted in the same transaction — matching "لا يتم تنفيذ الخصم
-   * أو تسجيل القيد المحاسبي إلا في حال وجود رصيد كافٍ" and "عند... الضغط على 'حفظ واعتماد الكشف'،
-   * يتم الخصم التلقائي" from the spec: that button never leaves a Press run pending a second,
-   * separate approval click.
+   * dto.paymentAccount (the cash/bank account net salaries will be disbursed from) is required for
+   * every company, not just the Press — chosen up front so approve() always has a real account to
+   * check/deduct from later. For every company except the Printing Press, this still just saves a
+   * CONFIRMED run and touches no CashMovement — a separate manual approve() checks the balance and
+   * disburses later (see approve()), unchanged from before. For the Press, this method disburses
+   * immediately: the balance of that account is checked against the run's total net salary BEFORE
+   * anything is persisted (so an insufficient balance leaves no orphaned CONFIRMED run behind), then
+   * the run is saved already APPROVED with its CashMovement(s) posted in the same transaction —
+   * matching "لا يتم تنفيذ الخصم أو تسجيل القيد المحاسبي إلا في حال وجود رصيد كافٍ" and "عند...
+   * الضغط على 'حفظ واعتماد الكشف'، يتم الخصم التلقائي" from the spec: that button never leaves a
+   * Press run pending a second, separate approval click.
    */
   async create(dto: CreatePayrollRunDto, createdById: string, companyId: string): Promise<PayrollRun> {
     return this.dataSource.transaction(async (manager) => {
@@ -73,7 +75,7 @@ export class PayrollService {
 
       const company = await this.companiesRepo.findOne({ where: { id: companyId } });
       const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
-      if (isPress && !dto.paymentAccount) {
+      if (!dto.paymentAccount) {
         throw new BadRequestException('يجب اختيار مصدر الصرف (الكاش أو البنك)');
       }
 
@@ -125,7 +127,7 @@ export class PayrollService {
         month: dto.month,
         notes: dto.notes ?? null,
         status: DocumentStatus.CONFIRMED,
-        paymentAccount: isPress ? dto.paymentAccount! : null,
+        paymentAccount: dto.paymentAccount!,
         createdById,
         lines,
       });
@@ -187,11 +189,17 @@ export class PayrollService {
   }
 
   /**
-   * The only point where a non-Press payroll run actually posts to operating expenses (Press runs
-   * are already APPROVED by create() — see above — so this only ever runs for them defensively, in
-   * case a CONFIRMED Press run somehow exists). Only legal from CONFIRMED, and status becomes
-   * APPROVED right after, so this can never run twice for the same run — that one-way transition is
-   * what prevents double-posting.
+   * The point where net salaries actually leave the treasury/bank and post to operating expenses,
+   * for every company (Press runs are already APPROVED by create() — see above — so this only ever
+   * runs for them defensively, in case a CONFIRMED Press run somehow exists). Only legal from
+   * CONFIRMED, and status becomes APPROVED right after, so this can never run twice for the same
+   * run — that one-way transition is what prevents double-posting. Balance is checked against the
+   * run's chosen account BEFORE anything is posted, so an insufficient balance leaves the run
+   * untouched at CONFIRMED rather than a half-applied approval.
+   *
+   * run.paymentAccount is required going forward (create() now enforces it for every company), so
+   * the `?? CASH` fallback below only ever matters for the one pre-existing run created before this
+   * requirement existed — it keeps that run approvable exactly as it silently defaulted before.
    */
   async approve(id: string, companyId: string, approverId: string): Promise<PayrollRun> {
     return this.dataSource.transaction(async (manager) => {
@@ -202,14 +210,9 @@ export class PayrollService {
         throw new BadRequestException('Only a submitted (pending-approval) payroll run can be approved');
       }
 
-      const company = await this.companiesRepo.findOne({ where: { id: companyId } });
-      const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
       const account = run.paymentAccount ?? CashMovementAccount.CASH;
-      if (isPress) {
-        if (!run.paymentAccount) throw new BadRequestException('يجب اختيار مصدر الصرف (الكاش أو البنك)');
-        const totalNetSalary = run.lines.reduce((sum, l) => sum + Number(l.netSalary), 0);
-        await this.cashMovementsService.assertSufficientBalance(companyId, account, totalNetSalary, undefined, manager);
-      }
+      const totalNetSalary = run.lines.reduce((sum, l) => sum + Number(l.netSalary), 0);
+      await this.cashMovementsService.assertSufficientBalance(companyId, account, totalNetSalary, undefined, manager);
 
       await this.postPayrollCashMovements(run, companyId, approverId, manager, account);
 

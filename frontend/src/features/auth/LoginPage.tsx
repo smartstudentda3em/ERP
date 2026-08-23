@@ -23,8 +23,12 @@ export function LoginPage() {
       setSession(res.data.data.accessToken, res.data.data.user);
       navigate('/select-company');
     },
-    onError: () => {
-      setError(t('auth.invalidCredentials'));
+    onError: (err: any) => {
+      // Surfaces the backend's actual reason (wrong credentials vs. a temporary lockout vs. an
+      // inactive account) instead of a single generic message — a locked-out user typing their
+      // correct password over and over previously saw the exact same "wrong credentials" text as
+      // someone who'd genuinely mistyped it, with no way to tell the two apart.
+      setError(err?.response?.data?.message ?? t('auth.invalidCredentials'));
     },
   });
 

@@ -203,13 +203,22 @@ export class AuthService {
     const phoneSuffix = trimmedPhone.slice(-3);
     console.log(`[login] phone="***${phoneSuffix}" userFound=${!!user}`);
 
-    if (!user) throw new UnauthorizedException('Invalid phone number or password');
+    // Kept as one identical message for both "no such account" and "wrong password" below
+    // (never revealing which half was wrong, to avoid helping a guesser narrow down a phone
+    // number) — the lockout/inactive messages further down are safe to be specific about, since
+    // they don't leak anything about whether the credentials themselves are close to correct.
+    const invalidCredentialsMessage = 'رقم الهاتف أو كلمة المرور غير صحيحة';
+
+    if (!user) throw new UnauthorizedException(invalidCredentialsMessage);
 
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
-      throw new ForbiddenException('Account temporarily locked due to failed login attempts');
+      const minutesLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      throw new ForbiddenException(
+        `تم قفل الحساب مؤقتاً بسبب عدة محاولات دخول خاطئة، يرجى المحاولة مرة أخرى بعد ${minutesLeft} دقيقة`,
+      );
     }
 
-    if (!user.isActive) throw new ForbiddenException('Account is inactive');
+    if (!user.isActive) throw new ForbiddenException('هذا الحساب غير مُفعّل، يرجى التواصل مع مسؤول النظام');
 
     const valid = await argon2.verify(user.passwordHash, trimmedPassword);
     console.log(`[login] phone="***${phoneSuffix}" passwordValid=${valid}`);
@@ -219,7 +228,7 @@ export class AuthService {
         user.lockedUntil = new Date(Date.now() + LOCK_DURATION_MS);
       }
       await this.userRepo.save(user);
-      throw new UnauthorizedException('Invalid phone number or password');
+      throw new UnauthorizedException(invalidCredentialsMessage);
     }
 
     user.failedLoginAttempts = 0;

@@ -3,7 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PayrollService } from './payroll.service';
-import { CreatePayrollRunDto, UpdatePayrollRunDto } from './dto/payroll.dto';
+import { ApprovePayrollRunDto, CreatePayrollRunDto, UpdatePayrollRunDto } from './dto/payroll.dto';
 
 @ApiTags('HR - Payroll')
 @Controller('hr/payroll-runs')
@@ -30,8 +30,12 @@ export class PayrollController {
 
   @Post(':id/approve')
   @Permissions('hr.payroll.approve')
-  approve(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.approve(id, user.companyId!, user.userId);
+  approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ApprovePayrollRunDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.service.approve(id, user.companyId!, user.userId, dto.paymentAccount);
   }
 
   @Patch(':id')

@@ -10,7 +10,8 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
-import { Input } from '../../components/ui/Input';
+import { Input, FormField, Select } from '../../components/ui/Input';
+import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/ui/Toast';
 import { monthNameOnly } from '../../lib/date-utils';
 
@@ -57,6 +58,8 @@ export function PayrollRunDetailPage() {
   const canEdit = useAuthStore((s) => s.hasPermission('hr.payroll.edit'));
   const [editMode, setEditMode] = useState(false);
   const [editLines, setEditLines] = useState<Record<string, { absenceDays: string; lateHours: string; otherDeductions: string }>>({});
+  const [approveModalOpen, setApproveModalOpen] = useState(false);
+  const [approveAccount, setApproveAccount] = useState<'CASH' | 'BANK'>('CASH');
 
   const detailQuery = useQuery({
     queryKey: ['hr-payroll-run', id],
@@ -64,15 +67,25 @@ export function PayrollRunDetailPage() {
     enabled: !!id,
   });
 
+  // The approval-confirmation modal's chosen account always wins over whatever was picked at
+  // creation time (see PayrollService.approve()) — liquidity may have changed since the run was
+  // drafted, so this is the moment that actually decides where the money comes from.
   const approveMutation = useMutation({
-    mutationFn: () => apiClient.post(`/hr/payroll-runs/${id}/approve`),
+    mutationFn: () => apiClient.post(`/hr/payroll-runs/${id}/approve`, { paymentAccount: approveAccount }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hr-payroll-run', id] });
       queryClient.invalidateQueries({ queryKey: ['hr-payroll-runs'] });
       queryClient.invalidateQueries({ queryKey: ['profit-report'] });
+      setApproveModalOpen(false);
     },
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
+
+  function openApproveModal() {
+    if (!detailQuery.data) return;
+    setApproveAccount(detailQuery.data.paymentAccount ?? 'CASH');
+    setApproveModalOpen(true);
+  }
 
   // Works the same whether the run is still CONFIRMED or already APPROVED — if it's already
   // APPROVED, the backend reverses the CashMovement rows it posted at approval and re-posts fresh
@@ -219,7 +232,7 @@ export function PayrollRunDetailPage() {
                 </Button>
               )}
               {run.status === 'CONFIRMED' && canApprove && (
-                <Button onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending}>
+                <Button onClick={openApproveModal} disabled={approveMutation.isPending}>
                   {t('hr.approvePayroll')}
                 </Button>
               )}
@@ -270,6 +283,28 @@ export function PayrollRunDetailPage() {
       )}
 
       <DataTable columns={lineColumns} data={lines} keyField={(r) => r.id} searchable={false} />
+
+      <Modal open={approveModalOpen} onClose={() => setApproveModalOpen(false)} title={t('hr.approvePayroll')}>
+        <div className="grid grid-cols-1 gap-3">
+          <p className="text-sm text-[var(--text-muted)]">
+            {t('hr.approvePayrollConfirmMessage', { amount: formatAmount(totalNetSalary) })}
+          </p>
+          <FormField label={t('treasury.paymentAccount')}>
+            <Select value={approveAccount} onChange={(e) => setApproveAccount(e.target.value as 'CASH' | 'BANK')}>
+              <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+              <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+            </Select>
+          </FormField>
+          <div className="mt-2 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setApproveModalOpen(false)} disabled={approveMutation.isPending}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="button" onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending}>
+              {t('hr.confirmApproval')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

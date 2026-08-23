@@ -37,6 +37,14 @@ export class CreatePayrollRunDto {
   lines: CreatePayrollRunLineDto[];
 }
 
+export class ApprovePayrollRunDto {
+  /** The account chosen in the approval-confirmation modal — takes precedence over whatever
+   * account was picked at creation time, since the actual disbursement source is decided at the
+   * moment of approval (liquidity may have changed since the run was drafted). Falls back to the
+   * run's own paymentAccount (then CASH) when omitted, for backward compatibility. */
+  @IsOptional() @IsEnum(CashMovementAccount) paymentAccount?: CashMovementAccount;
+}
+
 export class UpdatePayrollRunLineDto {
   @IsUUID() employeeId: string;
   @IsOptional() @IsNumber() @Min(0) absenceDays?: number;

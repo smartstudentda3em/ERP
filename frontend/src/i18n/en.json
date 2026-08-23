@@ -468,6 +468,8 @@
     "totalNetSalary": "Total Net Salaries",
     "payrollRunTitle": "Payroll — {{month}} {{year}}",
     "approvePayroll": "Approve & Confirm Statement",
+    "approvePayrollConfirmMessage": "{{amount}} will be deducted from the selected account as soon as you confirm approval.",
+    "confirmApproval": "Confirm Approval",
     "approvedBy": "Approved By",
     "branchTotals": "Totals by Branch",
     "payrollStatus": {

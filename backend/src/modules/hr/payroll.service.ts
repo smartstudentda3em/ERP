@@ -194,14 +194,20 @@ export class PayrollService {
    * runs for them defensively, in case a CONFIRMED Press run somehow exists). Only legal from
    * CONFIRMED, and status becomes APPROVED right after, so this can never run twice for the same
    * run — that one-way transition is what prevents double-posting. Balance is checked against the
-   * run's chosen account BEFORE anything is posted, so an insufficient balance leaves the run
-   * untouched at CONFIRMED rather than a half-applied approval.
+   * chosen account BEFORE anything is posted, so an insufficient balance leaves the run untouched
+   * at CONFIRMED rather than a half-applied approval.
    *
-   * run.paymentAccount is required going forward (create() now enforces it for every company), so
-   * the `?? CASH` fallback below only ever matters for the one pre-existing run created before this
-   * requirement existed — it keeps that run approvable exactly as it silently defaulted before.
+   * requestedAccount is what the approver just picked in the approval-confirmation modal (see
+   * PayrollController) — it takes precedence over (and overwrites) whatever account was chosen at
+   * creation time, since liquidity may have changed by the time the run is actually approved. Both
+   * fallbacks (run.paymentAccount, then CASH) only ever matter for a caller that omits it.
    */
-  async approve(id: string, companyId: string, approverId: string): Promise<PayrollRun> {
+  async approve(
+    id: string,
+    companyId: string,
+    approverId: string,
+    requestedAccount?: CashMovementAccount,
+  ): Promise<PayrollRun> {
     return this.dataSource.transaction(async (manager) => {
       const runRepo = manager.getRepository(PayrollRun);
       const run = await runRepo.findOne({ where: { id, companyId }, relations: ['lines'] });
@@ -210,12 +216,13 @@ export class PayrollService {
         throw new BadRequestException('Only a submitted (pending-approval) payroll run can be approved');
       }
 
-      const account = run.paymentAccount ?? CashMovementAccount.CASH;
+      const account = requestedAccount ?? run.paymentAccount ?? CashMovementAccount.CASH;
       const totalNetSalary = run.lines.reduce((sum, l) => sum + Number(l.netSalary), 0);
       await this.cashMovementsService.assertSufficientBalance(companyId, account, totalNetSalary, undefined, manager);
 
       await this.postPayrollCashMovements(run, companyId, approverId, manager, account);
 
+      run.paymentAccount = account;
       run.status = DocumentStatus.APPROVED;
       run.approvedById = approverId;
       run.approvedAt = new Date();

@@ -468,6 +468,8 @@
     "totalNetSalary": "إجمالي صافي الرواتب",
     "payrollRunTitle": "رواتب {{month}} {{year}}",
     "approvePayroll": "اعتماد وتأكيد الكشف",
+    "approvePayrollConfirmMessage": "سيتم خصم {{amount}} من الحساب المختار فور تأكيد الاعتماد.",
+    "confirmApproval": "تأكيد الاعتماد",
     "approvedBy": "اعتمد بواسطة",
     "branchTotals": "الإجمالي حسب الفرع",
     "payrollStatus": {

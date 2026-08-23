@@ -17,10 +17,17 @@ export class CashMovementsController {
     // Printing Press explicitly picks a branch on this form (required there); every other company
     // has no branch picker at all, so this falls back to the creating user's own branch instead of
     // going in as unattributed (null) — otherwise a company's own branch filter on the Expenses
-    // screen would never match any of its expenses.
+    // screen would never match any of its expenses. This is attribution ONLY (which branch the
+    // stored row reports under) — it must never feed the balance check below.
     const branchId = dto.branchId ?? user.branchId ?? null;
+    // Deliberately NOT `branchId` above — that falls back to the user's JWT-cached "main branch"
+    // for every non-Press company, which would silently scope the balance check to one branch's
+    // cash movements instead of the company-wide total the Dashboard/Purchasing screens show,
+    // producing a confusing/wrong "insufficient balance" figure. `dto.branchId ?? undefined`
+    // matches PurchaseReceiptsService's own assertSufficientBalance call: company-wide unless
+    // Printing Press explicitly picked a branch on this form.
     if (dto.type === CashMovementType.EXPENSE) {
-      await this.service.assertSufficientBalance(user.companyId!, dto.account, dto.amount, branchId);
+      await this.service.assertSufficientBalance(user.companyId!, dto.account, dto.amount, dto.branchId ?? undefined);
     }
     return this.service.record(
       {
@@ -112,7 +119,14 @@ export class CashMovementsController {
   ) {
     // Same fallback as create() — every company except Printing Press has no branch picker on this
     // form, so an edit re-attributes to the editing user's own branch instead of wiping it to null.
-    return this.service.updateManualExpense(user.companyId!, id, { ...dto, branchId: dto.branchId ?? user.branchId ?? null });
+    // balanceCheckBranchId is kept separate (the RAW, unresolved dto.branchId) so the balance
+    // check itself stays company-wide for non-Press companies — see create()'s own comment on why
+    // reusing the attribution branchId there produces a wrong/confusing balance figure.
+    return this.service.updateManualExpense(user.companyId!, id, {
+      ...dto,
+      branchId: dto.branchId ?? user.branchId ?? null,
+      balanceCheckBranchId: dto.branchId ?? undefined,
+    });
   }
 
   @Delete('expenses/:id')

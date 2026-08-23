@@ -40,6 +40,11 @@ interface Branch {
   nameAr?: string | null;
 }
 
+interface BranchBalanceSummary {
+  cashBalance: number;
+  bankBalance: number;
+}
+
 interface RecurringExpense {
   id: string;
   category: string;
@@ -184,6 +189,31 @@ export function ExpensesPage() {
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
     enabled: !!companyId,
+  });
+
+  // Live cash/bank balance badges for the Add/Edit Expense payment-account field, same
+  // /dashboard/summary endpoint and query-key convention PurchasingPage.tsx already uses — lets
+  // the user see actual available liquidity (matching the Dashboard) before saving an expense,
+  // instead of only finding out via a server error after the fact. Each modal gets its own query
+  // since Add/Edit carry independent branch selections (Printing Press only) and are never open
+  // at the same time.
+  const addExpenseBalanceQuery = useQuery({
+    queryKey: form.branchId ? ['dashboard-summary', companyId, form.branchId] : ['dashboard-summary', companyId],
+    queryFn: () =>
+      unwrap<BranchBalanceSummary>(
+        apiClient.get('/dashboard/summary', { params: { companyId, branchId: form.branchId || undefined } }),
+      ),
+    enabled: requiresPaymentAccount && !!companyId && modalOpen,
+  });
+  const editExpenseBalanceQuery = useQuery({
+    queryKey: expenseForm.branchId
+      ? ['dashboard-summary', companyId, expenseForm.branchId]
+      : ['dashboard-summary', companyId],
+    queryFn: () =>
+      unwrap<BranchBalanceSummary>(
+        apiClient.get('/dashboard/summary', { params: { companyId, branchId: expenseForm.branchId || undefined } }),
+      ),
+    enabled: requiresPaymentAccount && !!companyId && !!editingExpenseId,
   });
 
   const expensesQuery = useQuery({
@@ -957,10 +987,48 @@ export function ExpensesPage() {
             />
           </FormField>
           <FormField label={t('treasury.paymentAccount')}>
+            {/* Live balances fetched off the same /dashboard/summary endpoint the Dashboard/
+                Purchasing screens already use — a pre-submit hint; the real, authoritative check
+                still happens server-side via assertSufficientBalance. */}
+            <div className="mb-2 flex flex-wrap gap-2">
+              <div
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                  form.account === 'CASH'
+                    ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                    : 'border-[var(--border)] text-[var(--text-muted)]'
+                }`}
+              >
+                <span>💵</span>
+                <span>
+                  {t('treasury.paymentAccounts.CASH')}: {formatAmount(addExpenseBalanceQuery.data?.cashBalance ?? 0)}
+                </span>
+              </div>
+              {requiresPaymentAccount && (
+                <div
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                    form.account === 'BANK'
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                      : 'border-[var(--border)] text-[var(--text-muted)]'
+                  }`}
+                >
+                  <span>🏦</span>
+                  <span>
+                    {t('treasury.paymentAccounts.BANK')}: {formatAmount(addExpenseBalanceQuery.data?.bankBalance ?? 0)}
+                  </span>
+                </div>
+              )}
+            </div>
             <Select value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })}>
               <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
               {requiresPaymentAccount && <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>}
             </Select>
+            {(() => {
+              const amount = Number(form.amount) || 0;
+              const available =
+                form.account === 'BANK' ? addExpenseBalanceQuery.data?.bankBalance : addExpenseBalanceQuery.data?.cashBalance;
+              if (available === undefined || amount <= available) return null;
+              return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
+            })()}
           </FormField>
           {isPrintingPress && (
             <FormField label={t('fields.branch')}>
@@ -1121,6 +1189,34 @@ export function ExpensesPage() {
             />
           </FormField>
           <FormField label={t('treasury.paymentAccount')}>
+            <div className="mb-2 flex flex-wrap gap-2">
+              <div
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                  expenseForm.account === 'CASH'
+                    ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                    : 'border-[var(--border)] text-[var(--text-muted)]'
+                }`}
+              >
+                <span>💵</span>
+                <span>
+                  {t('treasury.paymentAccounts.CASH')}: {formatAmount(editExpenseBalanceQuery.data?.cashBalance ?? 0)}
+                </span>
+              </div>
+              {requiresPaymentAccount && (
+                <div
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                    expenseForm.account === 'BANK'
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                      : 'border-[var(--border)] text-[var(--text-muted)]'
+                  }`}
+                >
+                  <span>🏦</span>
+                  <span>
+                    {t('treasury.paymentAccounts.BANK')}: {formatAmount(editExpenseBalanceQuery.data?.bankBalance ?? 0)}
+                  </span>
+                </div>
+              )}
+            </div>
             <Select
               value={expenseForm.account}
               onChange={(e) => setExpenseForm({ ...expenseForm, account: e.target.value })}
@@ -1128,6 +1224,15 @@ export function ExpensesPage() {
               <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
               {requiresPaymentAccount && <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>}
             </Select>
+            {(() => {
+              const amount = Number(expenseForm.amount) || 0;
+              const available =
+                expenseForm.account === 'BANK'
+                  ? editExpenseBalanceQuery.data?.bankBalance
+                  : editExpenseBalanceQuery.data?.cashBalance;
+              if (available === undefined || amount <= available) return null;
+              return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
+            })()}
           </FormField>
           {isPrintingPress && (
             <FormField label={t('fields.branch')}>

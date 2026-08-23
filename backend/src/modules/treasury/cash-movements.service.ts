@@ -706,6 +706,12 @@ export class CashMovementsService {
       category: string;
       description?: string | null;
       branchId?: string | null;
+      /** Printing Press only (the raw, unresolved branch picked on the edit form) — company-wide
+       * (undefined) for every other company, matching the balance the Dashboard/Purchasing screens
+       * show. Deliberately NOT `branchId` above, which is attribution-only and for non-Press
+       * companies falls back to the editing user's own JWT-cached branch — using that here would
+       * silently scope the check to one branch instead of the company's real total. */
+      balanceCheckBranchId?: string;
     },
   ): Promise<CashMovement> {
     const row = await this.getManualExpenseOrFail(companyId, id);
@@ -717,7 +723,7 @@ export class CashMovementsService {
       companyId,
       input.account,
       input.amount,
-      input.branchId ?? row.branchId,
+      input.balanceCheckBranchId,
       undefined,
       excludeAmount,
     );

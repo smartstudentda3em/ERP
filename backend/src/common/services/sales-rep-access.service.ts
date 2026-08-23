@@ -8,6 +8,12 @@ import { SalesRepresentative } from '../../modules/parties/entities/sales-repres
 const SALES_REP_ROLE_NAME = 'مندوب';
 /** Mirrors BRANCH_MANAGER_ROLE_NAME in backend/src/modules/users/users.service.ts. */
 const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
+/** The seeded "Manager" role (MANAGER_PERMISSION_CODES in run-seed.ts) — not isSystemRole, but
+ * treated as admin-equivalent throughout this service specifically: full, unrestricted visibility
+ * and choice of who a sales document (quotation/invoice/payment) is attributed to, and no branch
+ * pinning, exactly like a true Administrator. Every other permission this role does or doesn't
+ * hold is unaffected — this only widens the sales-attribution rules this one service governs. */
+const MANAGER_ROLE_NAME = 'Manager';
 
 /**
  * Enforces that non-admin callers can only ever attribute a sales transaction (quotation, invoice,
@@ -25,7 +31,7 @@ export class SalesRepAccessService {
 
   async isSystemAdmin(userId: string): Promise<boolean> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
-    return user?.roles?.some((role) => role.isSystemRole) ?? false;
+    return user?.roles?.some((role) => role.isSystemRole || role.name === MANAGER_ROLE_NAME) ?? false;
   }
 
   /** True when the CALLER themselves (not some other rep's id) holds the "مندوب" role — used to

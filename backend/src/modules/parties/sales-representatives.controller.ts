@@ -128,11 +128,13 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .getMany();
   }
 
-  /** The Printing Press branch (مدير الفرع) is meaningless without a branch — every other
-   * company keeps the field optional, matching the legacy free-text territory field it replaced. */
-  private async assertBranchRequiredForPress(companyId: string, branchId?: string | null): Promise<void> {
-    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
-    if (company?.code === PRINTING_PRESS_COMPANY_CODE && !branchId) {
+  /** Every sales representative (مندوب or مدير فرع, in every company) must be permanently linked
+   * to a branch at creation/edit time — a rep with no branch can't be scoped by
+   * SalesRepAccessService.resolveBranchId() and silently falls back to unrestricted/company-wide
+   * access for every non-admin flow that relies on it. Was previously Press-only, matching the
+   * legacy free-text territory field it replaced; now required everywhere. */
+  private async assertBranchRequired(branchId?: string | null): Promise<void> {
+    if (!branchId) {
       throw new BadRequestException('يجب تحديد الفرع');
     }
   }
@@ -214,7 +216,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   }
 
   async createForCompany(companyId: string, dto: Partial<SalesRepresentative>): Promise<SalesRepresentative> {
-    await this.assertBranchRequiredForPress(companyId, dto.branchId);
+    await this.assertBranchRequired(dto.branchId);
     const code =
       dto.code || (await this.numberingSeriesService.tryGetNextNumber(companyId, 'SALES_REPRESENTATIVE')) || `REP-${Date.now()}`;
     return this.dataSource.transaction(async (manager) => {
@@ -232,7 +234,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   ): Promise<SalesRepresentative> {
     const existing = await this.findOneForCompany(id, companyId);
     const branchId = dto.branchId !== undefined ? dto.branchId : existing.branchId;
-    await this.assertBranchRequiredForPress(companyId, branchId);
+    await this.assertBranchRequired(branchId);
     return this.dataSource.transaction(async (manager) => {
       const repRepo = manager.getRepository(SalesRepresentative);
       Object.assign(existing, dto, { companyId });

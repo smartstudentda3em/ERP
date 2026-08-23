@@ -361,15 +361,13 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
           <FormField label={t('fields.email')}>
             <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </FormField>
-          <FormField label={t('salesRepresentativesReports.branch')} required={isPrintingPress}>
+          <FormField label={t('salesRepresentativesReports.branch')} required>
             <Select
-              required={isPrintingPress}
+              required
               value={form.branchId}
               onChange={(e) => setForm({ ...form, branchId: e.target.value })}
             >
-              <option value="">
-                {t(isPrintingPress ? 'salesRepresentativesReports.selectBranchRequired' : 'salesRepresentativesReports.selectBranch')}
-              </option>
+              <option value="">{t('salesRepresentativesReports.selectBranchRequired')}</option>
               {(branchesQuery.data ?? []).map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.nameAr || b.nameEn}

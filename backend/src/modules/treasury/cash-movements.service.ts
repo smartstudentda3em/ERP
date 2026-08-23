@@ -1042,6 +1042,16 @@ export class CashMovementsService {
 
   /**
    * Profit report: Sales revenue - COGS - operating expenses - salaries - commissions = Net profit.
+   *
+   * Revenue is cash-basis — SUM(sales_invoices."amountPaid"), not the full invoiced total — so it
+   * always matches the Sales Report screen's "إجمالي المبلغ المدفوع" card exactly (that card sums
+   * each invoice's own amountPaid, prorated per line; since lines always sum back to the invoice's
+   * grandTotal, the two totals telescope to the same figure for the same invoiceDate/branch
+   * filter). An invoice that's fully or partially outstanding contributes only what's actually been
+   * collected on it so far, not its full invoiced value — deliberately, per the same reasoning
+   * outstandingCustomerBalances (DashboardService) already tracks uncollected AR separately rather
+   * than counting it as earned revenue.
+   *
    * For every company except Printing Press, COGS comes from sales_invoices (see
    * getRawMaterialPurchasesTotal for why Press is different). Net profit deliberately stays
    * dividend-agnostic (dividends are a distribution OF profit, not a cost incurred to earn it) —
@@ -1068,7 +1078,7 @@ export class CashMovementsService {
   async getProfitReport(companyId: string, dateFrom: string, dateTo: string, branchId?: string) {
     const salesQb = this.dataSource
       .createQueryBuilder()
-      .select('COALESCE(SUM(i.subtotal), 0)', 'revenue')
+      .select('COALESCE(SUM(i."amountPaid"), 0)', 'revenue')
       .addSelect('COALESCE(SUM(i."costOfGoodsSold"), 0)', 'cogs')
       .from('sales_invoices', 'i')
       .where('i."companyId" = :companyId', { companyId })

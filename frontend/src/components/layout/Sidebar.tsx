@@ -69,6 +69,7 @@ const items: NavItem[] = [
     permission: 'customers.view',
     hideForPrintingPress: true,
     hideForSalesRep: true,
+    hideForBranchManager: true,
   },
   { to: '/suppliers', label: 'nav.imports', icon: '🏭', permission: 'suppliers.view' },
   {

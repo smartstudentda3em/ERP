@@ -7,6 +7,7 @@ import { RequirePermission } from './components/auth/RequirePermission';
 import { DefaultRedirect } from './components/auth/DefaultRedirect';
 import { RequireNotPrintingPress } from './components/auth/RequireNotPrintingPress';
 import { RequireNotSalesRep } from './components/auth/RequireNotSalesRep';
+import { RequireNotBranchManager } from './components/auth/RequireNotBranchManager';
 import { RequireAirConditioning } from './components/auth/RequireAirConditioning';
 import { RequirePrintingPress } from './components/auth/RequirePrintingPress';
 import { LoginPage } from './features/auth/LoginPage';
@@ -118,7 +119,9 @@ export const router = createBrowserRouter([
                   <RequirePermission code="customers.view">
                     <RequireNotPrintingPress>
                       <RequireNotSalesRep>
-                        <OutstandingBalancesPage />
+                        <RequireNotBranchManager>
+                          <OutstandingBalancesPage />
+                        </RequireNotBranchManager>
                       </RequireNotSalesRep>
                     </RequireNotPrintingPress>
                   </RequirePermission>
@@ -130,7 +133,9 @@ export const router = createBrowserRouter([
                   <RequirePermission code="customers.view">
                     <RequireNotPrintingPress>
                       <RequireNotSalesRep>
-                        <OutstandingBalanceDetailsPage />
+                        <RequireNotBranchManager>
+                          <OutstandingBalanceDetailsPage />
+                        </RequireNotBranchManager>
                       </RequireNotSalesRep>
                     </RequireNotPrintingPress>
                   </RequirePermission>
@@ -141,7 +146,9 @@ export const router = createBrowserRouter([
                 element: (
                   <RequirePermission code="customers.view">
                     <RequireNotPrintingPress>
-                      <OutstandingBalanceDetailPage />
+                      <RequireNotBranchManager>
+                        <OutstandingBalanceDetailPage />
+                      </RequireNotBranchManager>
                     </RequireNotPrintingPress>
                   </RequirePermission>
                 ),

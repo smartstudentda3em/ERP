@@ -182,7 +182,9 @@ export const router = createBrowserRouter([
               {
                 path: '/sales-representatives',
                 element: (
-                  <RequirePermission anyOf={['sales-representatives.view', 'dashboard.view']}>
+                  <RequirePermission
+                    anyOf={['sales-representatives.view', 'dashboard.view', 'sales-representatives.myDashboard.view']}
+                  >
                     <SalesRepresentativesPage />
                   </RequirePermission>
                 ),

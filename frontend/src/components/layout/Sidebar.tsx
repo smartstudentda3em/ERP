@@ -124,7 +124,10 @@ const items: NavItem[] = [
     to: '/sales-representatives',
     label: 'nav.salesRepresentatives',
     icon: '🧑‍💻',
-    permissionAnyOf: ['sales-representatives.view', 'dashboard.view'],
+    // sales-representatives.myDashboard.view is what lets a مدير فرع reach this item (see
+    // BRANCH_MANAGER_PERMISSION_CODES in run-seed.ts) — the label below already swaps to
+    // nav.branchManager for them, landing on their own "لوحة المدير" tab.
+    permissionAnyOf: ['sales-representatives.view', 'dashboard.view', 'sales-representatives.myDashboard.view'],
   },
   { to: '/sales/quotations', label: 'nav.quotations', icon: '📝', permission: 'sales.quotation.view' },
   { to: '/sales/invoices', label: 'nav.salesInvoices', icon: '💳', permission: 'sales.invoice.view' },

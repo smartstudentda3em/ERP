@@ -40,6 +40,12 @@ const PERMISSION_MATRIX: Record<string, PermissionAction[]> = {
     PermissionAction.EDIT,
     PermissionAction.DELETE,
   ],
+  // Separate from sales-representatives.view (mirrors sales.paymentList below): gates only the
+  // ability to reach the /sales-representatives route/nav item and see one's own "لوحة المدير"
+  // tab, without also unlocking sales-representatives.view's "see every manager/rep" admin list —
+  // see BRANCH_MANAGER_PERMISSION_CODES, which grants this but not the full .view permission, and
+  // SalesRepresentativesPage.tsx's canViewAll check (still keyed on .view alone).
+  'sales-representatives.myDashboard': [PermissionAction.VIEW],
   'security.audit-log': [PermissionAction.VIEW],
   dashboard: [PermissionAction.VIEW],
   // Split out from dashboard.view (which the Reports nav item/routes used to share) so a role can
@@ -653,6 +659,14 @@ async function main() {
     // company uses the normal warehouse-picker invoice form, same as مندوب already does (see that
     // role's own settings.warehouse.view below).
     'settings.warehouse.view',
+    // Unlocks the "مدراء الأفرع والمناديب" nav item/route (router.tsx's anyOf check, Sidebar.tsx's
+    // permissionAnyOf) so a مدير فرع can reach their own "لوحة المدير" tab — NOT the plain
+    // sales-representatives.view permission, which would additionally flip
+    // SalesRepresentativesPage.tsx's canViewAll to true and show them the full admin list of every
+    // manager/rep instead of just their own dashboard. GET /sales-representatives/me/dashboard
+    // itself needs no permission at all (self-scoped by JWT userId, mirrors
+    // UsersController.getOwnProfile), so this code exists purely to get them past the route/nav gate.
+    'sales-representatives.myDashboard.view',
   ];
   const branchManagerPermissions = allPermissions.filter((p) =>
     BRANCH_MANAGER_PERMISSION_CODES.includes(`${p.module}.${p.action}`),

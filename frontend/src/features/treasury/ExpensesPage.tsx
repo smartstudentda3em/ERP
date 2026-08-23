@@ -730,13 +730,16 @@ export function ExpensesPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
-          {/* Always the whole company across every branch, regardless of the branch filter above —
-              see companyWideTotal. The card next to it is the filtered sub-total, which does move
-              with the branch filter (and every per-tab total below it). */}
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <div className="text-xs text-[var(--text-muted)]">{t('treasury.companyWideTotal')}</div>
-            <div className="mt-1 text-xl font-semibold">{money(companyWideTotal)}</div>
-          </div>
+          {/* Air Conditioning has a single real branch, so companyWideTotal and grandTotal always
+              show the same figure there — an outright duplicate card, not a genuine sub-total vs.
+              whole-company comparison the way it is for a multi-branch company like the Press.
+              Hidden for AC only; every other company keeps both cards. */}
+          {!isAirConditioning && (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="text-xs text-[var(--text-muted)]">{t('treasury.companyWideTotal')}</div>
+              <div className="mt-1 text-xl font-semibold">{money(companyWideTotal)}</div>
+            </div>
+          )}
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <div className="text-xs text-[var(--text-muted)]">{t('treasury.expensesGrandTotal')}</div>
             <div className="mt-1 text-xl font-semibold">{money(grandTotal)}</div>

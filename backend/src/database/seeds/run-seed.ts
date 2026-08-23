@@ -635,7 +635,10 @@ async function main() {
   // DRAFT quotations only — QuotationsService.assertMayModify() still blocks anyone non-admin from
   // touching a quotation once it's past DRAFT, and update()/remove() additionally reject a quotation
   // outside the caller's own branch), Products (view only), Sales Invoices (full — view/create/
-  // receive payments, already scoped to their own branch by SalesRepAccessService), Sales (covered
+  // receive payments, already scoped to their own branch by SalesRepAccessService, including
+  // sales.invoice.sellBelowCost so a below-cost line doesn't hard-block their save — the inline
+  // "⚠ البيع أقل من سعر الشراء" warning in SalesLineEditor.tsx stays visible regardless, since
+  // that's driven by the company's warnOnSellBelowCost setting, not this permission), Sales (covered
   // by sales.invoice.view). No Dashboard and no Treasury cash movements, removed by explicit request
   // so a branch manager only ever sees their own branch's sales, never the company-wide dashboard/
   // cash position (DefaultRedirect.tsx and RequirePermission.tsx already fall back to
@@ -649,6 +652,12 @@ async function main() {
     'inventory.product.view',
     'sales.invoice.view',
     'sales.invoice.create',
+    // Explicitly requested: a مدير فرع can price a line below its purchase cost (clearance,
+    // damaged stock, promotional pricing, correcting a mistaken cost entry, etc.) without the
+    // ForbiddenException in sales-invoices.service.ts's create() blocking the save. The
+    // warnOnSellBelowCost company setting still applies — this only lifts the block, not the
+    // check itself, matching how sales.invoice.sellBelowCost already works for every other role.
+    'sales.invoice.sellBelowCost',
     'sales.payment.view',
     'sales.payment.create',
     // View + create only, no edit/delete/statement — see RepCustomersView in CustomersPage.tsx.

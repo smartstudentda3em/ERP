@@ -148,9 +148,18 @@ export class PayrollService {
   /**
    * One CashMovement per branch (net salaries grouped by each line's snapshot branchId), so the
    * Expense/Profit reports see one "رواتب الموظفين" line per branch instead of one per employee.
-   * Posted against the last day of the payroll month, so it lands in that month's Expense Report
-   * regardless of which day the posting actually happens on. Shared by approve() (first posting)
-   * and update() (re-posting after an edit to an already-approved run) so the two can never drift.
+   * Posted against the last day of the payroll month so it lands in that month's Expense Report
+   * regardless of which day the posting actually happens on — UNLESS that day hasn't arrived yet
+   * (approving a run for the current, still-in-progress month), in which case today's date is used
+   * instead. Every balance view that caps "current balance" at today (Dashboard's getSummary, the
+   * badges on Purchasing/Expenses) filters `movementDate <= today`, so a genuinely future-dated
+   * CashMovement would be invisible there until the calendar caught up — silently making an
+   * already-APPROVED, already-"paid" payroll run look like its cash was never actually deducted.
+   * Approving mid-month (the normal case) still lands the entry within the same month either way,
+   * so this never changes which month's report it appears in for a normal, timely approval — only
+   * a genuinely late/backdated approval (after the month has already ended) still uses the actual
+   * last day of that month, exactly as before. Shared by approve() (first posting) and update()
+   * (re-posting after an edit to an already-approved run) so the two can never drift.
    */
   private async postPayrollCashMovements(
     run: PayrollRun,
@@ -165,7 +174,9 @@ export class PayrollService {
     }
 
     const lastDay = new Date(run.year, run.month, 0).getDate();
-    const movementDate = `${run.year}-${String(run.month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const monthEndDate = `${run.year}-${String(run.month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const todayDate = new Date().toISOString().slice(0, 10);
+    const movementDate = todayDate < monthEndDate ? todayDate : monthEndDate;
 
     for (const [branchId, amount] of totalsByBranch) {
       if (amount <= 0) continue;

@@ -53,6 +53,16 @@ function money(n: number): string {
   return formatAmount(n);
 }
 
+/** Icon-badge background per KPI card — purely a visual grouping cue (revenue-ish vs cost-ish vs
+ * neutral-balance figures), not tied to any business meaning beyond that. */
+const KPI_TONE_CLASSES: Record<string, string> = {
+  primary: 'bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-300',
+  green: 'bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-300',
+  amber: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+  purple: 'bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+  teal: 'bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
+};
+
 export function DashboardPage() {
   const { t } = useTranslation();
   const companyId = useAuthStore((s) => s.user?.companyId);
@@ -158,37 +168,63 @@ export function DashboardPage() {
   // drift out of sync.
   const financialBalance = treasuryBalance + (s?.outstandingCustomerBalances ?? 0);
 
-  const kpis: Array<{ label: string; value: string; tone?: string; to?: string }> = [
+  const kpis: Array<{ label: string; value: string; icon: string; tone: string; to?: string }> = [
     // Row 1: daily/monthly operating activity.
-    { label: t('dashboard.dailySales'), value: money(s?.dailySales ?? 0) },
-    { label: t('dashboard.dailyPurchases'), value: money(s?.dailyPurchases ?? 0) },
-    { label: t('dashboard.profitToday'), value: money(s?.profitToday ?? 0) },
-    { label: t('dashboard.monthlyRevenue'), value: money(s?.monthlyRevenue ?? 0) },
-    { label: t('dashboard.monthlyExpenses'), value: money(s?.monthlyExpenses ?? 0) },
+    { label: t('dashboard.dailySales'), value: money(s?.dailySales ?? 0), icon: '💰', tone: 'primary' },
+    { label: t('dashboard.dailyPurchases'), value: money(s?.dailyPurchases ?? 0), icon: '🛒', tone: 'amber' },
+    { label: t('dashboard.profitToday'), value: money(s?.profitToday ?? 0), icon: '📈', tone: 'green' },
+    { label: t('dashboard.monthlyRevenue'), value: money(s?.monthlyRevenue ?? 0), icon: '💵', tone: 'green' },
+    { label: t('dashboard.monthlyExpenses'), value: money(s?.monthlyExpenses ?? 0), icon: '💸', tone: 'amber' },
     // Stationery/AC only — total company assets (same formula as PartnersPage's "الأصول" tab:
     // inventory + cash + bank), placed at the end of the top row.
     ...(showAssetCards
-      ? [{ label: t('dashboard.assets'), value: money(treasuryBalance + (s?.inventoryValue ?? 0)) }]
+      ? [
+          {
+            label: t('dashboard.assets'),
+            value: money(treasuryBalance + (s?.inventoryValue ?? 0)),
+            icon: '🏢',
+            tone: 'purple',
+          },
+        ]
       : []),
     // Row 2: assets and financial liquidity.
-    { label: t('dashboard.inventoryValue'), value: money(s?.inventoryValue ?? 0) },
+    { label: t('dashboard.inventoryValue'), value: money(s?.inventoryValue ?? 0), icon: '📦', tone: 'purple' },
     ...(showAssetCards
       ? [
-          { label: t('dashboard.bankBalance'), value: money(s?.bankBalance ?? 0), to: '/treasury/transactions' },
+          {
+            label: t('dashboard.bankBalance'),
+            value: money(s?.bankBalance ?? 0),
+            icon: '🏦',
+            tone: 'teal',
+            to: '/treasury/transactions',
+          },
           {
             label: t('dashboard.cashTreasuryBalance'),
             value: money(s?.cashBalance ?? 0),
+            icon: '🪙',
+            tone: 'teal',
             to: '/treasury/transactions',
           },
-          { label: t('dashboard.outstandingCustomers'), value: money(s?.outstandingCustomerBalances ?? 0) },
-          { label: t('dashboard.financialBalance'), value: money(financialBalance) },
+          {
+            label: t('dashboard.outstandingCustomers'),
+            value: money(s?.outstandingCustomerBalances ?? 0),
+            icon: '👥',
+            tone: 'primary',
+          },
+          { label: t('dashboard.financialBalance'), value: money(financialBalance), icon: '⚖️', tone: 'primary' },
         ]
       : [
           // Same figure, same source (getBalance(BANK)), as TreasuryTransactionsPage's own "رصيد
           // البنك" card — showing the combined cash+bank total here under this label was the bug:
           // two screens both titled "Bank Balance" disagreeing because one silently meant
           // something else.
-          { label: t('dashboard.cashBalance'), value: money(s?.bankBalance ?? 0), to: '/treasury/transactions' },
+          {
+            label: t('dashboard.cashBalance'),
+            value: money(s?.bankBalance ?? 0),
+            icon: '🏦',
+            tone: 'teal',
+            to: '/treasury/transactions',
+          },
           // Printing Press has no customer-receivables management (see RequireNotPrintingPress on
           // /customers) — its own cash-only treasury figure is more useful here than a balance
           // that's always zero for this tenant.
@@ -196,12 +232,25 @@ export function DashboardPage() {
             ? {
                 label: t('dashboard.printingPressCashTreasury'),
                 value: money(s?.cashBalance ?? 0),
+                icon: '🪙',
+                tone: 'teal',
                 to: '/treasury/transactions',
               }
-            : { label: t('dashboard.outstandingCustomers'), value: money(s?.outstandingCustomerBalances ?? 0) },
-          { label: t('dashboard.financialBalance'), value: money(financialBalance) },
+            : {
+                label: t('dashboard.outstandingCustomers'),
+                value: money(s?.outstandingCustomerBalances ?? 0),
+                icon: '👥',
+                tone: 'primary',
+              },
+          { label: t('dashboard.financialBalance'), value: money(financialBalance), icon: '⚖️', tone: 'primary' },
         ]),
-    { label: t('partners.totalContribution'), value: money(partnersBalancesQuery.data?.total ?? 0), to: '/partners' },
+    {
+      label: t('partners.totalContribution'),
+      value: money(partnersBalancesQuery.data?.total ?? 0),
+      icon: '🤝',
+      tone: 'purple',
+      to: '/partners',
+    },
   ];
 
   return (
@@ -231,28 +280,39 @@ export function DashboardPage() {
         <PageHeader title={t('nav.dashboard')} />
       )}
 
-      <div className={`mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 ${showAssetCards ? 'lg:grid-cols-6' : 'lg:grid-cols-5'}`}>
-        {kpis.map((k) =>
-          k.to ? (
-            <Link key={k.label} to={k.to} className="block transition-shadow hover:shadow-md">
-              <Card className="cursor-pointer">
-                <div className="text-xs text-[var(--text-muted)]">{k.label}</div>
-                <div className="mt-1 text-lg font-semibold">{k.value}</div>
-              </Card>
+      <div className={`mb-6 grid grid-cols-2 gap-3.5 sm:grid-cols-3 ${showAssetCards ? 'lg:grid-cols-6' : 'lg:grid-cols-5'}`}>
+        {kpis.map((k) => {
+          const card = (
+            <Card
+              className={`h-full rounded-2xl shadow-sm transition-shadow ${k.to ? 'cursor-pointer hover:shadow-md' : ''}`}
+            >
+              <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-muted)]">
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm ${KPI_TONE_CLASSES[k.tone]}`}
+                >
+                  {k.icon}
+                </span>
+                <span className="truncate">{k.label}</span>
+              </div>
+              <div className="mt-2.5 truncate text-lg font-bold tracking-tight">{k.value}</div>
+            </Card>
+          );
+          return k.to ? (
+            <Link key={k.label} to={k.to} className="block">
+              {card}
             </Link>
           ) : (
-            <Card key={k.label}>
-              <div className="text-xs text-[var(--text-muted)]">{k.label}</div>
-              <div className="mt-1 text-lg font-semibold">{k.value}</div>
-            </Card>
-          ),
-        )}
+            <div key={k.label}>{card}</div>
+          );
+        })}
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="rounded-2xl shadow-sm lg:col-span-2">
           <CardHeader>
-            <CardTitle>{t('dashboard.salesChart')}</CardTitle>
+            <CardTitle className="flex items-center gap-1.5">
+              <span>📊</span> {t('dashboard.salesChart')}
+            </CardTitle>
           </CardHeader>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -266,34 +326,48 @@ export function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Area type="monotone" dataKey="total" stroke="#3b82f6" fill="url(#salesFill)" />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'var(--surface)',
+                    fontSize: 12,
+                  }}
+                />
+                <Area type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} fill="url(#salesFill)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
-        <Card>
+        <Card className="rounded-2xl shadow-sm">
           <CardHeader>
-            <CardTitle>{t('dashboard.topSellingProducts')}</CardTitle>
+            <CardTitle className="flex items-center gap-1.5">
+              <span>🏆</span> {t('dashboard.topSellingProducts')}
+            </CardTitle>
           </CardHeader>
-          <ul className="space-y-2 text-sm">
-            {(topProductsQuery.data ?? []).map((p) => (
-              <li key={p.productId} className="flex items-center justify-between">
-                <span className="truncate">{p.name}</span>
-                <span className="text-[var(--text-muted)]">{formatAmount(p.totalQuantity)}</span>
+          <ul className="space-y-1">
+            {(topProductsQuery.data ?? []).map((p, i) => (
+              <li key={p.productId} className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-sm transition-colors hover:bg-[var(--table-header-bg)]">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-50 text-[10px] font-semibold text-primary-700 dark:bg-primary-500/15 dark:text-primary-300">
+                  {i + 1}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                <span className="shrink-0 font-medium text-[var(--text-muted)]">{formatAmount(p.totalQuantity)}</span>
               </li>
             ))}
             {(topProductsQuery.data ?? []).length === 0 && (
-              <li className="text-[var(--text-muted)]">{t('common.noData')}</li>
+              <li className="text-sm text-[var(--text-muted)]">{t('common.noData')}</li>
             )}
           </ul>
         </Card>
       </div>
 
-      <Card>
+      <Card className="rounded-2xl shadow-sm">
         <CardHeader>
-          <CardTitle>{t('dashboard.recentTransactions')}</CardTitle>
+          <CardTitle className="flex items-center gap-1.5">
+            <span>🧾</span> {t('dashboard.recentTransactions')}
+          </CardTitle>
         </CardHeader>
         <div className="overflow-x-auto">
           <table className="app-table">
@@ -308,10 +382,14 @@ export function DashboardPage() {
             <tbody>
               {(recentTxQuery.data ?? []).map((tx, i) => (
                 <tr key={i}>
-                  <td className="text-[var(--text-muted)]">{tx.type}</td>
+                  <td>
+                    <span className="rounded-full bg-[var(--table-header-bg)] px-2 py-0.5 text-xs font-medium text-[var(--text-muted)]">
+                      {tx.type}
+                    </span>
+                  </td>
                   <td className="font-medium">{tx.documentNumber}</td>
                   <td className="text-[var(--text-muted)]">{tx.date}</td>
-                  <td>{money(tx.amount)}</td>
+                  <td className="font-semibold">{money(tx.amount)}</td>
                 </tr>
               ))}
               {(recentTxQuery.data ?? []).length === 0 && (
@@ -326,10 +404,12 @@ export function DashboardPage() {
         </div>
       </Card>
 
-      <Card className="mt-6">
+      <Card className="mt-6 rounded-2xl shadow-sm">
         <CardHeader>
           <div className="flex items-center gap-2">
-            <CardTitle>{t('dashboard.whatsappOutbox')}</CardTitle>
+            <CardTitle className="flex items-center gap-1.5">
+              <span>💬</span> {t('dashboard.whatsappOutbox')}
+            </CardTitle>
             <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300">
               {t('dashboard.whatsappOutboxPlaceholder')}
             </span>
@@ -337,12 +417,12 @@ export function DashboardPage() {
         </CardHeader>
         <ul className="space-y-3 text-sm">
           {(whatsappOutboxQuery.data ?? []).map((m) => (
-            <li key={m.id} className="rounded-lg border border-[var(--border)] p-2">
+            <li key={m.id} className="rounded-xl border border-[var(--border)] p-3 transition-colors hover:bg-[var(--table-header-bg)]">
               <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
-                <span>{m.recipientLabel}</span>
+                <span className="font-medium">{m.recipientLabel}</span>
                 <span>{new Date(m.createdAt).toLocaleString()}</span>
               </div>
-              <p className="mt-1 whitespace-pre-line">{m.content}</p>
+              <p className="mt-1.5 whitespace-pre-line leading-relaxed">{m.content}</p>
             </li>
           ))}
           {(whatsappOutboxQuery.data ?? []).length === 0 && (

@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 :root {
+  /* Tells the browser which native-control palette this page is actually using. Without this,
+   * Chrome on Android (inside the TWA app) independently guesses a scheme for OS-rendered native
+   * widgets — the <select> popup for a two-option field like "نوع البيع" (package/unit) — based on
+   * the device's own dark-mode setting, regardless of our .dark class below. When the phone is in
+   * system dark mode but the app is in light mode, that guess picks a dark popup background while
+   * still computing option text color for a light one (or vice versa), rendering text invisible.
+   * Kept in sync with the .dark class toggle in theme-store.ts so the browser always renders native
+   * pickers in the same scheme the rest of the page is actually in. */
+  color-scheme: light;
   --bg: #f8fafc;
   --surface: #ffffff;
   --text: #0f172a;
@@ -16,6 +25,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --bg: #0b1220;
   --surface: #111827;
   --text: #e5e7eb;

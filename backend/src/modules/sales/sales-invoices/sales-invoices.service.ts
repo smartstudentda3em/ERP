@@ -270,7 +270,7 @@ export class SalesInvoicesService {
 
         if (unitKind === SaleUnitKind.PACKAGE && !unitsPerPackage) {
           throw new BadRequestException(
-            `"${product?.nameEn ?? line.productId}" has no package size configured — cannot sell by package.`,
+            `الصنف "${product?.nameAr ?? product?.nameEn ?? line.productId}" ليس له حجم عبوة محدد — لا يمكن بيعه بالعبوة.`,
           );
         }
         const baseQuantity = unitKind === SaleUnitKind.PACKAGE ? Number(line.quantity) * unitsPerPackage! : Number(line.quantity);
@@ -314,7 +314,7 @@ export class SalesInvoicesService {
 
         if (profitPerUnit < 0 && warnOnSellBelowCost && !canSellBelowCost) {
           throw new ForbiddenException(
-            `Selling "${product?.nameEn ?? line.productId}" below its purchase cost (${purchasePrice.toFixed(2)}) requires the "sell below cost" permission.`,
+            `سعر البيع أقل من سعر الشراء للصنف "${product?.nameAr ?? product?.nameEn ?? line.productId}" (سعر الشراء: ${purchasePrice.toFixed(2)}) — يتطلب صلاحية "البيع أقل من سعر الشراء".`,
           );
         }
 

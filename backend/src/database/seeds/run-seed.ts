@@ -648,6 +648,11 @@ async function main() {
     // View + create only, no edit/delete/statement — see RepCustomersView in CustomersPage.tsx.
     'customers.view',
     'customers.create',
+    // Without this, GET /settings/warehouses 403s and the Sales Invoice/Payment forms' "المخزن"
+    // dropdown silently renders empty (no error surfaced anywhere) — a مدير فرع on a non-Press
+    // company uses the normal warehouse-picker invoice form, same as مندوب already does (see that
+    // role's own settings.warehouse.view below).
+    'settings.warehouse.view',
   ];
   const branchManagerPermissions = allPermissions.filter((p) =>
     BRANCH_MANAGER_PERMISSION_CODES.includes(`${p.module}.${p.action}`),

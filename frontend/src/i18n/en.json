@@ -914,6 +914,15 @@
   "customers": {
     "totalOutstandingBalance": "Total Outstanding Balance",
     "searchByNameOrMobile": "Search by customer name, mobile, or sales representative…",
+    "searchByNameMobileAddress": "Search by name, mobile, or address…",
+    "filterByPaymentStatus": "Filter by payment status",
+    "paymentStatus": "Payment Status",
+    "paymentStatuses": {
+      "ALL": "All statuses",
+      "FULLY_PAID": "Fully Paid",
+      "PARTIALLY_PAID": "Partially Paid",
+      "INSTALLMENT": "Installment"
+    },
     "invoiceDate": "Invoice Date",
     "receiptsHistory": "Receipts",
     "totalInvoicesLabel": "Total Invoices",

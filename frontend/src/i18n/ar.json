@@ -914,6 +914,15 @@
   "customers": {
     "totalOutstandingBalance": "إجمالي الأرصدة المستحقة",
     "searchByNameOrMobile": "ابحث باسم العميل أو رقم الجوال أو اسم المندوب…",
+    "searchByNameMobileAddress": "ابحث بالاسم أو رقم الجوال أو العنوان…",
+    "filterByPaymentStatus": "فلترة حسب حالة الدفع",
+    "paymentStatus": "حالة الدفع",
+    "paymentStatuses": {
+      "ALL": "كل الحالات",
+      "FULLY_PAID": "مدفوع كلياً",
+      "PARTIALLY_PAID": "مدفوع جزئياً",
+      "INSTALLMENT": "تقسيط"
+    },
     "invoiceDate": "تاريخ الفاتورة",
     "receiptsHistory": "سندات القبض",
     "totalInvoicesLabel": "إجمالي الفواتير",

@@ -30,7 +30,7 @@ import { SalesRepresentative } from '../../parties/entities/sales-representative
 import { CommissionException } from '../../parties/entities/commission-exception.entity';
 import { buildExceptionsByRepId, resolveLineCommissionRate } from '../../parties/commission-rate.util';
 import { assertPaymentAccountProvided } from '../../../common/utils/payment-account.util';
-import { findOrCreateQuickCustomer, findOrCreateWalkInCustomer } from '../../parties/customers/customer-quick-entry.util';
+import { findOrCreateQuickCustomer } from '../../parties/customers/customer-quick-entry.util';
 
 @Injectable()
 export class SalesInvoicesService {
@@ -202,11 +202,10 @@ export class SalesInvoicesService {
     // another company", matching the findOneScoped convention used everywhere else in this codebase.
     //
     // Air Conditioning's quick-entry flow (typed Name/Phone instead of picking an existing
-    // customer) omits customerId entirely — resolved to a real/placeholder Customer row inside the
-    // transaction below instead (see findOrCreateQuickCustomer/findOrCreateWalkInCustomer), so a
-    // later failure (e.g. insufficient stock) rolls that customer creation back too. Every other
-    // company must still send a real customerId; gated here rather than in the DTO since the rule
-    // depends on the company.
+    // customer) omits customerId entirely — resolved to a real Customer row inside the transaction
+    // below instead (see findOrCreateQuickCustomer), so a later failure (e.g. insufficient stock)
+    // rolls that customer creation back too. Every other company must still send a real
+    // customerId; gated here rather than in the DTO since the rule depends on the company.
     if (dto.customerId) {
       const customer = await this.customerRepo.findOne({ where: { id: dto.customerId, companyId } });
       if (!customer) throw new NotFoundException('Customer not found');
@@ -246,13 +245,11 @@ export class SalesInvoicesService {
       const resolvedCustomerId = dto.customerId
         ? dto.customerId
         : (
-            dto.quickSaleType === 'CREDIT'
-              ? await findOrCreateQuickCustomer(manager, this.numberingSeriesService, companyId, {
-                  name: dto.customerName!,
-                  phone: dto.customerPhone!,
-                  address: dto.customerAddress,
-                })
-              : await findOrCreateWalkInCustomer(manager, companyId)
+            await findOrCreateQuickCustomer(manager, this.numberingSeriesService, companyId, {
+              name: dto.customerName!,
+              phone: dto.customerPhone!,
+              address: dto.customerAddress,
+            })
           ).id;
 
       let costOfGoodsSold = 0;
@@ -347,14 +344,15 @@ export class SalesInvoicesService {
         salesRepresentativeId,
         status: SalesDocumentStatus.CONFIRMED,
         notes: dto.notes ?? null,
-        // Printing Press (always sends both a shared walk-in customerId AND typed name/phone) and
-        // AC's cash branch both keep these — AC's credit branch alone is attributed to a real
-        // resolved Customer row instead (see resolvedCustomerId above), whose own
-        // name/mobile/address already carry the identity, so these stay null there rather than
-        // duplicating (and risking drifting from) what the Customer row says.
-        customerName: dto.quickSaleType === 'CREDIT' ? null : dto.customerName ?? null,
-        customerPhone: dto.quickSaleType === 'CREDIT' ? null : dto.customerPhone ?? null,
-        customerAddress: dto.quickSaleType === 'CREDIT' ? null : dto.customerAddress ?? null,
+        // Printing Press alone keeps these — it always sends a shared walk-in customerId AND typed
+        // name/phone, decoupled from the Customer table on purpose. Every AC quick-entry sale
+        // (cash or credit) is attributed to a real resolved Customer row instead (see
+        // resolvedCustomerId above), whose own name/mobile/address already carry the identity, so
+        // these stay null there rather than duplicating (and risking drifting from) what the
+        // Customer row says.
+        customerName: dto.customerId ? dto.customerName ?? null : null,
+        customerPhone: dto.customerId ? dto.customerPhone ?? null : null,
+        customerAddress: dto.customerId ? dto.customerAddress ?? null : null,
         paymentAccount: dto.paymentAccount ?? null,
         createdById,
         costOfGoodsSold,

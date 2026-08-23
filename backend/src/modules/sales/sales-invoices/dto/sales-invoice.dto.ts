@@ -38,9 +38,10 @@ export class CreateSalesInvoiceDto {
   /** Air Conditioning quick-entry only. */
   @IsOptional() @IsString() customerAddress?: string;
   /** Air Conditioning quick-entry only — which of the two non-installment sale types this is.
-   * CASH: attributed to a shared walk-in placeholder, never added to the Customers list. CREDIT:
-   * resolved/created as a real Customer row (reused by phone match), same as any other sale. Not
-   * meaningful (and ignored) when customerId is provided. */
+   * Both CASH and CREDIT are resolved/created as a real Customer row (reused by phone match), so
+   * every quick-entry sale shows up properly on the Customers list under its real name/phone.
+   * Only affects downstream payment handling (see paidAmount below); not meaningful (and ignored)
+   * when customerId is provided. */
   @IsOptional() @IsIn(['CASH', 'CREDIT']) quickSaleType?: 'CASH' | 'CREDIT';
   /** Amount the customer paid up front, at invoice creation — anything left over posts to their AR balance. */
   @IsOptional() @IsNumber() @Min(0) paidAmount?: number;

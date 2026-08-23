@@ -10,11 +10,13 @@ export interface QuickCustomerInput {
 
 /**
  * Resolves a typed Name/Phone/Address triple (Air Conditioning's "type it directly instead of
- * searching" quick-entry flow, on both Sales Invoices and Installment Plans) to a real Customer
- * row — reusing an existing customer by phone match within the same company so a repeat buyer
- * accumulates one balance/history instead of spawning a new record every sale, and refreshing
- * their name/address to whatever was just typed. Always run against the caller's own transaction
- * manager so a later failure (e.g. insufficient stock) rolls the new/updated customer back too.
+ * searching" quick-entry flow, on Sales Invoices — every sale type, cash included — and
+ * Installment Plans) to a real Customer row — reusing an existing customer by phone match within
+ * the same company so a repeat buyer accumulates one balance/history instead of spawning a new
+ * record every sale, and refreshing their name/address to whatever was just typed. Always run
+ * against the caller's own transaction manager so a later failure (e.g. insufficient stock) rolls
+ * the new/updated customer back too. This is what makes the Customers list show each buyer's real
+ * name/mobile/address instead of one shared "walk-in" placeholder absorbing every cash sale.
  */
 export async function findOrCreateQuickCustomer(
   manager: EntityManager,
@@ -40,24 +42,5 @@ export async function findOrCreateQuickCustomer(
   const code = (await numberingSeriesService.tryGetNextNumber(companyId, 'CUSTOMER', manager)) ?? `CUST-${Date.now()}`;
   return repo.save(
     repo.create({ companyId, code, name: input.name, mobile: input.phone, address: input.address ?? undefined }),
-  );
-}
-
-/**
- * Cash quick-sales are explicitly never added to the Customers list (see the Sales Invoice
- * requirement this backs) — every one is attributed instead to a single shared placeholder
- * Customer row per company, lazily get-or-created here rather than seeded up front, so a
- * production deploy never needs a manual seed-script run. Mirrors Printing Press's WALKIN
- * customer (see run-seed.ts), but scoped to its own 'WALKIN-AC' code so the two never collide —
- * Press's WALKIN absorbs every sale with no per-customer tracking at all, while this one exists
- * purely as an FK placeholder for AC's cash branch (the real identity lives in the invoice's own
- * free-text customerName/customerPhone/customerAddress columns).
- */
-export async function findOrCreateWalkInCustomer(manager: EntityManager, companyId: string): Promise<Customer> {
-  const repo = manager.getRepository(Customer);
-  const existing = await repo.findOne({ where: { companyId, code: 'WALKIN-AC' } });
-  if (existing) return existing;
-  return repo.save(
-    repo.create({ companyId, code: 'WALKIN-AC', name: 'عميل نقدي (تكييفات) / Cash Customer', openingBalance: 0 }),
   );
 }

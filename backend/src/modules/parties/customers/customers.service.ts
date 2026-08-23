@@ -6,6 +6,13 @@ import { Customer } from './entities/customer.entity';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 import { NumberingSeriesService } from '../../settings/numbering-series.controller';
 import { SalesInvoice } from '../../sales/sales-invoices/entities/sales-invoice.entity';
+import { InstallmentPlanStatus } from '../../../entities/enums';
+
+/** Fully derived from live financial data, never stored — so it can never drift from balanceDue
+ * or an installment plan's real status. INSTALLMENT takes priority over the invoice-balance-based
+ * split since an active plan is tracked entirely separately (InstallmentPlan/InstallmentScheduleItem),
+ * independent of whatever sales-invoice balance the same customer might also carry. */
+export type CustomerPaymentStatus = 'FULLY_PAID' | 'PARTIALLY_PAID' | 'INSTALLMENT';
 
 export interface StatementLine {
   date: string;
@@ -77,6 +84,7 @@ export class CustomersService extends BaseCrudService<Customer> {
       totalPaid: number;
       balanceDue: number;
       salesRepresentativeName: string | null;
+      paymentStatus: CustomerPaymentStatus;
     })[]
   > {
     const customers = await super.findAll({ companyId } as FindOptionsWhere<Customer>);
@@ -85,7 +93,8 @@ export class CustomersService extends BaseCrudService<Customer> {
     const ids = customers.map((c) => c.id);
     const assignedRepIds = [...new Set(customers.map((c) => c.salesRepresentativeId).filter(Boolean))] as string[];
 
-    const [invoiceTotals, paymentTotals, assignedReps, invoiceReps, invoiceCreators] = await Promise.all([
+    const [invoiceTotals, paymentTotals, assignedReps, invoiceReps, invoiceCreators, activeInstallmentPlans] =
+      await Promise.all([
       this.dataSource
         .createQueryBuilder()
         .select('i."customerId"', 'customerId')
@@ -138,6 +147,16 @@ export class CustomersService extends BaseCrudService<Customer> {
         .orderBy('i."customerId"')
         .addOrderBy('i."invoiceDate"', 'DESC')
         .getRawMany(),
+      // Drives the "تقسيط" payment-status filter — a customer with an active plan is categorized
+      // as INSTALLMENT regardless of their sales-invoice balanceDue, since that's tracked entirely
+      // separately (InstallmentPlan/InstallmentScheduleItem).
+      this.dataSource
+        .createQueryBuilder()
+        .select('p."customerId"', 'customerId')
+        .from('installment_plans', 'p')
+        .where('p."customerId" IN (:...ids)', { ids })
+        .andWhere('p.status = :status', { status: InstallmentPlanStatus.ACTIVE })
+        .getRawMany(),
     ]);
 
     const totalPurchasesByCustomerId = new Map(invoiceTotals.map((t) => [t.customerId, Number(t.total)]));
@@ -145,21 +164,29 @@ export class CustomersService extends BaseCrudService<Customer> {
     const assignedRepNameById = new Map(assignedReps.map((r) => [r.id, r.name]));
     const invoiceRepNameByCustomerId = new Map(invoiceReps.map((r) => [r.customerId, r.repName]));
     const invoiceCreatorNameByCustomerId = new Map(invoiceCreators.map((r) => [r.customerId, r.creatorName]));
+    const activeInstallmentCustomerIds = new Set(activeInstallmentPlans.map((p) => p.customerId));
 
     return customers.map((c) => {
       const totalPurchases = totalPurchasesByCustomerId.get(c.id) ?? 0;
       const totalPaid = totalPaidByCustomerId.get(c.id) ?? 0;
+      const balanceDue = Number(c.openingBalance) + totalPurchases - totalPaid;
       const salesRepresentativeName =
         (c.salesRepresentativeId ? assignedRepNameById.get(c.salesRepresentativeId) : null) ??
         invoiceRepNameByCustomerId.get(c.id) ??
         invoiceCreatorNameByCustomerId.get(c.id) ??
         null;
+      const paymentStatus: CustomerPaymentStatus = activeInstallmentCustomerIds.has(c.id)
+        ? 'INSTALLMENT'
+        : balanceDue <= 0.005
+          ? 'FULLY_PAID'
+          : 'PARTIALLY_PAID';
       return {
         ...c,
         totalPurchases,
         totalPaid,
-        balanceDue: Number(c.openingBalance) + totalPurchases - totalPaid,
+        balanceDue,
         salesRepresentativeName,
+        paymentStatus,
       };
     });
   }

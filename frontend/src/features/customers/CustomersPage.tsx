@@ -1,4 +1,4 @@
-import { MouseEvent, useState } from 'react';
+import { MouseEvent, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,6 +15,8 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
 import { useToast } from '../../components/ui/Toast';
 
+type PaymentStatus = 'FULLY_PAID' | 'PARTIALLY_PAID' | 'INSTALLMENT';
+
 interface Customer {
   id: string;
   name: string;
@@ -24,9 +26,16 @@ interface Customer {
   totalPurchases: number;
   totalPaid: number;
   balanceDue: number;
+  paymentStatus: PaymentStatus;
   creditStatus?: 'RELIABLE' | 'BLOCKED';
   blockedReason?: string | null;
 }
+
+const PAYMENT_STATUS_COLOR: Record<PaymentStatus, 'green' | 'yellow' | 'gray'> = {
+  FULLY_PAID: 'green',
+  PARTIALLY_PAID: 'yellow',
+  INSTALLMENT: 'gray',
+};
 
 const emptyForm = { name: '', mobile: '', address: '', creditStatus: 'RELIABLE' as 'RELIABLE' | 'BLOCKED', blockedReason: '' };
 
@@ -126,12 +135,26 @@ export function CustomersPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<'ALL' | PaymentStatus>('ALL');
 
   const customersQuery = useQuery({
     queryKey: ['customers', companyId],
     queryFn: () => unwrap<Customer[]>(apiClient.get('/customers', { params: { companyId } })),
     enabled: !!companyId,
   });
+
+  // Instant client-side search over name/mobile/address — the same multi-keyword, order-independent
+  // pattern used by OutstandingBalancesPage.tsx — combined with the payment-status dropdown.
+  const filteredCustomers = useMemo(() => {
+    const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return (customersQuery.data ?? []).filter((c) => {
+      if (paymentStatusFilter !== 'ALL' && c.paymentStatus !== paymentStatusFilter) return false;
+      if (keywords.length === 0) return true;
+      const haystack = [c.name, c.mobile, c.address].filter(Boolean).join(' ').toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
+    });
+  }, [customersQuery.data, search, paymentStatusFilter]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -218,6 +241,11 @@ export function CustomersPage() {
       width: '13%',
     },
     {
+      header: t('customers.paymentStatus'),
+      accessor: (r) => <Badge color={PAYMENT_STATUS_COLOR[r.paymentStatus]}>{t(`customers.paymentStatuses.${r.paymentStatus}`)}</Badge>,
+      width: '10%',
+    },
+    {
       header: t('installments.customerStatus'),
       accessor: (r) =>
         r.creditStatus === 'BLOCKED' ? (
@@ -274,11 +302,33 @@ export function CustomersPage() {
     <div>
       <PageHeader title={t('nav.customers')} actions={<Button onClick={openCreate}>+ {t('common.create')}</Button>} />
 
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <div className="max-w-sm min-w-[220px] flex-1">
+          <Input
+            type="search"
+            placeholder={t('customers.searchByNameMobileAddress') ?? ''}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="max-w-xs">
+          <FormField label={t('customers.filterByPaymentStatus')}>
+            <Select value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value as 'ALL' | PaymentStatus)}>
+              <option value="ALL">{t('customers.paymentStatuses.ALL')}</option>
+              <option value="FULLY_PAID">{t('customers.paymentStatuses.FULLY_PAID')}</option>
+              <option value="PARTIALLY_PAID">{t('customers.paymentStatuses.PARTIALLY_PAID')}</option>
+              <option value="INSTALLMENT">{t('customers.paymentStatuses.INSTALLMENT')}</option>
+            </Select>
+          </FormField>
+        </div>
+      </div>
+
       <DataTable
         columns={columns}
-        data={customersQuery.data ?? []}
+        data={filteredCustomers}
         keyField={(r) => r.id}
         isLoading={customersQuery.isLoading}
+        searchable={false}
         onRowClick={(r) => navigate(`/customers/${r.id}/statement`)}
       />
 

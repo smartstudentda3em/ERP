@@ -74,19 +74,22 @@ export class SalesInvoice extends BaseEntity {
   salesRepresentative: SalesRepresentative | null;
 
   /** Free-text customer identity captured directly on the invoice, decoupled from the Customer
-   * table. Two independent uses: Printing Press invoices are always attributed to the single
-   * seeded WALKIN customer (see customerId above) with the real identity captured here instead;
-   * Air Conditioning's "cash" quick-sale branch is attributed to a per-company WALKIN-AC
-   * placeholder the same way (see customer-quick-entry.util.ts's findOrCreateWalkInCustomer) —
-   * AC's "credit"/"installment" branches attribute to a real, resolved Customer row instead and
-   * leave these null. */
+   * table — Printing Press only: every invoice there is attributed to the single seeded WALKIN
+   * customer (see customerId above) with the real identity captured here instead. Air
+   * Conditioning's quick-entry flow (typed Name/Phone/Address, any sale type) is always
+   * attributed to a real, resolved Customer row instead (see customer-quick-entry.util.ts's
+   * findOrCreateQuickCustomer) and leaves these null, since that row's own name/mobile/address
+   * already carry the identity. */
   @Column({ type: "varchar", length: 200, nullable: true })
   customerName: string | null;
 
   @Column({ type: "varchar", length: 30, nullable: true })
   customerPhone: string | null;
 
-  /** Air Conditioning "cash" quick-sale only — see customerName above. */
+  /** Never actually populated — Printing Press has no address concept for its walk-in customer,
+   * and Air Conditioning's quick-entry flow now always resolves a real Customer row (whose own
+   * address column carries it) instead of leaving it here. Kept only for backward compatibility
+   * with rows written before that change. */
   @Column({ type: "varchar", length: 300, nullable: true })
   customerAddress: string | null;
 

@@ -290,7 +290,7 @@ export class CashMovementsService {
     const qb = this.dataSource
       .createQueryBuilder()
       .select('m.id', 'id')
-      .addSelect('m."movementDate"', 'date')
+      .addSelect('to_char(m."movementDate", \'YYYY-MM-DD\')', 'date')
       .addSelect('m."sourceType"', 'sourceType')
       .addSelect('m.amount', 'amount')
       .addSelect('m."settledAmount"', 'settledAmount')

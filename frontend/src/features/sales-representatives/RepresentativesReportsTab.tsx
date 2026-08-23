@@ -130,6 +130,11 @@ interface RepresentativesReportsTabProps {
   quarter: ReportsQuarter;
   customRange: DateRange;
   onCustomRangeChange: (range: DateRange) => void;
+  /** True when the parent's "مدراء الأفرع" tab is active, false for "المناديب" — this tab renders
+   * identically for both (SalesRepresentativesPage only switches which roleName the underlying
+   * data is scoped to), so it needs this to know whether the people it's charting are actually
+   * branch managers or actual sales reps, for labels that must say the right one. */
+  isManagerSection: boolean;
 }
 
 export function RepresentativesReportsTab({
@@ -138,9 +143,20 @@ export function RepresentativesReportsTab({
   quarter,
   customRange,
   onCustomRangeChange,
+  isManagerSection,
 }: RepresentativesReportsTabProps) {
   const { t } = useTranslation();
   const { isPrintingPress, isStationery } = useActiveCompany();
+  // Press's "مدير الفرع" phrasing is also exactly right whenever this tab is showing branch
+  // managers for any other company — reused rather than adding a near-duplicate i18n key.
+  const representativeAxisLabel = t(
+    isPrintingPress || isManagerSection
+      ? 'salesRepresentativesReports.representativeAxisLabelPress'
+      : 'salesRepresentativesReports.representativeAxisLabel',
+  );
+  const representativeColumnLabel = t(
+    isManagerSection ? 'salesRepresentativesReports.branchManager' : 'fields.salesRepresentative',
+  );
   const companyId = useAuthStore((s) => s.user?.companyId);
   const [detailTab, setDetailTab] = useState<DetailTab>('invoices');
   const [comparisonTab, setComparisonTab] = useState<ComparisonTab>('sales');
@@ -380,7 +396,7 @@ export function RepresentativesReportsTab({
   // chosen every row already belongs to them, so repeating their name on every line is noise.
   const treasuryColumns: Column<RepTreasuryBreakdownRow>[] = [
     { header: t('common.date'), accessor: (r) => r.date },
-    ...(representativeId ? [] : [{ header: t('fields.salesRepresentative'), accessor: (r: RepTreasuryBreakdownRow) => r.repName } as Column<RepTreasuryBreakdownRow>]),
+    ...(representativeId ? [] : [{ header: representativeColumnLabel, accessor: (r: RepTreasuryBreakdownRow) => r.repName } as Column<RepTreasuryBreakdownRow>]),
     {
       header: t('treasury.sourceDocument'),
       accessor: (r) => (r.sourceType === 'SALES_INVOICE' ? t('treasury.sourceInvoice') : t('treasury.sourceReceipt')),
@@ -435,7 +451,7 @@ export function RepresentativesReportsTab({
                   <XAxis
                     dataKey="representativeName"
                     tick={{ fontSize: 11 }}
-                    label={{ value: t(isPrintingPress ? 'salesRepresentativesReports.representativeAxisLabelPress' : 'salesRepresentativesReports.representativeAxisLabel'), position: 'insideBottom', offset: -16, style: { fontSize: 12 } }}
+                    label={{ value: representativeAxisLabel, position: 'insideBottom', offset: -16, style: { fontSize: 12 } }}
                   />
                   <YAxis
                     tick={{ fontSize: 11 }}
@@ -476,7 +492,7 @@ export function RepresentativesReportsTab({
                     <XAxis
                       dataKey="representativeName"
                       tick={{ fontSize: 11 }}
-                      label={{ value: t('salesRepresentativesReports.representativeAxisLabel'), position: 'insideBottom', offset: -16, style: { fontSize: 12 } }}
+                      label={{ value: representativeAxisLabel, position: 'insideBottom', offset: -16, style: { fontSize: 12 } }}
                     />
                     <YAxis
                       tick={{ fontSize: 11 }}

@@ -839,7 +839,10 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .select('l.id', 'lineId')
       .addSelect('i.id', 'invoiceId')
       .addSelect('i."documentNumber"', 'documentNumber')
-      .addSelect('i."invoiceDate"', 'invoiceDate')
+      // Cast to text — a raw querybuilder result (not ORM-hydrated), so a bare date column
+      // otherwise serializes over the API as a full "2026-08-23T00:00:00.000Z" timestamp instead
+      // of a plain date.
+      .addSelect('to_char(i."invoiceDate", \'YYYY-MM-DD\')', 'invoiceDate')
       .addSelect('l."lineTotal"', 'lineTotal')
       .addSelect('l."productId"', 'productId')
       .addSelect('p."categoryId"', 'categoryId')
@@ -952,7 +955,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .createQueryBuilder()
       .select('i.id', 'id')
       .addSelect('i."documentNumber"', 'documentNumber')
-      .addSelect('i."invoiceDate"', 'invoiceDate')
+      .addSelect('to_char(i."invoiceDate", \'YYYY-MM-DD\')', 'invoiceDate')
       .addSelect('i."grandTotal"', 'grandTotal')
       .addSelect('i.status', 'status')
       .addSelect('c.name', 'customerName')
@@ -981,7 +984,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .createQueryBuilder()
       .select('p.id', 'id')
       .addSelect('p."documentNumber"', 'documentNumber')
-      .addSelect('p."paymentDate"', 'paymentDate')
+      .addSelect('to_char(p."paymentDate", \'YYYY-MM-DD\')', 'paymentDate')
       .addSelect('p.amount', 'amount')
       .addSelect('p.method', 'method')
       .addSelect('c.name', 'customerName')

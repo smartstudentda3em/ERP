@@ -273,6 +273,7 @@ export function SalesRepresentativesPage() {
           quarter={reportsQuarter}
           customRange={customRange}
           onCustomRangeChange={setCustomRange}
+          isManagerSection={mainSection === 'managers'}
         />
       )}
       {activeSubTab === 'mine' && (

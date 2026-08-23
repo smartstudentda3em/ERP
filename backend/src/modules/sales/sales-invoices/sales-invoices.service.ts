@@ -527,10 +527,16 @@ export class SalesInvoicesService {
    * must match their own linked rep) — mirrors the identical restriction already applied in
    * findAll() for the invoices list, for the same reason: a مندوب has no "my branch's sales"
    * concept, only "my own sales" (see SalesRepAccessService.isCallerSalesRep's doc comment).
+   *
+   * costOfGoodsSold/totalProfit are stripped to null for anyone who isn't admin-equivalent
+   * (Administrator or Manager — see SalesRepAccessService.isSystemAdmin) — a مندوب/مدير فرع must
+   * never see cost/margin data, even in a raw API response they'd never render, matching
+   * ProductsService's identical rule for cost fields on the product catalog.
    */
   async getSalesLines(companyId: string, userId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
     const effectiveBranchId = await this.salesRepAccess.resolveBranchId(userId, branchId, companyId);
     const isSalesRep = await this.salesRepAccess.isCallerSalesRep(userId);
+    const canSeeCosts = await this.salesRepAccess.isSystemAdmin(userId);
     let ownRepId: string | null = null;
     if (isSalesRep) {
       const ownRep = await this.salesRepRepo.findOne({ where: { userId, companyId } });
@@ -540,13 +546,26 @@ export class SalesInvoicesService {
     const rows = await this.dataSource
       .createQueryBuilder()
       .select('l.id', 'id')
-      .addSelect('i."invoiceDate"', 'invoiceDate')
+      // Cast to text — selected as a raw Date object otherwise (this is a raw querybuilder result,
+      // not an ORM-hydrated entity), which then serializes over the API as a full
+      // "2026-08-23T00:00:00.000Z" timestamp instead of a plain date.
+      .addSelect('to_char(i."invoiceDate", \'YYYY-MM-DD\')', 'invoiceDate')
       .addSelect('p."nameEn"', 'productName')
       .addSelect('p."productType"', 'productType')
       .addSelect('l."baseQuantity"', 'baseQuantity')
       .addSelect('p."unitsPerPackage"', 'unitsPerPackage')
       .addSelect('pt."nameEn"', 'packageTypeName')
       .addSelect('r.name', 'salesRepresentativeName')
+      // True when the invoice's rep/owner is linked to a "مدير فرع" account — lets the report
+      // badge that person as a branch manager instead of a plain sales rep.
+      .addSelect(
+        `EXISTS (
+          SELECT 1 FROM user_roles ur
+          INNER JOIN roles rl ON rl.id = ur."roleId"
+          WHERE ur."userId" = r."userId" AND rl.name = 'مدير فرع'
+        )`,
+        'isBranchManager',
+      )
       .addSelect('COALESCE(br."nameAr", br."nameEn")', 'branchName')
       .addSelect('c.name', 'customerName')
       .addSelect('l."lineTotal"', 'lineTotal')
@@ -591,11 +610,12 @@ export class SalesInvoicesService {
         unitsPerPackage: r.unitsPerPackage != null ? Number(r.unitsPerPackage) : null,
         packageTypeName: r.packageTypeName ?? null,
         salesRepresentativeName: r.salesRepresentativeName ?? null,
+        salesRepresentativeIsBranchManager: Boolean(r.isBranchManager),
         branchName: r.branchName ?? null,
         customerName: r.customerName ?? null,
         lineTotal,
-        costOfGoodsSold,
-        totalProfit: Number(r.totalProfit),
+        costOfGoodsSold: canSeeCosts ? costOfGoodsSold : null,
+        totalProfit: canSeeCosts ? Number(r.totalProfit) : null,
         paidAmount,
         dueAmount,
       };

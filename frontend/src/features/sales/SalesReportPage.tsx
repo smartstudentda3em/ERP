@@ -45,11 +45,15 @@ interface SalesLine {
   unitsPerPackage: number | null;
   packageTypeName: string | null;
   salesRepresentativeName: string | null;
+  salesRepresentativeIsBranchManager: boolean;
   branchName: string | null;
   customerName: string | null;
   lineTotal: number;
-  costOfGoodsSold: number;
-  totalProfit: number;
+  /** null for a caller without full financial visibility (a مندوب/مدير فرع) — the backend omits
+   * cost/margin data entirely for them rather than just hiding it here, see
+   * SalesInvoicesService.getSalesLines(). */
+  costOfGoodsSold: number | null;
+  totalProfit: number | null;
   paidAmount: number;
   dueAmount: number;
 }
@@ -164,6 +168,10 @@ export function SalesReportPage() {
   const totalProfit = useMemo(() => filteredLines.reduce((sum, r) => sum + Number(r.totalProfit ?? 0), 0), [filteredLines]);
   const totalPaid = useMemo(() => filteredLines.reduce((sum, r) => sum + Number(r.paidAmount ?? 0), 0), [filteredLines]);
   const totalCogs = useMemo(() => filteredLines.reduce((sum, r) => sum + Number(r.costOfGoodsSold ?? 0), 0), [filteredLines]);
+  // A مندوب/مدير فرع never receives cost/margin data at all (see getSalesLines) — hides both the
+  // per-line columns below and the aggregate cards above, rather than showing a misleading "0.00"
+  // computed from nulled-out figures.
+  const canSeeCosts = isAdmin;
 
   // Printing Press only: the COGS and Profit columns/cards are dropped (Press catalog sales never
   // carry a meaningful per-line cost — see ExpensesPage's raw-material-purchases COGS override),
@@ -182,7 +190,20 @@ export function SalesReportPage() {
     },
     isPrintingPress
       ? { header: t('fields.branch'), accessor: (r: SalesLine) => r.branchName ?? '—' }
-      : { header: t('fields.salesRepresentative'), accessor: (r: SalesLine) => r.salesRepresentativeName ?? '—' },
+      : {
+          header: t('fields.salesRepresentative'),
+          accessor: (r: SalesLine) =>
+            r.salesRepresentativeIsBranchManager ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 dark:bg-primary-500/15 dark:text-primary-300">
+                  {t('salesRepresentativesReports.branchManager')}
+                </span>
+                {r.salesRepresentativeName}
+              </span>
+            ) : (
+              r.salesRepresentativeName ?? '—'
+            ),
+        },
     ...(isPrintingPress
       ? [
           {
@@ -191,16 +212,20 @@ export function SalesReportPage() {
               t(r.productType === 'CATALOG_ITEM' ? 'salesReport.finishedProduct' : 'salesReport.rawMaterialItem'),
           },
         ]
-      : [{ header: t('fields.cogs'), accessor: (r: SalesLine) => money(r.costOfGoodsSold), align: 'right' as const }]),
+      : canSeeCosts
+        ? [{ header: t('fields.cogs'), accessor: (r: SalesLine) => money(r.costOfGoodsSold ?? 0), align: 'right' as const }]
+        : []),
     { header: t('salesReport.totalAmount'), accessor: (r) => money(r.lineTotal), align: 'right' },
     { header: t('salesReport.paidAmount'), accessor: (r) => money(r.paidAmount), align: 'right' },
-    ...(isPrintingPress
+    ...(isPrintingPress || !canSeeCosts
       ? []
       : [
           {
             header: t('salesReport.profit'),
             accessor: (r: SalesLine) => (
-              <span className={Number(r.totalProfit) < 0 ? 'text-red-600' : 'text-green-600'}>{money(r.totalProfit)}</span>
+              <span className={Number(r.totalProfit ?? 0) < 0 ? 'text-red-600' : 'text-green-600'}>
+                {money(r.totalProfit ?? 0)}
+              </span>
             ),
             align: 'right' as const,
           },
@@ -310,24 +335,52 @@ export function SalesReportPage() {
           </div>
         </div>
 
-        <div className={`mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 ${isPrintingPress ? '' : 'lg:grid-cols-4'}`}>
-          <Card>
-            <div className="text-xs text-[var(--text-muted)]">{t('salesReport.totalAmount')}</div>
-            <div className="mt-1 text-2xl font-semibold text-green-600">{money(totalAmount)}</div>
+        <div
+          className={`mb-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 ${
+            !isPrintingPress && canSeeCosts ? 'lg:grid-cols-4' : ''
+          }`}
+        >
+          <Card className="rounded-2xl shadow-sm transition-shadow hover:shadow-md">
+            <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-muted)]">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-50 text-sm dark:bg-primary-500/15">
+                💰
+              </span>
+              {t('salesReport.totalAmount')}
+            </div>
+            <div className="mt-2.5 text-2xl font-bold tracking-tight text-green-600">{money(totalAmount)}</div>
           </Card>
-          <Card>
-            <div className="text-xs text-[var(--text-muted)]">{t('salesReport.totalPaidAmount')}</div>
-            <div className="mt-1 text-2xl font-semibold text-green-600">{money(totalPaid)}</div>
+          <Card className="rounded-2xl shadow-sm transition-shadow hover:shadow-md">
+            <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-muted)]">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-green-50 text-sm dark:bg-green-500/15">
+                ✅
+              </span>
+              {t('salesReport.totalPaidAmount')}
+            </div>
+            <div className="mt-2.5 text-2xl font-bold tracking-tight text-green-600">{money(totalPaid)}</div>
           </Card>
-          {!isPrintingPress && (
+          {!isPrintingPress && canSeeCosts && (
             <>
-              <Card>
-                <div className="text-xs text-[var(--text-muted)]">{t('salesReport.totalCogs')}</div>
-                <div className="mt-1 text-2xl font-semibold">{money(totalCogs)}</div>
+              <Card className="rounded-2xl shadow-sm transition-shadow hover:shadow-md">
+                <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-muted)]">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--table-header-bg)] text-sm">
+                    📦
+                  </span>
+                  {t('salesReport.totalCogs')}
+                </div>
+                <div className="mt-2.5 text-2xl font-bold tracking-tight">{money(totalCogs)}</div>
               </Card>
-              <Card>
-                <div className="text-xs text-[var(--text-muted)]">{t('salesReport.totalProfit')}</div>
-                <div className={`mt-1 text-2xl font-semibold ${totalProfit < 0 ? 'text-red-600' : 'text-green-600'}`}>
+              <Card className="rounded-2xl shadow-sm transition-shadow hover:shadow-md">
+                <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-muted)]">
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm ${
+                      totalProfit < 0 ? 'bg-red-50 dark:bg-red-500/15' : 'bg-green-50 dark:bg-green-500/15'
+                    }`}
+                  >
+                    📈
+                  </span>
+                  {t('salesReport.totalProfit')}
+                </div>
+                <div className={`mt-2.5 text-2xl font-bold tracking-tight ${totalProfit < 0 ? 'text-red-600' : 'text-green-600'}`}>
                   {money(totalProfit)}
                 </div>
               </Card>

@@ -65,16 +65,28 @@ body {
 .app-table th,
 .app-table td {
   border: 1px solid var(--border);
-  padding: 0.5rem 0.75rem;
+  padding: 0.625rem 0.875rem;
   text-align: center;
   vertical-align: middle;
   white-space: nowrap;
 }
 
 .app-table thead th {
+  position: sticky;
+  /* Matches Topbar.tsx's fixed h-14 (3.5rem) height — keeps the column header pinned just below
+     it while the page scrolls past a long table, instead of scrolling the header out of view. */
+  top: 3.5rem;
+  z-index: 10;
   background-color: var(--table-header-bg);
   font-weight: 700;
+  font-size: 0.8125rem;
+  letter-spacing: 0.01em;
   color: var(--text);
+  border-bottom: 2px solid var(--border);
+}
+
+.app-table tbody tr {
+  transition: background-color 120ms ease;
 }
 
 .app-table tbody tr:nth-child(even) {

@@ -98,8 +98,19 @@ export function DataTable<T>({
   return (
     <div>
       {searchable && (
-        <div className="data-table-search mb-3 max-w-xs print:hidden">
+        <div className="data-table-search relative mb-3 max-w-xs print:hidden">
+          {/* Same SVG magnifying-glass + inline paddingInlineStart pattern as SearchableSelect.tsx
+              — an inline style, not a ps-* class, since a plain Tailwind class here would only win
+              over the shared Input component's own px-3 depending on utility generation order,
+              which isn't worth relying on. */}
+          <span className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </span>
           <Input
+            style={{ paddingInlineStart: '2.25rem' }}
             placeholder={t('common.search') ?? 'Search'}
             value={search}
             onChange={(e) => {
@@ -114,7 +125,7 @@ export function DataTable<T>({
           widths, and this component is shared by every list screen in the app (including the ones
           مندوب/مدير فرع use inside the Android app), so the fix lives here once instead of being
           rebuilt per screen. */}
-      <div className="data-table-desktop hidden overflow-x-auto rounded-lg border border-[var(--border)] md:block">
+      <div className="data-table-desktop hidden overflow-x-auto rounded-2xl border border-[var(--border)] shadow-sm md:block">
         <table className="app-table">
           {columns.some((col) => col.width) && (
             <colgroup>
@@ -210,7 +221,7 @@ export function DataTable<T>({
             return (
               <div
                 key={keyField(row)}
-                className={`rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 ${onRowClick ? 'cursor-pointer active:bg-[var(--surface-2,var(--table-header-bg))]' : ''}`}
+                className={`rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm transition-shadow ${onRowClick ? 'cursor-pointer hover:shadow-md active:bg-[var(--surface-2,var(--table-header-bg))]' : ''}`}
                 style={rowStyle?.(row)}
                 onClick={() => onRowClick?.(row)}
               >
@@ -239,19 +250,21 @@ export function DataTable<T>({
         )}
       </div>
       {totalPages > 1 && (
-        <div className="mt-3 flex items-center justify-end gap-2 text-sm">
+        <div className="mt-4 flex items-center justify-end gap-2 text-sm">
           <button
-            className="rounded px-2 py-1 disabled:opacity-40"
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] transition-colors hover:bg-[var(--table-header-bg)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
             disabled={currentPage <= 1}
             onClick={() => goToPage(currentPage - 1)}
           >
             ‹
           </button>
-          <span className="text-[var(--text-muted)]">
+          <span className="rounded-lg bg-[var(--table-header-bg)] px-3 py-1.5 font-medium text-[var(--text)]">
             {currentPage} / {totalPages}
           </span>
           <button
-            className="rounded px-2 py-1 disabled:opacity-40"
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] transition-colors hover:bg-[var(--table-header-bg)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
             disabled={currentPage >= totalPages}
             onClick={() => goToPage(currentPage + 1)}
           >

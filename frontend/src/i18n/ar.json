@@ -875,7 +875,11 @@
       "MANUAL": "قيد يدوي",
       "CAPITAL_INJECTION": "زيادة رأس المال",
       "DIVIDEND": "توزيع أرباح",
-      "TRANSFER": "تحويل بين الحسابات"
+      "TRANSFER": "تحويل بين الحسابات",
+      "INSTALLMENT_PAYMENT": "تحصيل قسط",
+      "PAYROLL": "رواتب الموظفين",
+      "SHIPMENT_PAYMENT": "دفعة شحنة",
+      "COMMISSION_PAYOUT": "صرف عمولة"
     },
     "bankBalance": "رصيد البنك",
     "cashBalance": "الخزينة النقدي (الكاش)",

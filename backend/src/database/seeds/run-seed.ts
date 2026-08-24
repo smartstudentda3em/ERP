@@ -591,6 +591,11 @@ async function main() {
       { documentType: 'CASH_MOVEMENT', prefix: 'CM-' },
       { documentType: 'INSTALLMENT_PLAN', prefix: 'INSTL-' },
       { documentType: 'INSTALLMENT_PAYMENT', prefix: 'INSTLP-' },
+      // Was missing entirely — PayrollService.approve() has always fallen back to
+      // `PR-${Date.now()}` for every company since nothing here ever seeded this series, producing
+      // an ugly epoch-timestamp "document number" (e.g. "PR-1787449874740") baked into both the
+      // PayrollRun row itself and the CashMovement description that quotes it.
+      { documentType: 'PAYROLL_RUN', prefix: 'PR-' },
     ];
     for (const s of seriesDefs) {
       const existing = await numberingSeriesRepo.findOne({

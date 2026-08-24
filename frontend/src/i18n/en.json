@@ -875,7 +875,11 @@
       "MANUAL": "Manual Entry",
       "CAPITAL_INJECTION": "Capital Injection",
       "DIVIDEND": "Dividend Distribution",
-      "TRANSFER": "Transfer Between Accounts"
+      "TRANSFER": "Transfer Between Accounts",
+      "INSTALLMENT_PAYMENT": "Installment Collection",
+      "PAYROLL": "Employee Salaries",
+      "SHIPMENT_PAYMENT": "Shipment Payment",
+      "COMMISSION_PAYOUT": "Commission Payout"
     },
     "bankBalance": "Bank Balance",
     "cashBalance": "Cash Treasury (Cash)",

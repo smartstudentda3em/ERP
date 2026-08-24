@@ -158,6 +158,12 @@ export function RepresentativesReportsTab({
     isManagerSection ? 'salesRepresentativesReports.branchManager' : 'fields.salesRepresentative',
   );
   const companyId = useAuthStore((s) => s.user?.companyId);
+  // Which of "مدراء الأفرع"/"المناديب" this tab is reporting on — sent to every report endpoint
+  // below so the backend can scope the data to that exact population (see
+  // SalesRepresentativesService.findRepsForReport()); previously unsent entirely, so every report
+  // silently mixed both roles together, distinguished only by this component's own axis/column
+  // labels rather than by the underlying data actually being different.
+  const roleName = isManagerSection ? 'مدير فرع' : 'مندوب';
   const [detailTab, setDetailTab] = useState<DetailTab>('invoices');
   const [comparisonTab, setComparisonTab] = useState<ComparisonTab>('sales');
   const [salesSortDir, setSalesSortDir] = useState<SortDir>('desc');
@@ -171,33 +177,33 @@ export function RepresentativesReportsTab({
   );
 
   const reportQuery = useQuery({
-    queryKey: ['sales-representatives-report', companyId, dateFrom, dateTo, representativeId],
+    queryKey: ['sales-representatives-report', companyId, dateFrom, dateTo, representativeId, roleName],
     queryFn: () =>
       unwrap<RepReportRow[]>(
         apiClient.get('/sales-representatives/reports/summary', {
-          params: { companyId, dateFrom, dateTo, representativeId: representativeId || undefined },
+          params: { companyId, dateFrom, dateTo, representativeId: representativeId || undefined, roleName },
         }),
       ),
     enabled: !!companyId,
   });
 
   const invoicesQuery = useQuery({
-    queryKey: ['sales-representatives-report-invoices', companyId, dateFrom, dateTo, representativeId],
+    queryKey: ['sales-representatives-report-invoices', companyId, dateFrom, dateTo, representativeId, roleName],
     queryFn: () =>
       unwrap<RepInvoiceRow[]>(
         apiClient.get('/sales-representatives/reports/invoices', {
-          params: { companyId, dateFrom, dateTo, representativeId: representativeId || undefined },
+          params: { companyId, dateFrom, dateTo, representativeId: representativeId || undefined, roleName },
         }),
       ),
     enabled: !!companyId && detailTab === 'invoices',
   });
 
   const receiptsQuery = useQuery({
-    queryKey: ['sales-representatives-report-receipts', companyId, dateFrom, dateTo, representativeId],
+    queryKey: ['sales-representatives-report-receipts', companyId, dateFrom, dateTo, representativeId, roleName],
     queryFn: () =>
       unwrap<RepReceiptRow[]>(
         apiClient.get('/sales-representatives/reports/receipts', {
-          params: { companyId, dateFrom, dateTo, representativeId: representativeId || undefined },
+          params: { companyId, dateFrom, dateTo, representativeId: representativeId || undefined, roleName },
         }),
       ),
     // Printing Press drops "سندات القبض" from this screen entirely — see the detail-tabs section

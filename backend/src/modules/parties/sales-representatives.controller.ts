@@ -373,6 +373,51 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     });
   }
 
+  /** Every company's own "مدراء الأفرع"/"المناديب" split, for report screens — mirrors
+   * findAllForCompany()'s identical rule (a linked account's own role always decides; an unlinked
+   * row falls back to intendedRoleName) so a report can never show a different population than the
+   * list tab it's reporting on, e.g. a مدير فرع showing up under "تقارير المناديب". A bare
+   * `this.repo.find({ where: { companyId } })` with no role filtering at all was the actual bug
+   * here — every report below used to mix both roles together, distinguishing them only by which
+   * tab's labels the frontend happened to draw on top of identical, unfiltered data. */
+  private async findRepsForReport(
+    companyId: string,
+    roleName?: string,
+    relations: string[] = [],
+  ): Promise<SalesRepresentative[]> {
+    if (!roleName) {
+      return this.repo.find({ where: { companyId }, relations, order: { name: 'ASC' } });
+    }
+    const qb = this.repo.createQueryBuilder('rep').where('rep."companyId" = :companyId', { companyId });
+    relations.forEach((r) => qb.leftJoinAndSelect(`rep.${r}`, r));
+    qb.andWhere(
+      `(
+        EXISTS (
+          SELECT 1 FROM users u
+          INNER JOIN user_roles ur ON ur."userId" = u.id
+          INNER JOIN roles r ON r.id = ur."roleId" AND r.name = :roleName
+          WHERE u.id = rep."userId"
+        )
+        OR (rep."userId" IS NULL AND rep."intendedRoleName" = :roleName)
+      )`,
+      { roleName },
+    );
+    return qb.orderBy('rep.name', 'ASC').getMany();
+  }
+
+  /** AC only — true when the report being requested is specifically about مناديب: either the
+   * caller picked one specific رep and that رep's linked account holds 'مندوب' (checked directly,
+   * since a single id carries no role-tab context of its own), or no specific رep was picked and
+   * the caller is viewing the "المناديب" tab itself (roleName === 'مندوب'). Drives the
+   * assisted-sales branch in getReportsSummary()/getReportsInvoices() below — see their own doc
+   * comments for why AC مناديب need a completely different sales metric than every other رep. */
+  private async isMandoubReportContext(companyId: string, representativeId?: string, roleName?: string): Promise<boolean> {
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code !== AIR_CONDITIONING_COMPANY_CODE) return false;
+    if (representativeId) return this.salesRepAccess.isSalesAgentRep(representativeId);
+    return roleName === 'مندوب';
+  }
+
   /**
    * Per-representative sales volume (invoices, by invoice date) and collected amount (receipts,
    * by payment date) over a date range — backs the two charts on the "تقارير المناديب" tab. A
@@ -405,12 +450,37 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     dateFrom: string,
     dateTo: string,
     representativeId?: string,
+    roleName?: string,
   ): Promise<{ representativeId: string; representativeName: string; salesVolume: number; collectedAmount: number }[]> {
-    const reps = await this.repo.find({
-      where: { companyId, ...(representativeId ? { id: representativeId } : {}) } as any,
-      order: { name: 'ASC' } as any,
-    });
+    const reps = representativeId
+      ? await this.repo.find({ where: { companyId, id: representativeId } as any, order: { name: 'ASC' } as any })
+      : await this.findRepsForReport(companyId, roleName);
     if (reps.length === 0) return [];
+
+    // AC only: a مندوب no longer owns invoices at all there (see Part 1/2 of the AC managed-sales
+    // process — an admin/manager-created invoice is always credited to the branch's مدير فرع
+    // instead). Their own sales figure here is instead every invoice they were tagged as having
+    // *assisted* (SalesInvoice.assistingSalesRepresentativeId) — collectedAmount stays 0 since they
+    // don't own (or record receipts against) any invoice either.
+    if (await this.isMandoubReportContext(companyId, representativeId, roleName)) {
+      const assistedRows = await this.dataSource
+        .createQueryBuilder()
+        .select('i."assistingSalesRepresentativeId"', 'repId')
+        .addSelect('COALESCE(SUM(i."grandTotal"), 0)', 'total')
+        .from('sales_invoices', 'i')
+        .where('i."companyId" = :companyId', { companyId })
+        .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
+        .andWhere('i."assistingSalesRepresentativeId" IS NOT NULL')
+        .groupBy('i."assistingSalesRepresentativeId"')
+        .getRawMany();
+      const assistedSalesByRepId = new Map(assistedRows.map((r) => [r.repId, Number(r.total)]));
+      return reps.map((r) => ({
+        representativeId: r.id,
+        representativeName: r.name,
+        salesVolume: assistedSalesByRepId.get(r.id) ?? 0,
+        collectedAmount: 0,
+      }));
+    }
 
     if (await this.isPressCompany(companyId)) {
       const branchSalesRows = await this.dataSource
@@ -1086,7 +1156,30 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   }
 
   /** The actual invoices behind the "حجم المبيعات" chart bar(s) — same population (rep IS NOT NULL, or one specific rep) and date range as getReportsSummary, so the table always reconciles with the chart. */
-  async getReportsInvoices(companyId: string, dateFrom: string, dateTo: string, representativeId?: string) {
+  async getReportsInvoices(companyId: string, dateFrom: string, dateTo: string, representativeId?: string, roleName?: string) {
+    // AC only — same assisted-sales population as getReportsSummary's own AC-مندوب branch (see its
+    // doc comment): an AC مندوب's invoices are the ones they assisted with, never ones they own.
+    if (await this.isMandoubReportContext(companyId, representativeId, roleName)) {
+      const qb2 = this.dataSource
+        .createQueryBuilder()
+        .select('i.id', 'id')
+        .addSelect('i."documentNumber"', 'documentNumber')
+        .addSelect('to_char(i."invoiceDate", \'YYYY-MM-DD\')', 'invoiceDate')
+        .addSelect('i."grandTotal"', 'grandTotal')
+        .addSelect('i.status', 'status')
+        .addSelect('c.name', 'customerName')
+        .from('sales_invoices', 'i')
+        .innerJoin('customers', 'c', 'c.id = i."customerId"')
+        .where('i."companyId" = :companyId', { companyId })
+        .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
+        .andWhere('i."assistingSalesRepresentativeId" IS NOT NULL');
+      if (representativeId) {
+        qb2.andWhere('i."assistingSalesRepresentativeId" = :representativeId', { representativeId });
+      }
+      const assistedRows = await qb2.orderBy('i."invoiceDate"', 'DESC').addOrderBy('i."documentNumber"', 'DESC').getRawMany();
+      return assistedRows.map((r) => ({ ...r, grandTotal: Number(r.grandTotal) }));
+    }
+
     // Same createdById fallback as getReportsSummary — an invoice with no salesRepresentativeId
     // still resolves to whichever rep's own userId equals its createdById, so this table always
     // reconciles with that chart's totals.
@@ -1098,6 +1191,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .addSelect('i."grandTotal"', 'grandTotal')
       .addSelect('i.status', 'status')
       .addSelect('c.name', 'customerName')
+      .addSelect('COALESCE(i."salesRepresentativeId", r2.id)', 'repId')
       .from('sales_invoices', 'i')
       .innerJoin('customers', 'c', 'c.id = i."customerId"')
       .leftJoin(
@@ -1114,11 +1208,23 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     }
 
     const rows = await qb.orderBy('i."invoiceDate"', 'DESC').addOrderBy('i."documentNumber"', 'DESC').getRawMany();
-    return rows.map((r) => ({ ...r, grandTotal: Number(r.grandTotal) }));
+
+    // Same "مدراء الأفرع"/"المناديب" split as getReportsSummary — a specific representativeId is
+    // already unambiguous, so this only applies to the aggregate (no representativeId) view.
+    const validRepIds =
+      !representativeId && roleName ? new Set((await this.findRepsForReport(companyId, roleName)).map((r) => r.id)) : null;
+
+    return rows
+      .filter((r) => !validRepIds || validRepIds.has(r.repId))
+      .map(({ repId, ...r }) => ({ ...r, grandTotal: Number(r.grandTotal) }));
   }
 
   /** The actual receipts behind the "تحصيل الأرصدة المستحقة" chart bar(s) — attributed with the exact same fallback chain (own rep, else invoice's rep, else customer's rep) getReportsSummary uses, so the table always reconciles with the chart. */
-  async getReportsReceipts(companyId: string, dateFrom: string, dateTo: string, representativeId?: string) {
+  async getReportsReceipts(companyId: string, dateFrom: string, dateTo: string, representativeId?: string, roleName?: string) {
+    // AC مناديب don't own (or record receipts against) any invoice at all — see
+    // getReportsSummary's own AC-مندوب branch — so there's nothing meaningful to show here for them.
+    if (await this.isMandoubReportContext(companyId, representativeId, roleName)) return [];
+
     const rows = await this.dataSource
       .createQueryBuilder()
       .select('p.id', 'id')
@@ -1140,8 +1246,16 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .addOrderBy('p."documentNumber"', 'DESC')
       .getRawMany();
 
+    // Same "مدراء الأفرع"/"المناديب" split as getReportsSummary/getReportsInvoices.
+    const validRepIds =
+      !representativeId && roleName ? new Set((await this.findRepsForReport(companyId, roleName)).map((r) => r.id)) : null;
+
     return rows
-      .filter((r) => (representativeId ? r.attributedRepId === representativeId : !!r.attributedRepId))
+      .filter((r) => {
+        if (representativeId) return r.attributedRepId === representativeId;
+        if (validRepIds) return r.attributedRepId && validRepIds.has(r.attributedRepId);
+        return !!r.attributedRepId;
+      })
       .map(({ attributedRepId, ...r }) => ({ ...r, amount: Number(r.amount) }));
   }
 }
@@ -1163,8 +1277,9 @@ export class SalesRepresentativesController {
     @Query('dateFrom') dateFrom: string,
     @Query('dateTo') dateTo: string,
     @Query('representativeId') representativeId?: string,
+    @Query('roleName') roleName?: string,
   ) {
-    return this.service.getReportsSummary(companyId, dateFrom, dateTo, representativeId);
+    return this.service.getReportsSummary(companyId, dateFrom, dateTo, representativeId, roleName);
   }
   @Get('reports/quarterly-trend')
   @Permissions('sales-representatives.view')
@@ -1201,8 +1316,9 @@ export class SalesRepresentativesController {
     @Query('dateFrom') dateFrom: string,
     @Query('dateTo') dateTo: string,
     @Query('representativeId') representativeId?: string,
+    @Query('roleName') roleName?: string,
   ) {
-    return this.service.getReportsInvoices(companyId, dateFrom, dateTo, representativeId);
+    return this.service.getReportsInvoices(companyId, dateFrom, dateTo, representativeId, roleName);
   }
   @Get('reports/receipts')
   @Permissions('sales-representatives.view')
@@ -1211,8 +1327,9 @@ export class SalesRepresentativesController {
     @Query('dateFrom') dateFrom: string,
     @Query('dateTo') dateTo: string,
     @Query('representativeId') representativeId?: string,
+    @Query('roleName') roleName?: string,
   ) {
-    return this.service.getReportsReceipts(companyId, dateFrom, dateTo, representativeId);
+    return this.service.getReportsReceipts(companyId, dateFrom, dateTo, representativeId, roleName);
   }
   /** Self-service "لوحة المدير" dashboard — no @Permissions decorator, matching
    * UsersController.getOwnProfile's pattern, since a مدير فرع has no sales-representatives.*

@@ -373,6 +373,14 @@ async function main() {
     // Monthly Stock Audit — conduct and record only, never approve
     'inventory.stockAudit.view',
     'inventory.stockAudit.create',
+    // "الشركاء" — the standalone Partners screen/nav item (partners-treasury.controller.ts,
+    // PartnersPage.tsx), explicitly requested. Distinct from settings.partner below (the Settings
+    // sub-tab for partner profit-share percentages), which stays excluded — this only unlocks the
+    // separate "الشركاء" screen itself, full management to match every other granted module.
+    'partners.view',
+    'partners.create',
+    'partners.edit',
+    'partners.delete',
     // Settings — full management except partners and factory reset
     'settings.branch.view',
     'settings.branch.create',

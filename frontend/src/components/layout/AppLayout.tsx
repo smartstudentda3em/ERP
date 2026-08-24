@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Breadcrumbs } from './Breadcrumbs';
+import { ScrollToTopButton } from './ScrollToTopButton';
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -23,6 +24,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <ScrollToTopButton />
     </div>
   );
 }

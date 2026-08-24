@@ -86,6 +86,7 @@
     "date": "Date",
     "total": "Total",
     "loading": "Loading...",
+    "scrollToTop": "Scroll to top",
     "noData": "No data available",
     "comingSoon": "This module is scaffolded — full workflow coming in a future pass.",
     "confirm": "Confirm",

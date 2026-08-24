@@ -37,7 +37,7 @@ interface StockMovement {
   totalCost: number;
   createdAt: string;
   product: { nameEn: string; unitsPerPackage?: number | null };
-  warehouse: { nameEn: string };
+  warehouse: { nameEn: string; nameAr?: string | null };
   referenceNumber?: string;
 }
 
@@ -89,8 +89,8 @@ interface StockTransfer {
   documentNumber: string;
   transferDate: string;
   createdByName: string;
-  fromWarehouse: { nameEn: string };
-  toWarehouse: { nameEn: string };
+  fromWarehouse: { nameEn: string; nameAr?: string | null };
+  toWarehouse: { nameEn: string; nameAr?: string | null };
   lines: { productId: string; quantity: number; product: { nameEn: string } }[];
 }
 
@@ -381,7 +381,7 @@ export function StockPage() {
       align: 'center',
     },
     { header: t('common.name'), accessor: (r) => r.product?.nameEn },
-    { header: t('fields.warehouse'), accessor: (r) => r.warehouse?.nameEn },
+    { header: t('fields.warehouse'), accessor: (r) => r.warehouse?.nameAr || r.warehouse?.nameEn },
     {
       header: t('fields.quantityPackages'),
       // Package count, not base units — a movement of 400 base units at 100 units/package reads
@@ -400,8 +400,8 @@ export function StockPage() {
   const transferColumns: Column<StockTransfer>[] = [
     { header: t('stock.transferNumber'), accessor: (r) => r.documentNumber },
     { header: t('common.date'), accessor: (r) => r.transferDate },
-    { header: t('stock.fromWarehouse'), accessor: (r) => r.fromWarehouse?.nameEn },
-    { header: t('stock.toWarehouse'), accessor: (r) => r.toWarehouse?.nameEn },
+    { header: t('stock.fromWarehouse'), accessor: (r) => r.fromWarehouse?.nameAr || r.fromWarehouse?.nameEn },
+    { header: t('stock.toWarehouse'), accessor: (r) => r.toWarehouse?.nameAr || r.toWarehouse?.nameEn },
     { header: t('fields.product'), accessor: (r) => r.lines?.[0]?.product?.nameEn ?? '—' },
     {
       header: t('fields.quantity'),
@@ -527,7 +527,7 @@ export function StockPage() {
               <option value="">{t('actions.selectWarehouse')}</option>
               {(warehousesQuery.data ?? []).map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.nameEn}
+                  {w.nameAr || w.nameEn}
                 </option>
               ))}
             </Select>
@@ -598,7 +598,7 @@ export function StockPage() {
               <option value="">{t('actions.selectWarehouse')}</option>
               {(warehousesQuery.data ?? []).map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.nameEn}
+                  {w.nameAr || w.nameEn}
                 </option>
               ))}
             </Select>
@@ -614,7 +614,7 @@ export function StockPage() {
                 .filter((w) => w.id !== transferForm.fromWarehouseId)
                 .map((w) => (
                   <option key={w.id} value={w.id}>
-                    {w.nameEn}
+                    {w.nameAr || w.nameEn}
                   </option>
                 ))}
             </Select>
@@ -680,7 +680,7 @@ export function StockPage() {
                     );
                     return (
                       <div key={w.id} className="rounded-lg border border-[var(--border)] p-2 text-sm">
-                        <div className="text-xs text-[var(--text-muted)]">{w.nameEn}</div>
+                        <div className="text-xs text-[var(--text-muted)]">{w.nameAr || w.nameEn}</div>
                         <div className="font-medium">
                           {formatByUnitKind(
                             level ? Number(level.quantityOnHand) : 0,

@@ -83,16 +83,28 @@ export function DashboardPage() {
   // records (branchId IS NULL) without the user ever choosing a branch — exactly what made a real
   // expense recorded with no branch picked vanish from the Dashboard while still showing in
   // "المصروفات".
-  const hasBranchFilter = isPrintingPress || isStationery || isAirConditioning;
+  const canHaveBranchFilter = isPrintingPress || isStationery || isAirConditioning;
   const ALL_BRANCHES = 'all';
   const [branchFilter, setBranchFilter] = useState(ALL_BRANCHES);
-  const effectiveBranchId = hasBranchFilter && branchFilter !== ALL_BRANCHES ? branchFilter : undefined;
 
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
-    enabled: hasBranchFilter && !!companyId,
+    enabled: canHaveBranchFilter && !!companyId,
   });
+
+  // Stationery and Air Conditioning currently only ever have exactly one real branch each (unlike
+  // Press, which genuinely has several) — every branch-scoped query on this page (summary, partners
+  // balances, sales chart, top products, recent transactions) resolves a branch via each invoice/
+  // payment/movement's own optional salesRepresentativeId or branchId link, which isn't reliably
+  // populated outside Press. Picking that one branch by name therefore silently dropped anything
+  // whose link was missing (e.g. company-wide partner capital movements, walk-in sales with no
+  // linked rep), producing numbers that didn't match "كل الفروع" even though there was nothing else
+  // to filter out. Hiding the picker whenever there's ≤1 branch keeps this page always on the
+  // unfiltered (always-correct) totals for those companies, while leaving it fully intact — and
+  // correct — for Press, and for AC/Stationery too if a second branch is ever added later.
+  const hasBranchFilter = canHaveBranchFilter && (branchesQuery.data?.length ?? 0) > 1;
+  const effectiveBranchId = hasBranchFilter && branchFilter !== ALL_BRANCHES ? branchFilter : undefined;
 
   // No branchId param keeps the exact same cache key (and cached data) as every other screen that
   // reads this same summary (Partners, Treasury) when "الإجمالي / جميع الفروع" is selected — only

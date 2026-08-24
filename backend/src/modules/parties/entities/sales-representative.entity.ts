@@ -76,4 +76,15 @@ export class SalesRepresentative extends BaseEntity {
   @ManyToOne(() => User, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "userId" })
   user: User | null;
+
+  /** Which of "مدير فرع" / "مندوب" this row was added as, from the "مدراء الأفرع"/"المناديب" tab
+   * that created it — purely a display tiebreaker for findAllForCompany()'s role-filtered list,
+   * never consulted by any real permission/attribution logic (that always derives the role fresh
+   * from the linked user's own roles, via SalesRepAccessService). Only matters while userId is
+   * null: a row with no linked login account has no real role to look up at all, so without this
+   * tag it silently vanished from BOTH filtered tabs the moment "مدراء الأفرع"/"المناديب" stopped
+   * being Press-exclusive and became every company's only way to list these rows. Once linked to a
+   * real account, the linked user's actual role always takes priority over this tag. */
+  @Column({ type: "varchar", length: 50, nullable: true })
+  intendedRoleName: string | null;
 }

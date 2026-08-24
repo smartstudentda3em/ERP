@@ -283,6 +283,10 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
         userId: form.userId || undefined,
         isActive: form.isActive,
         companyId,
+        // Only meaningful while this row has no linked account at all — see
+        // SalesRepresentative.intendedRoleName's own doc comment. Harmless to send even once
+        // linked; the backend only ever reads it for an unlinked row.
+        intendedRoleName: roleNameFilter || undefined,
       };
       if (editingId) return apiClient.patch(`/sales-representatives/${editingId}`, payload);
       return apiClient.post('/sales-representatives', payload);

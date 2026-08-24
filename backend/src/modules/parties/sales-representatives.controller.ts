@@ -153,13 +153,13 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
    * Overrides the base class's bare findAll so the list screen can show each rep's branch name
    * (e.g. "حمدي" → "فرع خيطان") without a separate lookup per row.
    *
-   * `roleName` (optional) narrows this to only rows whose linked login account holds that exact
-   * role — used by Printing Press's two-tab split: "مدراء الفروع" passes 'مدير فرع', the new
-   * "المناديب" tab passes 'مندوب', so a مندوب auto-synced into this table (see
-   * UsersService.syncRepRepresentative) never leaks into the branch-managers list and vice versa.
-   * Every other caller (Stationery/AC's single unfiltered "المناديب" tab, and every other endpoint
-   * on this controller) omits it and keeps today's behavior — including rows with no linked user
-   * at all (manually added reps), which only ever show up in the unfiltered view.
+   * `roleName` (optional) narrows this to only rows belonging to that role's tab: "مدراء الأفرع"
+   * passes 'مدير فرع', "المناديب" passes 'مندوب' — every company's own two-tab split, not just
+   * Printing Press. A row whose login account holds that role always matches. A row with NO linked
+   * account (added via "بدون حساب مرتبط") has no real role to check at all, so it instead matches
+   * on intendedRoleName — the tab it was originally added from — so it still shows up somewhere
+   * instead of silently vanishing from both tabs. Once such a row IS linked to a real account, the
+   * account's actual role takes over completely; intendedRoleName is never consulted again.
    */
   findAllForCompany(companyId: string, roleName?: string): Promise<SalesRepresentative[]> {
     if (!roleName) {
@@ -168,10 +168,19 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     return this.repo
       .createQueryBuilder('rep')
       .leftJoinAndSelect('rep.branch', 'branch')
-      .innerJoin('users', 'u', 'u.id = rep."userId"')
-      .innerJoin('user_roles', 'ur', 'ur."userId" = u.id')
-      .innerJoin('roles', 'r', 'r.id = ur."roleId" AND r.name = :roleName', { roleName })
       .where('rep."companyId" = :companyId', { companyId })
+      .andWhere(
+        `(
+          EXISTS (
+            SELECT 1 FROM users u
+            INNER JOIN user_roles ur ON ur."userId" = u.id
+            INNER JOIN roles r ON r.id = ur."roleId" AND r.name = :roleName
+            WHERE u.id = rep."userId"
+          )
+          OR (rep."userId" IS NULL AND rep."intendedRoleName" = :roleName)
+        )`,
+        { roleName },
+      )
       .orderBy('rep."createdAt"', 'ASC')
       .getMany();
   }

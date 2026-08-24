@@ -298,6 +298,22 @@ export function TreasuryTransactionsPage() {
         />
       )}
 
+      <div className="mb-3 flex flex-wrap items-end gap-3 print:hidden">
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        {showAccountSplit && (
+          <FormField label={t('dashboard.branchFilter')}>
+            <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              <option value={ALL_BRANCHES}>{t('accounting.allBranches')}</option>
+              {(branchesQuery.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nameAr || b.nameEn}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
+      </div>
+
       {showAccountSplit ? (
         // RTL reading order right-to-left: بنك، كاش، خزينة المندوب، إجمالي — first JSX child
         // renders rightmost.
@@ -337,22 +353,6 @@ export function TreasuryTransactionsPage() {
           <div className="mt-1 text-2xl font-semibold">{money(currentBalance)}</div>
         </Card>
       )}
-
-      <div className="mb-3 flex flex-wrap items-end gap-3 print:hidden">
-        <DateRangeFilter value={dateRange} onChange={setDateRange} />
-        {showAccountSplit && (
-          <FormField label={t('dashboard.branchFilter')}>
-            <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-              <option value={ALL_BRANCHES}>{t('accounting.allBranches')}</option>
-              {(branchesQuery.data ?? []).map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.nameAr || b.nameEn}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-        )}
-      </div>
 
       {/* On-screen, interactive, paginated — unrelated to print/PDF, which always need the full
           filtered dataset regardless of which page is currently shown here. */}

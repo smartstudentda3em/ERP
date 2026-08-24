@@ -82,11 +82,17 @@ body {
 }
 
 .app-table thead th {
-  position: sticky;
-  /* Matches Topbar.tsx's fixed h-14 (3.5rem) height — keeps the column header pinned just below
-     it while the page scrolls past a long table, instead of scrolling the header out of view. */
-  top: 3.5rem;
-  z-index: 10;
+  /* NOT position: sticky — the desktop table wrapper (.data-table-desktop) sets overflow-x: auto
+     for horizontal scroll on narrow viewports, which per the CSS overflow spec forces overflow-y
+     to compute as auto too even though the wrapper never actually needs to scroll vertically
+     (content fits). That alone makes the wrapper a sticky positioning containing block for its own
+     descendants — so a sticky <th> sticks 56px down from the WRAPPER's own top edge, not the page,
+     completely independent of whether the wrapper's content is tall enough for that to make sense.
+     On a short table (few rows) this pushes the header down over the first data row(s), hiding them
+     under an opaque header background — data-loss-looking, not just a cosmetic glitch. Confirmed
+     2026-08-24 on production (Suppliers/Users&Roles lists misread as "missing data"). Don't
+     reintroduce sticky here without first restructuring the wrapper so overflow-x doesn't sit on
+     the sticky <th>'s own containing block. */
   background-color: var(--table-header-bg);
   font-weight: 700;
   font-size: 0.8125rem;

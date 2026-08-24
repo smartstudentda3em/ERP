@@ -97,6 +97,23 @@ export class SalesRepAccessService {
     return { salesRepresentativeId: ownRep?.id ?? null, createdById: userId };
   }
 
+  /** AC only — resolves a branch's مدير فرع, for SalesInvoicesService.create() to credit an
+   * Administrator/Manager-created invoice to the right person instead of to themselves. No
+   * uniqueness constraint exists on SalesRepresentative.branchId, so a branch could in theory have
+   * 0 or 2+ مدير فرع rows; the first match is returned, matching the accepted simplification noted
+   * in the AC managed-sales plan. */
+  async resolveBranchManagerRepId(companyId: string, branchId: string): Promise<string | null> {
+    const rep = await this.repRepo
+      .createQueryBuilder('rep')
+      .innerJoin('users', 'u', 'u.id = rep."userId"')
+      .innerJoin('user_roles', 'ur', 'ur."userId" = u.id')
+      .innerJoin('roles', 'r', 'r.id = ur."roleId" AND r.name = :roleName', { roleName: BRANCH_MANAGER_ROLE_NAME })
+      .where('rep."companyId" = :companyId', { companyId })
+      .andWhere('rep."branchId" = :branchId', { branchId })
+      .getOne();
+    return rep?.id ?? null;
+  }
+
   /** For read-side filters (e.g. the Sales report's "الفرع" dropdown): non-admins are pinned to
    * their own rep's branch and can never widen the filter to another branch, no matter what the
    * client requests. A non-admin with no linked rep (or a rep with no branch) sees every branch,

@@ -285,7 +285,11 @@
       "INSTALLMENT": "تقسيط"
     },
     "paidInFull": "مدفوعة بالكامل",
-    "installmentUnitOnly": "البيع بالتقسيط متاح بالوحدة المفردة فقط — غيّر نوع البيع لأي صنف محدد بالعبوة."
+    "installmentUnitOnly": "البيع بالتقسيط متاح بالوحدة المفردة فقط — غيّر نوع البيع لأي صنف محدد بالعبوة.",
+    "assistedBySalesRep": "هل تمت هذه العملية بمساعدة مندوب؟",
+    "selectAssistingRep": "اختر المندوب…",
+    "branchManagerLabel": "مدير الفرع",
+    "noBranchManagerAssigned": "لا يوجد مدير فرع معيّن لهذا الفرع — يرجى تعيين مدير فرع من شاشة المستخدمين والأدوار أولاً."
   },
   "accounting": {
     "allBranches": "جميع الفروع",
@@ -527,7 +531,9 @@
     "commissionPaid": "العمولة المصروفة عن الفترة",
     "commissionRemaining": "المتبقي للصرف",
     "executeCommissionPayout": "صرف العمولات",
-    "payoutHistoryTitle": "سجل عمليات صرف العمولات"
+    "payoutHistoryTitle": "سجل عمليات صرف العمولات",
+    "fixedAmountPerItem": "القيمة الثابتة للقطعة",
+    "fixedCommissionNote": "عمولة ثابتة لكل صنف (وليست نسبة مئوية)"
   },
   "userMgmt": {
     "users": "المستخدمون",

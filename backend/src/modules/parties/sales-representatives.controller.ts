@@ -23,7 +23,10 @@ import { CashMovementAccount } from '../../entities/enums';
 import { SalesRepresentative } from './entities/sales-representative.entity';
 import { CommissionException } from './entities/commission-exception.entity';
 import { CreateCommissionExceptionDto } from './dto/commission-exception.dto';
+import { RepFixedItemCommission } from './entities/rep-fixed-item-commission.entity';
+import { CreateRepFixedItemCommissionDto } from './dto/rep-fixed-item-commission.dto';
 import { buildExceptionsByRepId, resolveLineCommissionRate } from './commission-rate.util';
+import { SalesRepAccessService } from '../../common/services/sales-rep-access.service';
 import { Company } from '../settings/entities/company.entity';
 import { NumberingSeriesService } from '../settings/numbering-series.controller';
 import { quarterDateRange } from '../treasury/partners-treasury.controller';
@@ -37,6 +40,10 @@ import { Quotation } from '../sales/quotations/entities/quotation.entity';
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
 
+/** Air Conditioning — the only company where a مندوب earns a fixed-per-item commission
+ * (RepFixedItemCommission) instead of the percentage/CommissionException model. */
+const AIR_CONDITIONING_COMPANY_CODE = 'AC';
+
 /** Job title auto-assigned to the Employee row a سales rep is synced into — see
  * syncEmployeeForRep(). Only ever applied at creation time; an admin can rename it afterwards from
  * the Employees screen without a later rep update overwriting it back (see EmployeesService.update). */
@@ -48,12 +55,14 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     @InjectRepository(SalesRepresentative) repo: Repository<SalesRepresentative>,
     @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     @InjectRepository(CommissionException) private readonly commissionExceptionsRepo: Repository<CommissionException>,
+    @InjectRepository(RepFixedItemCommission) private readonly fixedItemCommissionsRepo: Repository<RepFixedItemCommission>,
     @InjectRepository(Employee) private readonly employeeRepo: Repository<Employee>,
     @InjectRepository(PayrollRun) private readonly payrollRunRepo: Repository<PayrollRun>,
     @InjectRepository(PayrollRunLine) private readonly payrollRunLineRepo: Repository<PayrollRunLine>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly cashMovementsService: CashMovementsService,
+    private readonly salesRepAccess: SalesRepAccessService,
   ) {
     super(repo);
   }
@@ -99,6 +108,40 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     });
     if (!exception) throw new NotFoundException('Commission exception not found');
     await this.commissionExceptionsRepo.remove(exception);
+  }
+
+  /** AC only — a مندوب's fixed-per-item commission rates, mirroring listCommissionExceptions
+   * above (one row per product, no category tier — see RepFixedItemCommission). */
+  async listFixedItemCommissions(companyId: string, repId: string): Promise<RepFixedItemCommission[]> {
+    await this.findOneForCompany(repId, companyId);
+    return this.fixedItemCommissionsRepo.find({
+      where: { companyId, salesRepresentativeId: repId },
+      relations: ['product'],
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  async addFixedItemCommission(
+    companyId: string,
+    repId: string,
+    dto: CreateRepFixedItemCommissionDto,
+  ): Promise<RepFixedItemCommission> {
+    await this.findOneForCompany(repId, companyId);
+    const row = this.fixedItemCommissionsRepo.create({
+      companyId,
+      salesRepresentativeId: repId,
+      productId: dto.productId,
+      amount: dto.amount,
+    });
+    return this.fixedItemCommissionsRepo.save(row);
+  }
+
+  async removeFixedItemCommission(companyId: string, repId: string, rowId: string): Promise<void> {
+    const row = await this.fixedItemCommissionsRepo.findOne({
+      where: { id: rowId, companyId, salesRepresentativeId: repId },
+    });
+    if (!row) throw new NotFoundException('Fixed item commission not found');
+    await this.fixedItemCommissionsRepo.remove(row);
   }
 
   /**
@@ -834,47 +877,18 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     // whose creator's own userId matches this رep's.
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
     const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
-    const lineRowsQuery = this.dataSource
-      .createQueryBuilder()
-      .select('l.id', 'lineId')
-      .addSelect('i.id', 'invoiceId')
-      .addSelect('i."documentNumber"', 'documentNumber')
-      // Cast to text — a raw querybuilder result (not ORM-hydrated), so a bare date column
-      // otherwise serializes over the API as a full "2026-08-23T00:00:00.000Z" timestamp instead
-      // of a plain date.
-      .addSelect('to_char(i."invoiceDate", \'YYYY-MM-DD\')', 'invoiceDate')
-      .addSelect('l."lineTotal"', 'lineTotal')
-      .addSelect('l."productId"', 'productId')
-      .addSelect('p."categoryId"', 'categoryId')
-      .addSelect('COALESCE(p."nameAr", p."nameEn")', 'productName')
-      .from('sales_invoice_lines', 'l')
-      .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
-      .innerJoin('products', 'p', 'p.id = l."productId"')
-      .where('i."companyId" = :companyId', { companyId })
-      .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo });
-    if (isPress) {
-      lineRowsQuery.andWhere('i."branchId" = :branchId', { branchId: rep.branchId });
-    } else if (rep.userId) {
-      lineRowsQuery.andWhere(
-        '(i."salesRepresentativeId" = :repId OR (i."salesRepresentativeId" IS NULL AND i."createdById" = :userId))',
-        { repId: rep.id, userId: rep.userId },
-      );
-    } else {
-      lineRowsQuery.andWhere('i."salesRepresentativeId" = :repId', { repId: rep.id });
-    }
-    const lineRows = await lineRowsQuery
-      .orderBy('i."invoiceDate"', 'DESC')
-      .addOrderBy('i."documentNumber"', 'DESC')
-      .getRawMany();
+    // AC only: a مندوب earns a fixed amount per item sold on invoices they assisted with (see
+    // SalesInvoice.assistingSalesRepresentativeId / RepFixedItemCommission), never a percentage of
+    // sales they don't themselves own. A مدير فرع (even on AC) keeps the percentage model below
+    // completely unchanged — resolveInvoiceOwner() already always makes them the invoice's real
+    // owner, so isSalesAgentRep(rep.id) (which checks the *linked user's* role) is false for them.
+    const isFixedCommission =
+      company?.code === AIR_CONDITIONING_COMPANY_CODE && (await this.salesRepAccess.isSalesAgentRep(rep.id));
 
-    const exceptionRows = await this.commissionExceptionsRepo.find({
-      where: { companyId, salesRepresentativeId: rep.id },
-    });
-    const exceptions = buildExceptionsByRepId(exceptionRows).get(rep.id);
-
-    // Only lines this manager actually earns a commission on ever reach the dashboard — a resolved
-    // rate of 0% (no general rate and no exception, or an exception explicitly zeroing it out) means
-    // this sale isn't "his" for commission purposes, so it's excluded from both the sales list AND
+    // Only lines this رep actually earns a commission on ever reach the dashboard — for the
+    // percentage model, a resolved rate of 0% (no general rate and no exception, or an exception
+    // explicitly zeroing it out) means this sale isn't "his"; for the fixed model, an unconfigured
+    // product means the same thing. Either way it's excluded from both the sales list AND
     // totalSales, not just from the commission total.
     let totalSales = 0;
     let commissionAmount = 0;
@@ -886,25 +900,112 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       productName: string;
       lineTotal: number;
       commissionRate: number;
+      quantity?: number;
       commissionAmount: number;
     }[] = [];
-    for (const line of lineRows) {
-      const rate = resolveLineCommissionRate(line, exceptions, generalRate);
-      if (rate <= 0) continue;
-      const lineTotal = Number(line.lineTotal);
-      const lineCommission = (lineTotal * rate) / 100;
-      totalSales += lineTotal;
-      commissionAmount += lineCommission;
-      items.push({
-        lineId: line.lineId,
-        invoiceId: line.invoiceId,
-        documentNumber: line.documentNumber,
-        invoiceDate: line.invoiceDate,
-        productName: line.productName,
-        lineTotal,
-        commissionRate: rate,
-        commissionAmount: lineCommission,
+
+    if (isFixedCommission) {
+      const lineRows = await this.dataSource
+        .createQueryBuilder()
+        .select('l.id', 'lineId')
+        .addSelect('i.id', 'invoiceId')
+        .addSelect('i."documentNumber"', 'documentNumber')
+        .addSelect('to_char(i."invoiceDate", \'YYYY-MM-DD\')', 'invoiceDate')
+        .addSelect('l."lineTotal"', 'lineTotal')
+        .addSelect('l."quantity"', 'quantity')
+        .addSelect('l."productId"', 'productId')
+        .addSelect('COALESCE(p."nameAr", p."nameEn")', 'productName')
+        .from('sales_invoice_lines', 'l')
+        .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+        .innerJoin('products', 'p', 'p.id = l."productId"')
+        .where('i."companyId" = :companyId', { companyId })
+        .andWhere('i."assistingSalesRepresentativeId" = :repId', { repId: rep.id })
+        .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
+        .orderBy('i."invoiceDate"', 'DESC')
+        .addOrderBy('i."documentNumber"', 'DESC')
+        .getRawMany();
+
+      const fixedRows = await this.fixedItemCommissionsRepo.find({
+        where: { companyId, salesRepresentativeId: rep.id },
       });
+      const fixedAmountByProductId = new Map(fixedRows.map((r) => [r.productId, Number(r.amount)]));
+
+      for (const line of lineRows) {
+        const unitAmount = fixedAmountByProductId.get(line.productId);
+        if (!unitAmount) continue;
+        const quantity = Number(line.quantity);
+        const lineCommission = unitAmount * quantity;
+        totalSales += Number(line.lineTotal);
+        commissionAmount += lineCommission;
+        items.push({
+          lineId: line.lineId,
+          invoiceId: line.invoiceId,
+          documentNumber: line.documentNumber,
+          invoiceDate: line.invoiceDate,
+          productName: line.productName,
+          lineTotal: Number(line.lineTotal),
+          commissionRate: unitAmount,
+          quantity,
+          commissionAmount: lineCommission,
+        });
+      }
+    } else {
+      const lineRowsQuery = this.dataSource
+        .createQueryBuilder()
+        .select('l.id', 'lineId')
+        .addSelect('i.id', 'invoiceId')
+        .addSelect('i."documentNumber"', 'documentNumber')
+        // Cast to text — a raw querybuilder result (not ORM-hydrated), so a bare date column
+        // otherwise serializes over the API as a full "2026-08-23T00:00:00.000Z" timestamp instead
+        // of a plain date.
+        .addSelect('to_char(i."invoiceDate", \'YYYY-MM-DD\')', 'invoiceDate')
+        .addSelect('l."lineTotal"', 'lineTotal')
+        .addSelect('l."productId"', 'productId')
+        .addSelect('p."categoryId"', 'categoryId')
+        .addSelect('COALESCE(p."nameAr", p."nameEn")', 'productName')
+        .from('sales_invoice_lines', 'l')
+        .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+        .innerJoin('products', 'p', 'p.id = l."productId"')
+        .where('i."companyId" = :companyId', { companyId })
+        .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo });
+      if (isPress) {
+        lineRowsQuery.andWhere('i."branchId" = :branchId', { branchId: rep.branchId });
+      } else if (rep.userId) {
+        lineRowsQuery.andWhere(
+          '(i."salesRepresentativeId" = :repId OR (i."salesRepresentativeId" IS NULL AND i."createdById" = :userId))',
+          { repId: rep.id, userId: rep.userId },
+        );
+      } else {
+        lineRowsQuery.andWhere('i."salesRepresentativeId" = :repId', { repId: rep.id });
+      }
+      const lineRows = await lineRowsQuery
+        .orderBy('i."invoiceDate"', 'DESC')
+        .addOrderBy('i."documentNumber"', 'DESC')
+        .getRawMany();
+
+      const exceptionRows = await this.commissionExceptionsRepo.find({
+        where: { companyId, salesRepresentativeId: rep.id },
+      });
+      const exceptions = buildExceptionsByRepId(exceptionRows).get(rep.id);
+
+      for (const line of lineRows) {
+        const rate = resolveLineCommissionRate(line, exceptions, generalRate);
+        if (rate <= 0) continue;
+        const lineTotal = Number(line.lineTotal);
+        const lineCommission = (lineTotal * rate) / 100;
+        totalSales += lineTotal;
+        commissionAmount += lineCommission;
+        items.push({
+          lineId: line.lineId,
+          invoiceId: line.invoiceId,
+          documentNumber: line.documentNumber,
+          invoiceDate: line.invoiceDate,
+          productName: line.productName,
+          lineTotal,
+          commissionRate: rate,
+          commissionAmount: lineCommission,
+        });
+      }
     }
 
     const employee = rep.userId
@@ -937,7 +1038,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       },
       employee: employee ? { baseSalary: Number(employee.baseSalary), jobTitle: employee.jobTitle } : null,
       sales: { totalSales, items },
-      commission: { generalRate, amount: commissionAmount },
+      commission: { type: isFixedCommission ? 'FIXED' : 'PERCENTAGE', generalRate, amount: commissionAmount },
       repTreasuryBalance,
       payroll: {
         hasEmployeeRecord: !!employee,
@@ -1122,6 +1223,31 @@ export class SalesRepresentativesController {
     @CurrentUser('companyId') companyId: string,
   ) {
     return this.service.removeCommissionException(companyId, id, exceptionId);
+  }
+  /** AC only — a مندوب's fixed-per-item commission rates, mirroring the commission-exceptions
+   * trio above. */
+  @Get(':id/fixed-item-commissions')
+  @Permissions('sales-representatives.view')
+  listFixedItemCommissions(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('companyId') companyId: string) {
+    return this.service.listFixedItemCommissions(companyId, id);
+  }
+  @Post(':id/fixed-item-commissions')
+  @Permissions('sales-representatives.edit')
+  addFixedItemCommission(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateRepFixedItemCommissionDto,
+    @CurrentUser('companyId') companyId: string,
+  ) {
+    return this.service.addFixedItemCommission(companyId, id, dto);
+  }
+  @Delete(':id/fixed-item-commissions/:rowId')
+  @Permissions('sales-representatives.edit')
+  removeFixedItemCommission(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('rowId', ParseUUIDPipe) rowId: string,
+    @CurrentUser('companyId') companyId: string,
+  ) {
+    return this.service.removeFixedItemCommission(companyId, id, rowId);
   }
   @Get(':id') @Permissions('sales-representatives.view') findOne(
     @Param('id', ParseUUIDPipe) id: string,

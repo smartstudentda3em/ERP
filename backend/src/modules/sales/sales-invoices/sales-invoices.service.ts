@@ -201,6 +201,14 @@ export class SalesInvoicesService {
   ): Promise<SalesInvoice> {
     const company = await this.companyRepo.findOne({ where: { id: companyId } });
 
+    // AC only: a مندوب (field rep) can no longer create invoices themselves — only مدير فرع /
+    // Manager / Administrator can. Deliberately not enforced via SALES_REP_PERMISSION_CODES
+    // (run-seed.ts), which is shared by STAT/PRESS's مناديب and must keep letting them create
+    // invoices exactly as before this restriction was added.
+    if (company?.code === 'AC' && (await this.salesRepAccess.isCallerSalesRep(callerId))) {
+      throw new ForbiddenException('لا يمكن للمندوب إصدار فواتير بيع — يرجى التواصل مع مدير الفرع أو الإدارة.');
+    }
+
     // A customerId belonging to another company must never be accepted — otherwise this invoice's
     // balance/statement would silently pollute a customer record the caller has no business
     // touching. 404s (not 400s) so a client can't distinguish "doesn't exist" from "exists in
@@ -231,6 +239,35 @@ export class SalesInvoicesService {
     // rep/owner override above.
     const branchId = await this.salesRepAccess.resolveBranchId(callerId, dto.branchId, companyId);
 
+    // AC only: an Administrator/Manager-created invoice is credited to the chosen branch's مدير
+    // فرع, never to the admin/manager who clicked save — resolveInvoiceOwner()'s admin path above
+    // just passes through whatever the client sent (or null), so this overrides it deliberately.
+    // A مدير فرع creating their own AC invoice is untouched: resolveInvoiceOwner()'s non-admin path
+    // already auto-locks them to their own rep id.
+    let salesRepresentativeIdFinal = salesRepresentativeId;
+    if (company?.code === 'AC' && (await this.salesRepAccess.isSystemAdmin(callerId))) {
+      if (!branchId) throw new BadRequestException('يجب اختيار الفرع');
+      const branchManagerRepId = await this.salesRepAccess.resolveBranchManagerRepId(companyId, branchId);
+      if (!branchManagerRepId) {
+        throw new BadRequestException(
+          'لا يوجد مدير فرع معيّن لهذا الفرع — يرجى تعيين مدير فرع من شاشة المستخدمين والأدوار أولاً.',
+        );
+      }
+      salesRepresentativeIdFinal = branchManagerRepId;
+    }
+
+    // AC only — "هل تمت هذه العملية بمساعدة مندوب؟": a company-scoped existence check, same depth
+    // as the customerId check above; which reps may be picked (مندوب-role only) is enforced by the
+    // frontend's filtered dropdown, not re-validated here.
+    let assistingSalesRepresentativeId: string | null = null;
+    if (company?.code === 'AC' && dto.assistingSalesRepresentativeId) {
+      const assistingRep = await this.salesRepRepo.findOne({
+        where: { id: dto.assistingSalesRepresentativeId, companyId },
+      });
+      if (!assistingRep) throw new NotFoundException('المندوب المساعد غير موجود');
+      assistingSalesRepresentativeId = assistingRep.id;
+    }
+
     // Sales invoices carry no discount/tax — line totals are simply quantity × unit price.
     const linesNoDiscountOrTax = dto.lines.map((line) => ({
       quantity: line.quantity,
@@ -241,7 +278,7 @@ export class SalesInvoicesService {
 
     const warnOnSellBelowCost = company?.warnOnSellBelowCost ?? true;
     const canSellBelowCost = userPermissions.includes('sales.invoice.sellBelowCost');
-    const isRepTreasurySale = await this.salesRepAccess.isSalesAgentRep(salesRepresentativeId);
+    const isRepTreasurySale = await this.salesRepAccess.isSalesAgentRep(salesRepresentativeIdFinal);
     if (!isRepTreasurySale) {
       assertPaymentAccountProvided(company?.code, dto.paymentAccount);
     }
@@ -346,7 +383,8 @@ export class SalesInvoicesService {
         warehouseId: dto.warehouseId,
         companyId,
         branchId,
-        salesRepresentativeId,
+        salesRepresentativeId: salesRepresentativeIdFinal,
+        assistingSalesRepresentativeId,
         status: SalesDocumentStatus.CONFIRMED,
         notes: dto.notes ?? null,
         // Printing Press alone keeps these — it always sends a shared walk-in customerId AND typed
@@ -386,7 +424,7 @@ export class SalesInvoicesService {
             account: isRepTreasurySale ? CashMovementAccount.REP_TREASURY : dto.paymentAccount ?? CashMovementAccount.CASH,
             // Only set for a مندوب's own sale — REP_TREASURY is a per-rep pocket, so every
             // movement tagged with that account must carry whose pocket it belongs to.
-            salesRepresentativeId: isRepTreasurySale ? salesRepresentativeId : undefined,
+            salesRepresentativeId: isRepTreasurySale ? salesRepresentativeIdFinal : undefined,
             amount: paidAmount,
             sourceType: CashMovementSourceType.SALES_INVOICE,
             sourceId: finalInvoice.id,

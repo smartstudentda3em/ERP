@@ -8,6 +8,12 @@ import { CreateEmployeeDto, UpdateEmployeeDto } from './dto/employee.dto';
 import { CreateEmployeeLeaveDto } from './dto/employee-leave.dto';
 import { SalesRepresentative } from '../parties/entities/sales-representative.entity';
 import { CommissionException } from '../parties/entities/commission-exception.entity';
+import { RepFixedItemCommission } from '../parties/entities/rep-fixed-item-commission.entity';
+import { Company } from '../settings/entities/company.entity';
+import { SalesRepAccessService } from '../../common/services/sales-rep-access.service';
+
+/** Air Conditioning — mirrors sales-representatives.controller.ts's own AIR_CONDITIONING_COMPANY_CODE. */
+const AIR_CONDITIONING_COMPANY_CODE = 'AC';
 
 /** = (end - start) inclusive, for 'YYYY-MM-DD' date strings — how many calendar days a leave record spans. */
 function daysBetweenInclusive(start: string, end: string): number {
@@ -24,7 +30,10 @@ export class EmployeesService {
     @InjectRepository(EmployeeLeave) private readonly leaveRepo: Repository<EmployeeLeave>,
     @InjectRepository(SalesRepresentative) private readonly salesRepresentativeRepo: Repository<SalesRepresentative>,
     @InjectRepository(CommissionException) private readonly commissionExceptionsRepo: Repository<CommissionException>,
+    @InjectRepository(RepFixedItemCommission) private readonly fixedItemCommissionsRepo: Repository<RepFixedItemCommission>,
+    @InjectRepository(Company) private readonly companyRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly salesRepAccess: SalesRepAccessService,
   ) {}
 
   /** `search` matches name OR jobTitle (case-insensitive substring); `branchId` narrows to one
@@ -136,7 +145,18 @@ export class EmployeesService {
     if (!employee.userId) return commissionByMonth;
 
     const rep = await this.salesRepresentativeRepo.findOne({ where: { userId: employee.userId, companyId } });
-    if (!rep || !rep.branchId) return commissionByMonth;
+    if (!rep) return commissionByMonth;
+
+    // AC only: a مندوب's commission is a fixed amount per item on invoices they assisted with
+    // (assistingSalesRepresentativeId), never a percentage of their branch's whole sales — see
+    // sales-representatives.controller.ts's buildManagerDashboardForRep() for the identical split,
+    // which this mirrors so the two screens can never disagree.
+    const company = await this.companyRepo.findOne({ where: { id: companyId } });
+    if (company?.code === AIR_CONDITIONING_COMPANY_CODE && (await this.salesRepAccess.isSalesAgentRep(rep.id))) {
+      return this.getMonthlyFixedCommissions(rep.id, companyId, periodStart, periodEnd);
+    }
+
+    if (!rep.branchId) return commissionByMonth;
 
     const generalRate = Number(rep.commissionRate ?? 0);
     const lineRows = await this.dataSource
@@ -167,6 +187,42 @@ export class EmployeesService {
       if (rate <= 0) continue;
       const month = Number(String(line.invoiceDate).slice(5, 7));
       const commission = (Number(line.lineTotal) * rate) / 100;
+      commissionByMonth.set(month, (commissionByMonth.get(month) ?? 0) + commission);
+    }
+
+    return commissionByMonth;
+  }
+
+  /** AC only — the fixed-per-item counterpart to getMonthlyCommissions() above, for a مندوب who
+   * assisted sales (SalesInvoice.assistingSalesRepresentativeId) rather than owning a branch. */
+  private async getMonthlyFixedCommissions(
+    repId: string,
+    companyId: string,
+    periodStart: string,
+    periodEnd: string,
+  ): Promise<Map<number, number>> {
+    const commissionByMonth = new Map<number, number>();
+
+    const lineRows = await this.dataSource
+      .createQueryBuilder()
+      .select('i."invoiceDate"', 'invoiceDate')
+      .addSelect('l."quantity"', 'quantity')
+      .addSelect('l."productId"', 'productId')
+      .from('sales_invoice_lines', 'l')
+      .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+      .where('i."companyId" = :companyId', { companyId })
+      .andWhere('i."assistingSalesRepresentativeId" = :repId', { repId })
+      .andWhere('i."invoiceDate" >= :periodStart AND i."invoiceDate" <= :periodEnd', { periodStart, periodEnd })
+      .getRawMany();
+
+    const fixedRows = await this.fixedItemCommissionsRepo.find({ where: { companyId, salesRepresentativeId: repId } });
+    const fixedAmountByProductId = new Map(fixedRows.map((r) => [r.productId, Number(r.amount)]));
+
+    for (const line of lineRows) {
+      const unitAmount = fixedAmountByProductId.get(line.productId);
+      if (!unitAmount) continue;
+      const month = Number(String(line.invoiceDate).slice(5, 7));
+      const commission = unitAmount * Number(line.quantity);
       commissionByMonth.set(month, (commissionByMonth.get(month) ?? 0) + commission);
     }
 

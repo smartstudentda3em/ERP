@@ -285,7 +285,11 @@
       "INSTALLMENT": "Installment"
     },
     "paidInFull": "Paid in Full",
-    "installmentUnitOnly": "Installment sales only support selling by single unit — switch any package-mode line back to unit."
+    "installmentUnitOnly": "Installment sales only support selling by single unit — switch any package-mode line back to unit.",
+    "assistedBySalesRep": "Was this sale assisted by a sales representative?",
+    "selectAssistingRep": "Select the sales representative…",
+    "branchManagerLabel": "Branch Manager",
+    "noBranchManagerAssigned": "No branch manager is assigned to this branch yet — assign one from Users & Roles first."
   },
   "accounting": {
     "allBranches": "All Branches",
@@ -527,7 +531,9 @@
     "commissionPaid": "Commission Paid for Period",
     "commissionRemaining": "Remaining to Pay",
     "executeCommissionPayout": "Pay Out Commission",
-    "payoutHistoryTitle": "Commission Payout History"
+    "payoutHistoryTitle": "Commission Payout History",
+    "fixedAmountPerItem": "Fixed Amount Per Item",
+    "fixedCommissionNote": "Fixed commission per item (not a percentage)"
   },
   "userMgmt": {
     "users": "Users",

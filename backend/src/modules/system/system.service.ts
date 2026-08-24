@@ -65,7 +65,7 @@ import { AuditLog } from '../audit-log/entities/audit-log.entity';
  * transactions, quotations, receipts/vouchers, treasury/payroll/installment history, and
  * recurring expenses. Deliberately excludes every stakeholder & catalog master record (Customer,
  * Supplier, SalesRepresentative, CommissionException, Employee, EmployeeLeave, Product,
- * ProductBatch's catalog parent, Warehouse, Partner), every configuration table (Company, Branch,
+ * ProductBatch's catalog parent, Warehouse, Partner, RepFixedItemCommission), every configuration table (Company, Branch,
  * Currency, ExchangeRate, Tax, FiscalYear, ProductCategory, Brand, Unit, PackageType,
  * ExpenseCategory, ShippingExpenseType), and every login (User, Role, Permission, Session,
  * UserCompany) — only NumberingSeries is touched, and only its running counter (see

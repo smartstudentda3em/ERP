@@ -73,6 +73,18 @@ export class SalesInvoice extends BaseEntity {
   @JoinColumn({ name: "salesRepresentativeId" })
   salesRepresentative: SalesRepresentative | null;
 
+  /** AC only — optional "هل تمت هذه العملية بمساعدة مندوب؟" field: a مندوب who assisted this sale
+   * (brought in the customer) without being the invoice's own owner/creator (salesRepresentativeId
+   * above, which for an AC admin/manager-created invoice is instead the branch's مدير فرع — see
+   * SalesInvoicesService.create()). Drives this رep's fixed-per-item commission
+   * (RepFixedItemCommission) instead of the percentage model. Always null for every other company. */
+  @Column("uuid", { nullable: true })
+  assistingSalesRepresentativeId: string | null;
+
+  @ManyToOne(() => SalesRepresentative, { nullable: true, onDelete: "SET NULL" })
+  @JoinColumn({ name: "assistingSalesRepresentativeId" })
+  assistingSalesRepresentative: SalesRepresentative | null;
+
   /** Free-text customer identity captured directly on the invoice, decoupled from the Customer
    * table — Printing Press only: every invoice there is attributed to the single seeded WALKIN
    * customer (see customerId above) with the real identity captured here instead. Air

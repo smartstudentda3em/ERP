@@ -4,9 +4,11 @@ import { Customer } from './customers/entities/customer.entity';
 import { Supplier } from './suppliers/entities/supplier.entity';
 import { SalesRepresentative } from './entities/sales-representative.entity';
 import { CommissionException } from './entities/commission-exception.entity';
+import { RepFixedItemCommission } from './entities/rep-fixed-item-commission.entity';
 import { SettingsModule } from '../settings/settings.module';
 import { TreasuryModule } from '../treasury/treasury.module';
 import { HrModule } from '../hr/hr.module';
+import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
 
 import { CustomersController } from './customers/customers.controller';
 import { CustomersService } from './customers/customers.service';
@@ -19,10 +21,11 @@ import {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Customer, Supplier, SalesRepresentative, CommissionException]),
+    TypeOrmModule.forFeature([Customer, Supplier, SalesRepresentative, CommissionException, RepFixedItemCommission]),
     SettingsModule,
     TreasuryModule,
     HrModule,
+    SalesRepAccessModule,
   ],
   controllers: [CustomersController, SuppliersController, SalesRepresentativesController],
   providers: [CustomersService, SuppliersService, SalesRepresentativesService],

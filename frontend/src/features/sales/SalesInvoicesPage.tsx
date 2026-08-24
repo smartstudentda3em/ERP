@@ -100,6 +100,11 @@ export function SalesInvoicesPage() {
   const [acInterestType, setAcInterestType] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY');
   const [acInterestRate, setAcInterestRate] = useState('0');
   const [acTenureMonths, setAcTenureMonths] = useState('6');
+  // Air Conditioning only — "هل تمت هذه العملية بمساعدة مندوب؟": records which مندوب (if any)
+  // assisted this sale, separate from the invoice's own owner (which for an admin/manager-created
+  // AC invoice is the branch's مدير فرع, not a مندوب at all — see the branch picker below).
+  const [assistingChecked, setAssistingChecked] = useState(false);
+  const [assistingRepId, setAssistingRepId] = useState('');
   const [salesRepresentativeId, setSalesRepresentativeId] = useState('');
   const [createdById, setCreatedById] = useState(currentUser?.id ?? '');
   const [invoiceDate, setInvoiceDate] = useState(localToday());
@@ -197,13 +202,32 @@ export function SalesInvoicesPage() {
     !isSalesRep && (isPrintingPress || currentCompany?.code === 'STAT' || currentCompany?.code === 'AC');
   const walkInCustomer = customersQuery.data?.find((c) => c.code === 'WALKIN');
 
-  // Printing Press only — the invoice form shows a Branch field instead of Warehouse; the linked
+  // Printing Press: the invoice form shows a Branch field instead of Warehouse; the linked
   // warehouse (Warehouse.branchId) is then resolved automatically, same pattern as PurchasingPage
-  // and StockAuditPage.
+  // and StockAuditPage. Air Conditioning admin/Manager: the branch field instead drives which
+  // مدير فرع the invoice gets credited to (see branchManagerRepsQuery below) — the warehouse stays
+  // its own separate required field there, unlike Press.
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
-    enabled: isPrintingPress && modalOpen && !!companyId,
+    enabled: (isPrintingPress || (isAirConditioning && isAdmin)) && modalOpen && !!companyId,
+  });
+
+  // Air Conditioning admin/Manager only — resolves the chosen branch's مدير فرع, so the invoice
+  // form can show who it'll actually be credited to before submitting (the server independently
+  // re-resolves and enforces the same thing — see SalesInvoicesService.create()).
+  const branchManagerRepsQuery = useQuery({
+    queryKey: ['sales-representatives', 'مدير فرع'],
+    queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives', { params: { roleName: 'مدير فرع' } })),
+    enabled: isAirConditioning && isAdmin && modalOpen,
+  });
+  const selectedBranchManager = branchManagerRepsQuery.data?.find((r) => r.branchId === branchId);
+
+  // Air Conditioning only — populates the "مساعدة مندوب" dropdown once the checkbox is ticked.
+  const mandoubRepsQuery = useQuery({
+    queryKey: ['sales-representatives', 'مندوب'],
+    queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives', { params: { roleName: 'مندوب' } })),
+    enabled: isAirConditioning && modalOpen,
   });
 
   const resolvedWarehouseId = useMemo(() => {
@@ -280,11 +304,12 @@ export function SalesInvoicesPage() {
         createdById: (isAdmin ? createdById : currentUserId) || undefined,
         paidAmount: isAirConditioning && acSaleType === 'CASH' ? grandTotal : paidAmountNumber,
         paymentAccount: requiresPaymentAccount ? paymentAccount : undefined,
-        branchId: isPrintingPress ? branchId || undefined : undefined,
+        branchId: isPrintingPress || (isAirConditioning && isAdmin) ? branchId || undefined : undefined,
         customerName: isPrintingPress ? customerName || undefined : isAirConditioning ? acCustomerName || undefined : undefined,
         customerPhone: isPrintingPress ? customerPhone || undefined : isAirConditioning ? acCustomerPhone || undefined : undefined,
         customerAddress: isAirConditioning ? acCustomerAddress || undefined : undefined,
         quickSaleType: isAirConditioning ? acSaleType : undefined,
+        assistingSalesRepresentativeId: isAirConditioning && assistingChecked ? assistingRepId || undefined : undefined,
         lines: linesToPayload(lines),
       });
     },
@@ -315,6 +340,8 @@ export function SalesInvoicesPage() {
       setAcTenureMonths('6');
       setSalesRepresentativeId('');
       setCreatedById(currentUser?.id ?? '');
+      setAssistingChecked(false);
+      setAssistingRepId('');
       setLines([emptyLine()]);
       setPaidAmount('0');
       setPaymentAccount('CASH');
@@ -488,7 +515,14 @@ export function SalesInvoicesPage() {
     <div>
       <PageHeader
         title={t('nav.salesInvoices')}
-        actions={<Button onClick={() => setModalOpen(true)}>+ {t('common.create')}</Button>}
+        // AC only — a مندوب can no longer create invoices themselves (only مدير فرع / Manager /
+        // Administrator can); every other company's مندوب keeps creating invoices exactly as
+        // before. See SalesInvoicesService.create()'s matching server-side guard.
+        actions={
+          !(isAirConditioning && isSalesRep) && (
+            <Button onClick={() => setModalOpen(true)}>+ {t('common.create')}</Button>
+          )
+        }
       />
 
       <DateRangeFilter value={dateRange} onChange={setDateRange} />
@@ -609,27 +643,35 @@ export function SalesInvoicesPage() {
                 <FormField label={t('common.date')}>
                   <Input type="date" required value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
                 </FormField>
-                <FormField label={t('fields.invoiceOwner')}>
-                  <Select value={assigneeValue} disabled={!isAdmin} onChange={(e) => handleAssigneeChange(e.target.value)}>
-                    {isAdmin ? (
-                      <>
-                        <option value="">{t('actions.selectSalesRep')}</option>
-                        {(salesRepsQuery.data ?? []).map((r) => (
-                          <option key={r.id} value={`rep:${r.id}`}>
-                            {r.name}
-                          </option>
-                        ))}
-                        {(assignableUsersQuery.data ?? []).map((u) => (
-                          <option key={u.id} value={`user:${u.id}`}>
-                            {u.fullName}
-                          </option>
-                        ))}
-                      </>
-                    ) : (
-                      <option value={assigneeValue}>{lockedAssigneeLabel}</option>
+                {isAdmin ? (
+                  // An Administrator/Manager never picks who the invoice belongs to directly here —
+                  // they pick the branch, and the invoice is credited to that branch's مدير فرع (see
+                  // SalesInvoicesService.create()). A مدير فرع creating their own invoice (the
+                  // !isAdmin branch below) is untouched — still auto-locked to themselves as before.
+                  <FormField label={t('fields.branch')}>
+                    <Select required value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                      <option value="">{t('actions.selectBranch')}</option>
+                      {(branchesQuery.data ?? []).map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.nameAr || b.nameEn}
+                        </option>
+                      ))}
+                    </Select>
+                    {branchId && (
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        {selectedBranchManager
+                          ? `${t('salesInvoice.branchManagerLabel')}: ${selectedBranchManager.name}`
+                          : t('salesInvoice.noBranchManagerAssigned')}
+                      </p>
                     )}
-                  </Select>
-                </FormField>
+                  </FormField>
+                ) : (
+                  <FormField label={t('fields.invoiceOwner')}>
+                    <Select value={assigneeValue} disabled onChange={(e) => handleAssigneeChange(e.target.value)}>
+                      <option value={assigneeValue}>{lockedAssigneeLabel}</option>
+                    </Select>
+                  </FormField>
+                )}
                 {requiresPaymentAccount && acSaleType !== 'INSTALLMENT' && (
                   <FormField label={t('fields.depositDestination')}>
                     <Select
@@ -661,6 +703,32 @@ export function SalesInvoicesPage() {
                     </label>
                   ))}
                 </div>
+              </Card>
+
+              <Card className="col-span-2">
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={assistingChecked}
+                    onChange={(e) => {
+                      setAssistingChecked(e.target.checked);
+                      if (!e.target.checked) setAssistingRepId('');
+                    }}
+                  />
+                  {t('salesInvoice.assistedBySalesRep')}
+                </label>
+                {assistingChecked && (
+                  <div className="mt-3 max-w-sm">
+                    <Select required value={assistingRepId} onChange={(e) => setAssistingRepId(e.target.value)}>
+                      <option value="">{t('salesInvoice.selectAssistingRep')}</option>
+                      {(mandoubRepsQuery.data ?? []).map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                )}
               </Card>
             </>
           ) : (

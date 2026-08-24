@@ -36,6 +36,7 @@ import { Supplier } from '../modules/parties/suppliers/entities/supplier.entity'
 import { SupplierPayment } from '../modules/parties/suppliers/entities/supplier-payment.entity';
 import { SalesRepresentative } from '../modules/parties/entities/sales-representative.entity';
 import { CommissionException } from '../modules/parties/entities/commission-exception.entity';
+import { RepFixedItemCommission } from '../modules/parties/entities/rep-fixed-item-commission.entity';
 
 // Inventory
 import { Product } from '../modules/inventory/products/entities/product.entity';
@@ -115,6 +116,7 @@ export const allEntities = [
   SupplierPayment,
   SalesRepresentative,
   CommissionException,
+  RepFixedItemCommission,
   Product,
   ProductBatch,
   Service,

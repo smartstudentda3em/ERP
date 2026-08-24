@@ -23,7 +23,11 @@ interface SalesItem {
   invoiceDate: string;
   productName: string;
   lineTotal: number;
+  /** Percentage rate for the default model; the fixed amount earned per unit (AC مندوب only) when
+   * commission.type is 'FIXED' — see quantity below. */
   commissionRate: number;
+  /** AC مندوب only ('FIXED' commission) — units sold on this line, so commissionAmount = commissionRate × quantity is visible. */
+  quantity?: number;
   commissionAmount: number;
 }
 
@@ -45,7 +49,10 @@ interface ManagerDashboard {
   manager: { id: string; name: string; branchName: string | null };
   employee: { baseSalary: number; jobTitle: string } | null;
   sales: { totalSales: number; items: SalesItem[] };
-  commission: { generalRate: number; amount: number };
+  /** AC مندوب only: type is 'FIXED' (fixed amount per item, RepFixedItemCommission) instead of the
+   * default 'PERCENTAGE' model every مدير فرع (any company) and every other مندوب keeps —
+   * generalRate is meaningless and unused when type is 'FIXED'. */
+  commission: { type?: 'PERCENTAGE' | 'FIXED'; generalRate: number; amount: number };
   repTreasuryBalance: number;
   payroll: {
     hasEmployeeRecord: boolean;
@@ -205,12 +212,22 @@ export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const isFixedCommission = data?.commission.type === 'FIXED';
   const salesColumns: Column<SalesItem>[] = [
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('common.date'), accessor: (r) => r.invoiceDate },
     { header: t('fields.product'), accessor: (r) => r.productName },
     { header: t('common.total'), accessor: (r) => formatAmount(r.lineTotal), align: 'right' },
-    { header: t('fields.commissionRate'), accessor: (r) => `${formatAmount(r.commissionRate)}%`, align: 'right' },
+    ...(isFixedCommission
+      ? [
+          { header: t('fields.quantity'), accessor: (r: SalesItem) => r.quantity ?? '—', align: 'right' } as Column<SalesItem>,
+          {
+            header: t('managerDashboard.fixedAmountPerItem'),
+            accessor: (r: SalesItem) => formatAmount(r.commissionRate),
+            align: 'right',
+          } as Column<SalesItem>,
+        ]
+      : [{ header: t('fields.commissionRate'), accessor: (r: SalesItem) => `${formatAmount(r.commissionRate)}%`, align: 'right' } as Column<SalesItem>]),
     { header: t('managerDashboard.commissionAmount'), accessor: (r) => formatAmount(r.commissionAmount), align: 'right' },
   ];
 
@@ -309,7 +326,9 @@ export function MyManagerDashboardTab({ controlled }: MyManagerDashboardTabProps
               </CardHeader>
               <div className="text-2xl font-bold text-primary-600">{formatAmount(data.commission.amount)}</div>
               <div className="mt-1 text-xs text-[var(--text-muted)]">
-                {t('fields.commissionRate')}: {data.commission.generalRate}%
+                {isFixedCommission
+                  ? t('managerDashboard.fixedCommissionNote')
+                  : `${t('fields.commissionRate')}: ${data.commission.generalRate}%`}
               </div>
               {hasCommissionPayout && canViewAll && (
                 <div className="mt-1 text-xs text-primary-600">{t('managerDashboard.clickForCommissionDetails')}</div>

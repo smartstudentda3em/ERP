@@ -29,6 +29,9 @@ export class CreateSalesInvoiceDto {
   @IsOptional() @IsUUID() salesRepresentativeId?: string;
   /** Which user this invoice is attributed to — defaults to the logged-in user if omitted, but can be reassigned to any user. */
   @IsOptional() @IsUUID() createdById?: string;
+  /** AC only — "هل تمت هذه العملية بمساعدة مندوب؟": the مندوب who assisted this sale, if any. See
+   * SalesInvoice.assistingSalesRepresentativeId. Ignored (never persisted) for every other company. */
+  @IsOptional() @IsUUID() assistingSalesRepresentativeId?: string;
   @IsOptional() @IsString() notes?: string;
   /** Printing Press: free-text customer identity, decoupled from the Customer table. Air
    * Conditioning: the customer's typed name/phone/address when customerId is omitted — see

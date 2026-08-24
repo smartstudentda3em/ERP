@@ -51,6 +51,13 @@ interface ProductOption {
   nameAr?: string | null;
 }
 
+interface RepFixedItemCommission {
+  id: string;
+  productId: string;
+  amount: number;
+  product?: { nameEn: string; nameAr?: string | null } | null;
+}
+
 const emptyForm = {
   name: '',
   phone: '',
@@ -69,7 +76,7 @@ interface RepresentativesListTabProps {
 
 export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTabProps = {}) {
   const { t } = useTranslation();
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isAirConditioning } = useActiveCompany();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const toast = useToast();
@@ -80,6 +87,11 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
   const [form, setForm] = useState(emptyForm);
   const [exceptionTargetId, setExceptionTargetId] = useState('');
   const [exceptionRate, setExceptionRate] = useState('');
+  // AC "المناديب" tab only — fixed-per-item commission fully replaces the percentage/exceptions
+  // model above for this one combination (see RepFixedItemCommission on the backend).
+  const isAcMandoubTab = isAirConditioning && roleNameFilter === 'مندوب';
+  const [fixedTargetId, setFixedTargetId] = useState('');
+  const [fixedAmountValue, setFixedAmountValue] = useState('');
   // Printing Press only — clicking anywhere on a manager's row (except the Edit/Delete actions,
   // which stopPropagation) opens a separate view-only modal listing their commission exceptions.
   // Adding/removing exceptions still only happens from the edit-manager modal above.
@@ -112,7 +124,14 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
   const exceptionsQuery = useQuery({
     queryKey: ['sales-representatives', editingId, 'commission-exceptions'],
     queryFn: () => unwrap<CommissionException[]>(apiClient.get(`/sales-representatives/${editingId}/commission-exceptions`)),
-    enabled: modalOpen && !!editingId,
+    enabled: modalOpen && !!editingId && !isAcMandoubTab,
+  });
+
+  const fixedCommissionsQuery = useQuery({
+    queryKey: ['sales-representatives', editingId, 'fixed-item-commissions'],
+    queryFn: () =>
+      unwrap<RepFixedItemCommission[]>(apiClient.get(`/sales-representatives/${editingId}/fixed-item-commissions`)),
+    enabled: modalOpen && !!editingId && isAcMandoubTab,
   });
 
   // Same query shape/key as exceptionsQuery above (by design — the two share the TanStack Query
@@ -152,6 +171,8 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
     setForm(emptyForm);
     setExceptionTargetId('');
     setExceptionRate('');
+    setFixedTargetId('');
+    setFixedAmountValue('');
     setModalOpen(true);
   }
 
@@ -168,6 +189,8 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
     });
     setExceptionTargetId('');
     setExceptionRate('');
+    setFixedTargetId('');
+    setFixedAmountValue('');
     setModalOpen(true);
   }
 
@@ -199,6 +222,38 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
       toast.error(err?.response?.data?.message ?? t('common.saveFailed'));
     },
   });
+
+  const addFixedCommissionMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post(`/sales-representatives/${editingId}/fixed-item-commissions`, {
+        productId: fixedTargetId,
+        amount: Number(fixedAmountValue || 0),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales-representatives', editingId, 'fixed-item-commissions'] });
+      setFixedTargetId('');
+      setFixedAmountValue('');
+      toast.success(t('common.addedSuccessfully'));
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message ?? t('common.saveFailed'));
+    },
+  });
+
+  const removeFixedCommissionMutation = useMutation({
+    mutationFn: (rowId: string) => apiClient.delete(`/sales-representatives/${editingId}/fixed-item-commissions/${rowId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales-representatives', editingId, 'fixed-item-commissions'] });
+      toast.success(t('common.deletedSuccessfully'));
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message ?? t('common.saveFailed'));
+    },
+  });
+
+  function fixedCommissionTargetLabel(row: RepFixedItemCommission): string {
+    return row.product?.nameAr || row.product?.nameEn || row.productId;
+  }
 
   function exceptionTargetLabel(ex: CommissionException): string {
     if (ex.productId) return ex.product?.nameAr || ex.product?.nameEn || ex.productId;
@@ -265,11 +320,17 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
       : []),
     { header: t('fields.phone'), accessor: (r) => r.phone ?? '—' },
     { header: t('fields.email'), accessor: (r) => r.email ?? '—' },
-    {
-      header: t('fields.commissionRate'),
-      accessor: (r) => `${formatAmount(r.commissionRate)}%`,
-      align: 'right',
-    },
+    // AC "المناديب" earn a fixed-per-item amount instead (see the edit modal) — this column would
+    // otherwise always read "0%" for them, which is meaningless, not just unset.
+    ...(isAcMandoubTab
+      ? []
+      : [
+          {
+            header: t('fields.commissionRate'),
+            accessor: (r: SalesRepresentative) => `${formatAmount(r.commissionRate)}%`,
+            align: 'right',
+          } as Column<SalesRepresentative>,
+        ]),
     {
       header: t('common.status'),
       accessor: (r) => (
@@ -375,78 +436,143 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
               ))}
             </Select>
           </FormField>
-          <FormField label={t('fields.commissionRate')}>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.commissionRate}
-              onChange={(e) => setForm({ ...form, commissionRate: e.target.value })}
-            />
-          </FormField>
-          <div className="col-span-2 rounded-lg border border-[var(--border)] p-3">
-            <div className="mb-2 text-sm font-medium text-[var(--text)]">{t('commissionExceptions.title')}</div>
-            {!editingId ? (
-              <p className="text-sm text-[var(--text-muted)]">{t('commissionExceptions.saveFirstHint')}</p>
-            ) : (
-              <>
-                <div className="mb-2 flex flex-col gap-1.5">
-                  {(exceptionsQuery.data ?? []).length === 0 && (
-                    <span className="text-sm text-[var(--text-muted)]">{t('commissionExceptions.noneYet')}</span>
-                  )}
-                  {(exceptionsQuery.data ?? []).map((ex) => (
-                    <div
-                      key={ex.id}
-                      className="flex items-center justify-between rounded bg-gray-100 px-2.5 py-1 text-sm dark:bg-gray-800"
-                    >
-                      <span>
-                        {t(ex.productId ? 'commissionExceptions.typeProduct' : 'commissionExceptions.typeCategory')}
-                        {': '}
-                        {exceptionTargetLabel(ex)} — {formatAmount(ex.commissionRate)}%
-                      </span>
-                      <button
-                        type="button"
-                        className="text-gray-500 hover:text-red-600 disabled:opacity-50"
-                        disabled={removeExceptionMutation.isPending}
-                        onClick={() => removeExceptionMutation.mutate(ex.id)}
-                        aria-label={t('common.delete') ?? ''}
+          {!isAcMandoubTab && (
+            <FormField label={t('fields.commissionRate')}>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.commissionRate}
+                onChange={(e) => setForm({ ...form, commissionRate: e.target.value })}
+              />
+            </FormField>
+          )}
+          {isAcMandoubTab ? (
+            <div className="col-span-2 rounded-lg border border-[var(--border)] p-3">
+              <div className="mb-2 text-sm font-medium text-[var(--text)]">{t('managerDashboard.fixedAmountPerItem')}</div>
+              {!editingId ? (
+                <p className="text-sm text-[var(--text-muted)]">{t('commissionExceptions.saveFirstHint')}</p>
+              ) : (
+                <>
+                  <div className="mb-2 flex flex-col gap-1.5">
+                    {(fixedCommissionsQuery.data ?? []).length === 0 && (
+                      <span className="text-sm text-[var(--text-muted)]">{t('commissionExceptions.noneYet')}</span>
+                    )}
+                    {(fixedCommissionsQuery.data ?? []).map((row) => (
+                      <div
+                        key={row.id}
+                        className="flex items-center justify-between rounded bg-gray-100 px-2.5 py-1 text-sm dark:bg-gray-800"
                       >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex flex-wrap items-end gap-2">
-                  <Select value={exceptionTargetId} onChange={(e) => setExceptionTargetId(e.target.value)}>
-                    <option value="">{t('commissionExceptions.selectTarget')}</option>
-                    {exceptionProducts.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.nameAr || p.nameEn}
-                      </option>
+                        <span>
+                          {fixedCommissionTargetLabel(row)} — {formatAmount(row.amount)}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-gray-500 hover:text-red-600 disabled:opacity-50"
+                          disabled={removeFixedCommissionMutation.isPending}
+                          onClick={() => removeFixedCommissionMutation.mutate(row.id)}
+                          aria-label={t('common.delete') ?? ''}
+                        >
+                          ×
+                        </button>
+                      </div>
                     ))}
-                  </Select>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    className="w-24"
-                    placeholder={t('fields.commissionRate') ?? ''}
-                    value={exceptionRate}
-                    onChange={(e) => setExceptionRate(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={!exceptionTargetId || !exceptionRate || addExceptionMutation.isPending}
-                    onClick={() => addExceptionMutation.mutate()}
-                  >
-                    + {t('common.add')}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Select value={fixedTargetId} onChange={(e) => setFixedTargetId(e.target.value)}>
+                      <option value="">{t('commissionExceptions.selectTarget')}</option>
+                      {exceptionProducts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nameAr || p.nameEn}
+                        </option>
+                      ))}
+                    </Select>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="w-24"
+                      placeholder={t('managerDashboard.fixedAmountPerItem') ?? ''}
+                      value={fixedAmountValue}
+                      onChange={(e) => setFixedAmountValue(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!fixedTargetId || !fixedAmountValue || addFixedCommissionMutation.isPending}
+                      onClick={() => addFixedCommissionMutation.mutate()}
+                    >
+                      + {t('common.add')}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="col-span-2 rounded-lg border border-[var(--border)] p-3">
+              <div className="mb-2 text-sm font-medium text-[var(--text)]">{t('commissionExceptions.title')}</div>
+              {!editingId ? (
+                <p className="text-sm text-[var(--text-muted)]">{t('commissionExceptions.saveFirstHint')}</p>
+              ) : (
+                <>
+                  <div className="mb-2 flex flex-col gap-1.5">
+                    {(exceptionsQuery.data ?? []).length === 0 && (
+                      <span className="text-sm text-[var(--text-muted)]">{t('commissionExceptions.noneYet')}</span>
+                    )}
+                    {(exceptionsQuery.data ?? []).map((ex) => (
+                      <div
+                        key={ex.id}
+                        className="flex items-center justify-between rounded bg-gray-100 px-2.5 py-1 text-sm dark:bg-gray-800"
+                      >
+                        <span>
+                          {t(ex.productId ? 'commissionExceptions.typeProduct' : 'commissionExceptions.typeCategory')}
+                          {': '}
+                          {exceptionTargetLabel(ex)} — {formatAmount(ex.commissionRate)}%
+                        </span>
+                        <button
+                          type="button"
+                          className="text-gray-500 hover:text-red-600 disabled:opacity-50"
+                          disabled={removeExceptionMutation.isPending}
+                          onClick={() => removeExceptionMutation.mutate(ex.id)}
+                          aria-label={t('common.delete') ?? ''}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Select value={exceptionTargetId} onChange={(e) => setExceptionTargetId(e.target.value)}>
+                      <option value="">{t('commissionExceptions.selectTarget')}</option>
+                      {exceptionProducts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nameAr || p.nameEn}
+                        </option>
+                      ))}
+                    </Select>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      className="w-24"
+                      placeholder={t('fields.commissionRate') ?? ''}
+                      value={exceptionRate}
+                      onChange={(e) => setExceptionRate(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!exceptionTargetId || !exceptionRate || addExceptionMutation.isPending}
+                      onClick={() => addExceptionMutation.mutate()}
+                    >
+                      + {t('common.add')}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <div className="col-span-2">
             <FormField label={t('fields.linkedUserAccount')}>
               <Select value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })}>

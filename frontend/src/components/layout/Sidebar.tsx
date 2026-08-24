@@ -276,7 +276,7 @@ export function Sidebar({ open }: { open: boolean }) {
       }`}
     >
       <div className="flex h-14 items-center gap-2 border-b border-[var(--border)] px-4">
-        <span className="text-lg">🧮</span>
+        <img src="/icon-192.png" alt="" className="h-7 w-7 rounded object-contain" />
         <span className="truncate text-sm font-semibold">{t('app.title')}</span>
       </div>
       <nav className="flex flex-col gap-0.5 overflow-y-auto p-2" style={{ height: 'calc(100% - 56px)' }}>

@@ -42,7 +42,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg)] p-4">
       <form onSubmit={handleSubmit} className="card w-full max-w-sm p-6">
         <div className="mb-6 text-center">
-          <div className="mb-2 text-3xl">🧮</div>
+          <img src="/logo.png" alt="" className="mx-auto mb-3 h-16 w-auto object-contain" />
           <h1 className="text-lg font-semibold">{t('app.title')}</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">{t('auth.welcomeBack')}</p>
         </div>

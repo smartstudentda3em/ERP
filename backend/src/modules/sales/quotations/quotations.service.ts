@@ -120,11 +120,11 @@ export class QuotationsService {
    * a read-side filter only — update()/remove() look a quotation up directly by id, so without this
    * a branch manager who holds sales.quotation.edit/delete could still act on another branch's
    * quotation by id alone. Re-derives the caller's own branch from the DB (never trusts a
-   * client-supplied value) exactly like resolveBranchId()'s other callers. Skipped for isSystemRole,
-   * same as assertMayModify — and for the account-deletion cascade in UsersService.remove(), which
-   * deletes every quotation a removed user ever created regardless of branch. */
-  private async assertOwnBranch(quotation: Quotation, companyId: string, isSystemRole: boolean, userId: string): Promise<void> {
-    if (isSystemRole) return;
+   * client-supplied value) exactly like resolveBranchId()'s other callers — no separate isSystemRole
+   * shortcut here (unlike assertMayModify), since resolveBranchId() already exempts both a true
+   * Administrator AND 'Manager' via its own isSystemAdmin() check, and both must reach full,
+   * unrestricted branch access here, not just true Administrator. */
+  private async assertOwnBranch(quotation: Quotation, companyId: string, userId: string): Promise<void> {
     const callerBranchId = await this.salesRepAccess.resolveBranchId(userId, undefined, companyId);
     if (callerBranchId && quotation.branchId !== callerBranchId) {
       throw new ForbiddenException('This quotation belongs to a different branch');
@@ -144,7 +144,7 @@ export class QuotationsService {
       const quotation = await quotationRepo.findOne({ where: { id, companyId }, relations: ['lines'] });
       if (!quotation) throw new NotFoundException('Quotation not found');
       this.assertMayModify(quotation, isSystemRole);
-      await this.assertOwnBranch(quotation, companyId, isSystemRole, userId);
+      await this.assertOwnBranch(quotation, companyId, userId);
 
       if (dto.quotationDate !== undefined) quotation.quotationDate = dto.quotationDate;
       if (dto.validUntil !== undefined) quotation.validUntil = dto.validUntil ?? null;
@@ -187,7 +187,7 @@ export class QuotationsService {
   async remove(id: string, companyId: string, isSystemRole: boolean, userId: string): Promise<void> {
     const quotation = await this.findOne(id, companyId);
     this.assertMayModify(quotation, isSystemRole);
-    await this.assertOwnBranch(quotation, companyId, isSystemRole, userId);
+    await this.assertOwnBranch(quotation, companyId, userId);
     const hasSalesOrder = await this.dataSource.getRepository(SalesOrder).exist({ where: { quotationId: id } });
     if (hasSalesOrder) {
       throw new BadRequestException('لا يمكن حذف عرض السعر هذا — يوجد أمر بيع مرتبط به في النظام.');

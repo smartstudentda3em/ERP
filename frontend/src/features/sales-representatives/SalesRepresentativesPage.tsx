@@ -61,6 +61,18 @@ export function SalesRepresentativesPage() {
   const [payoutsYear, setPayoutsYear] = useState(now.getFullYear());
   const [payoutsMonth, setPayoutsMonth] = useState(now.getMonth() + 1);
 
+  // مدراء الأفرع and المناديب are a different specialty each, with their own permissions/commission
+  // model (see today's AC fixed-commission work) — a رep picked while viewing one section must
+  // never keep driving "تقارير"/"لوحة" once the user switches to the other, or that section would
+  // silently keep showing the previous section's person's data (their id just doesn't happen to
+  // match any option in the new list, but the dashboard/report query itself doesn't care and fetches
+  // it anyway). Resetting on every section switch is what actually enforces the separation.
+  function switchMainSection(section: MainSection): void {
+    setMainSection(section);
+    setSelectedManagerId('');
+    setRepresentativeId('');
+  }
+
   // Two role-scoped lists instead of one shared unfiltered list — keeps the "تقارير"/"لوحة" picker
   // under "مدراء الأفرع" showing only managers, and the one under "المناديب" showing only reps,
   // rather than mixing both roles into a single dropdown.
@@ -126,7 +138,7 @@ export function SalesRepresentativesPage() {
           className={`-mb-px border-b-2 px-4 py-2 ${
             mainSection === 'managers' ? 'border-primary-600 text-primary-600' : 'border-transparent text-[var(--text-muted)]'
           }`}
-          onClick={() => setMainSection('managers')}
+          onClick={() => switchMainSection('managers')}
         >
           {t('salesRepresentativesReports.listTabPress')}
         </button>
@@ -134,7 +146,7 @@ export function SalesRepresentativesPage() {
           className={`-mb-px border-b-2 px-4 py-2 ${
             mainSection === 'reps' ? 'border-primary-600 text-primary-600' : 'border-transparent text-[var(--text-muted)]'
           }`}
-          onClick={() => setMainSection('reps')}
+          onClick={() => switchMainSection('reps')}
         >
           {t('salesRepresentativesReports.repsTab')}
         </button>

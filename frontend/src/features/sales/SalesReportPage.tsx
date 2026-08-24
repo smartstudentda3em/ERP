@@ -307,7 +307,7 @@ export function SalesReportPage() {
             <option value={ALL_BRANCHES}>{t('salesReport.allBranches')}</option>
             {(branchesQuery.data ?? []).map((b) => (
               <option key={b.id} value={b.id}>
-                {b.nameEn}
+                {b.nameAr || b.nameEn}
               </option>
             ))}
           </Select>

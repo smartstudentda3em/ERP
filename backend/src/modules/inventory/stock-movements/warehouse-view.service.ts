@@ -81,11 +81,19 @@ export class WarehouseViewService {
     qb: SelectQueryBuilder<StockLevel>,
     query: Pick<WarehouseProductsQueryDto, 'search' | 'categoryId' | 'brandId' | 'status'>,
   ): void {
+    // Multi-keyword, cross-column, order-independent — each space-separated keyword must appear in
+    // SOME searchable column (not necessarily the same one), so e.g. "سبليت 1.5" matches a product
+    // whose name is "تكييف سبليت" and whose sku happens to contain "1.5", in either typed order.
+    // Mirrors the same convention already used by DataTable.tsx's own client-side search and
+    // RepresentativesListTab.tsx's rep search.
     if (query.search) {
-      qb.andWhere(
-        '(p.sku ILIKE :search OR p.barcode ILIKE :search OR p."nameEn" ILIKE :search OR p."nameAr" ILIKE :search)',
-        { search: `%${query.search}%` },
-      );
+      const keywords = query.search.trim().split(/\s+/).filter(Boolean);
+      keywords.forEach((keyword, i) => {
+        qb.andWhere(
+          `(p.sku ILIKE :search${i} OR p.barcode ILIKE :search${i} OR p."nameEn" ILIKE :search${i} OR p."nameAr" ILIKE :search${i})`,
+          { [`search${i}`]: `%${keyword}%` },
+        );
+      });
     }
     if (query.categoryId) qb.andWhere('p."categoryId" = :categoryId', { categoryId: query.categoryId });
     if (query.brandId) qb.andWhere('p."brandId" = :brandId', { brandId: query.brandId });

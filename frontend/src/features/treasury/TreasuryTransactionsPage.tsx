@@ -39,6 +39,7 @@ interface CashLedgerEntry {
   debit: number;
   credit: number;
   description: string | null;
+  branchId: string | null;
   runningBalance: number;
 }
 
@@ -129,14 +130,16 @@ export function TreasuryTransactionsPage() {
   });
   const company = companiesQuery.data?.find((c) => c.id === companyId) ?? companiesQuery.data?.[0];
 
-  // Branches only exist for Printing Press — Air Conditioning and Stationery also use the
-  // transfer feature (see showAccountSplit) but have no branches, so their transfers stay
-  // unattributed.
+  // Every company now has at least one seeded branch (Air Conditioning and Stationery included —
+  // they just each have exactly one, unlike Press), so the "الفرع" filter below is fetched and
+  // shown for all three, matching showAccountSplit's own company set.
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
-    enabled: isPrintingPress && !!companyId,
+    enabled: showAccountSplit && !!companyId,
   });
+  const ALL_BRANCHES = 'all';
+  const [branchFilter, setBranchFilter] = useState(ALL_BRANCHES);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -191,8 +194,11 @@ export function TreasuryTransactionsPage() {
   // alone, which used to silently ignore every BANK-settled movement.
   const currentBalance = entries.length ? entries[0].runningBalance : 0;
   const filteredEntries = useMemo(
-    () => entries.filter((e) => inDateRange(e.date, dateRange)),
-    [entries, dateRange],
+    () =>
+      entries.filter(
+        (e) => inDateRange(e.date, dateRange) && (branchFilter === ALL_BRANCHES || e.branchId === branchFilter),
+      ),
+    [entries, dateRange, branchFilter],
   );
 
   // Entries arrive newest-first (buildCashLedger/getLedger both reverse() after accumulating the
@@ -332,8 +338,20 @@ export function TreasuryTransactionsPage() {
         </Card>
       )}
 
-      <div className="print:hidden">
+      <div className="mb-3 flex flex-wrap items-end gap-3 print:hidden">
         <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        {showAccountSplit && (
+          <FormField label={t('dashboard.branchFilter')}>
+            <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              <option value={ALL_BRANCHES}>{t('accounting.allBranches')}</option>
+              {(branchesQuery.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nameAr || b.nameEn}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
       </div>
 
       {/* On-screen, interactive, paginated — unrelated to print/PDF, which always need the full

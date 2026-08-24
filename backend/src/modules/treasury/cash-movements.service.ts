@@ -470,6 +470,7 @@ export class CashMovementsService {
       .addSelect('m.amount', 'amount')
       .addSelect('m.category', 'category')
       .addSelect('m.description', 'description')
+      .addSelect('m."branchId"', 'branchId')
       .addSelect('c.name', 'customerName')
       .addSelect('s."companyName"', 'supplierName')
       .from('cash_movements', 'm')
@@ -500,6 +501,7 @@ export class CashMovementsService {
         debit,
         credit,
         description: row.description,
+        branchId: row.branchId,
         runningBalance,
       };
     });

@@ -36,9 +36,13 @@ import { Branch } from '../settings/entities/branch.entity';
 import { SalesInvoice } from '../sales/sales-invoices/entities/sales-invoice.entity';
 import { SalesPayment } from '../sales/sales-payments/entities/sales-payment.entity';
 import { Quotation } from '../sales/quotations/entities/quotation.entity';
+import { User } from '../users/entities/user.entity';
 
 /** Mirrors frontend/src/lib/use-active-company.ts's PRINTING_PRESS_COMPANY_CODE. */
 const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
+
+/** Mirrors BRANCH_MANAGER_ROLE_NAME in backend/src/modules/users/users.service.ts. */
+const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
 
 /** Air Conditioning — the only company where a مندوب earns a fixed-per-item commission
  * (RepFixedItemCommission) instead of the percentage/CommissionException model. */
@@ -59,6 +63,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     @InjectRepository(Employee) private readonly employeeRepo: Repository<Employee>,
     @InjectRepository(PayrollRun) private readonly payrollRunRepo: Repository<PayrollRun>,
     @InjectRepository(PayrollRunLine) private readonly payrollRunLineRepo: Repository<PayrollRunLine>,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly numberingSeriesService: NumberingSeriesService,
     private readonly cashMovementsService: CashMovementsService,
@@ -171,15 +176,38 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .getMany();
   }
 
-  /** Every sales representative (مندوب or مدير فرع, in every company) must be permanently linked
-   * to a branch at creation/edit time — a rep with no branch can't be scoped by
-   * SalesRepAccessService.resolveBranchId() and silently falls back to unrestricted/company-wide
-   * access for every non-admin flow that relies on it. Was previously Press-only, matching the
-   * legacy free-text territory field it replaced; now required everywhere. */
-  private async assertBranchRequired(branchId?: string | null): Promise<void> {
-    if (!branchId) {
-      throw new BadRequestException('يجب تحديد الفرع');
+  /** A مدير فرع genuinely manages one specific branch, in every company — their own
+   * invoice/commission attribution depends on it (see
+   * SalesRepAccessService.resolveBranchId()/resolveBranchManagerRepId()), so a branch is always
+   * required whenever the linked login account (if any) holds that role.
+   *
+   * AC only, and only when the rep is NOT a مدير فرع: a مندوب there isn't tied to one fixed branch
+   * — which one actually handles a sale depends on the customer's own location, not a permanent
+   * assignment — so branch is optional for them (and for any unlinked/manually-added AC rep whose
+   * intended role can't be determined at all). Not extended to STAT/PRESS: Press's مندوب commission
+   * is itself computed branch-wide (see buildManagerDashboardForRep's isPress branch), so a
+   * branchless Press مندوب would silently show zero sales; STAT is left unchanged too since nothing
+   * confirmed the same reasoning applies there. */
+  private async assertBranchRequired(
+    branchId: string | null | undefined,
+    userId: string | null | undefined,
+    companyId: string,
+  ): Promise<void> {
+    if (branchId) return;
+
+    let isBranchManager = false;
+    if (userId) {
+      const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['roles'] });
+      isBranchManager = user?.roles?.some((r) => r.name === BRANCH_MANAGER_ROLE_NAME) ?? false;
     }
+    if (isBranchManager) {
+      throw new BadRequestException('يجب تحديد الفرع لمدير الفرع');
+    }
+
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code === AIR_CONDITIONING_COMPANY_CODE) return;
+
+    throw new BadRequestException('يجب تحديد الفرع');
   }
 
   private async isPressCompany(companyId: string): Promise<boolean> {
@@ -259,7 +287,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   }
 
   async createForCompany(companyId: string, dto: Partial<SalesRepresentative>): Promise<SalesRepresentative> {
-    await this.assertBranchRequired(dto.branchId);
+    await this.assertBranchRequired(dto.branchId, dto.userId, companyId);
     const code =
       dto.code || (await this.numberingSeriesService.tryGetNextNumber(companyId, 'SALES_REPRESENTATIVE')) || `REP-${Date.now()}`;
     return this.dataSource.transaction(async (manager) => {
@@ -277,7 +305,8 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   ): Promise<SalesRepresentative> {
     const existing = await this.findOneForCompany(id, companyId);
     const branchId = dto.branchId !== undefined ? dto.branchId : existing.branchId;
-    await this.assertBranchRequired(branchId);
+    const userId = dto.userId !== undefined ? dto.userId : existing.userId;
+    await this.assertBranchRequired(branchId, userId, companyId);
     return this.dataSource.transaction(async (manager) => {
       const repRepo = manager.getRepository(SalesRepresentative);
       Object.assign(existing, dto, { companyId });

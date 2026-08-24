@@ -90,6 +90,18 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
   // AC "المناديب" tab only — fixed-per-item commission fully replaces the percentage/exceptions
   // model above for this one combination (see RepFixedItemCommission on the backend).
   const isAcMandoubTab = isAirConditioning && roleNameFilter === 'مندوب';
+  // AC only — a مندوب there isn't tied to one fixed branch at all: which one actually handles a
+  // sale depends on the customer's own location (a Cairo customer is served by whoever covers
+  // Cairo, a Mansoura customer by whoever covers Mansoura, etc.), so the field is hidden entirely
+  // rather than just optional — a single branch on their profile wouldn't mean anything. Not
+  // extended to STAT/PRESS — Press's مندوب
+  // commission is itself computed branch-wide (see buildManagerDashboardForRep's isPress branch on
+  // the backend), so a branchless Press مندوب would silently show zero sales; STAT is left
+  // unchanged too since nothing confirmed the same reasoning applies there. A مدير فرع genuinely
+  // manages one specific branch in every company (their own invoice/commission attribution depends
+  // on it — see resolveBranchManagerRepId on the backend), so the field stays shown and required
+  // for them always.
+  const branchOptionalForRep = isAcMandoubTab;
   const [fixedTargetId, setFixedTargetId] = useState('');
   const [fixedAmountValue, setFixedAmountValue] = useState('');
   // Printing Press only — clicking anywhere on a manager's row (except the Edit/Delete actions,
@@ -422,20 +434,18 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
           <FormField label={t('fields.email')}>
             <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </FormField>
-          <FormField label={t('salesRepresentativesReports.branch')} required>
-            <Select
-              required
-              value={form.branchId}
-              onChange={(e) => setForm({ ...form, branchId: e.target.value })}
-            >
-              <option value="">{t('salesRepresentativesReports.selectBranchRequired')}</option>
-              {(branchesQuery.data ?? []).map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.nameAr || b.nameEn}
-                </option>
-              ))}
-            </Select>
-          </FormField>
+          {!branchOptionalForRep && (
+            <FormField label={t('salesRepresentativesReports.branch')} required>
+              <Select required value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}>
+                <option value="">{t('salesRepresentativesReports.selectBranchRequired')}</option>
+                {(branchesQuery.data ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nameAr || b.nameEn}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
           {!isAcMandoubTab && (
             <FormField label={t('fields.commissionRate')}>
               <Input

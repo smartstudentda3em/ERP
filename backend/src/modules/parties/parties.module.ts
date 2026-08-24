@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Customer } from './customers/entities/customer.entity';
 import { Supplier } from './suppliers/entities/supplier.entity';
+import { User } from '../users/entities/user.entity';
 import { SalesRepresentative } from './entities/sales-representative.entity';
 import { CommissionException } from './entities/commission-exception.entity';
 import { RepFixedItemCommission } from './entities/rep-fixed-item-commission.entity';
@@ -21,7 +22,7 @@ import {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Customer, Supplier, SalesRepresentative, CommissionException, RepFixedItemCommission]),
+    TypeOrmModule.forFeature([Customer, Supplier, SalesRepresentative, CommissionException, RepFixedItemCommission, User]),
     SettingsModule,
     TreasuryModule,
     HrModule,

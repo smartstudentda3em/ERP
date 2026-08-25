@@ -332,6 +332,9 @@ async function main() {
     'suppliers.payment.create',
     'suppliers.payment.edit',
     'suppliers.payment.delete',
+    // Customers — view only; also what unlocks "الأرصدة المستحقة" (Outstanding Balances), since
+    // that screen is gated on this same permission (see router.tsx) rather than one of its own.
+    'customers.view',
     // Sales — full management
     'sales.quotation.view',
     'sales.quotation.create',

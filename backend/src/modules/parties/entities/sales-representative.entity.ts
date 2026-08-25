@@ -80,11 +80,13 @@ export class SalesRepresentative extends BaseEntity {
   /** Which of "مدير فرع" / "مندوب" this row was added as, from the "مدراء الأفرع"/"المناديب" tab
    * that created it — purely a display tiebreaker for findAllForCompany()'s role-filtered list,
    * never consulted by any real permission/attribution logic (that always derives the role fresh
-   * from the linked user's own roles, via SalesRepAccessService). Only matters while userId is
-   * null: a row with no linked login account has no real role to look up at all, so without this
-   * tag it silently vanished from BOTH filtered tabs the moment "مدراء الأفرع"/"المناديب" stopped
-   * being Press-exclusive and became every company's only way to list these rows. Once linked to a
-   * real account, the linked user's actual role always takes priority over this tag. */
+   * from the linked user's own roles, via SalesRepAccessService). Only matters when the linked
+   * account's own role isn't 'مدير فرع' or 'مندوب' — either because there is no linked account at
+   * all, or because it's deliberately linked to an Administrator/Manager account: neither case has
+   * a real, matching role to look up, so without this tag the row silently vanished from BOTH
+   * filtered tabs the moment "مدراء الأفرع"/"المناديب" stopped being Press-exclusive and became
+   * every company's only way to list these rows. The moment a linked account's role DOES match one
+   * of the two, that always wins over this tag. */
   @Column({ type: "varchar", length: 50, nullable: true })
   intendedRoleName: string | null;
 }

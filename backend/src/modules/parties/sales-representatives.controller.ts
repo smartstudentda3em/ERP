@@ -149,17 +149,40 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     await this.fixedItemCommissionsRepo.remove(row);
   }
 
+  /** Shared by findAllForCompany() and findRepsForReport() below — the exact rule deciding whether
+   * one row belongs to a given role's tab ("مدراء الأفرع" passes 'مدير فرع', "المناديب" passes
+   * 'مندوب', every company's own two-tab split, not just Printing Press):
+   *   1. The row's linked login account holds that exact role — always wins when it applies.
+   *   2. Otherwise (no linked account at all, OR linked to an account whose role is neither
+   *      'مدير فرع' nor 'مندوب' — e.g. Administrator/Manager, someone deliberately linked here for
+   *      convenience) fall back to intendedRoleName, the tab the row was originally added from.
+   * Without step 2's "neither" clause, a row linked to e.g. a Manager account matched NEITHER
+   * tab's role check and silently vanished from both — intendedRoleName only ever kicked in for a
+   * fully-unlinked row, not this equally-real case. */
+  private repRoleFilterSql(roleName: string): string {
+    return `(
+      EXISTS (
+        SELECT 1 FROM users u
+        INNER JOIN user_roles ur ON ur."userId" = u.id
+        INNER JOIN roles r ON r.id = ur."roleId" AND r.name = :roleName
+        WHERE u.id = rep."userId"
+      )
+      OR (
+        NOT EXISTS (
+          SELECT 1 FROM users u2
+          INNER JOIN user_roles ur2 ON ur2."userId" = u2.id
+          INNER JOIN roles r2 ON r2.id = ur2."roleId" AND r2.name IN ('مدير فرع', 'مندوب')
+          WHERE u2.id = rep."userId"
+        )
+        AND rep."intendedRoleName" = :roleName
+      )
+    )`;
+  }
+
   /**
    * Overrides the base class's bare findAll so the list screen can show each rep's branch name
-   * (e.g. "حمدي" → "فرع خيطان") without a separate lookup per row.
-   *
-   * `roleName` (optional) narrows this to only rows belonging to that role's tab: "مدراء الأفرع"
-   * passes 'مدير فرع', "المناديب" passes 'مندوب' — every company's own two-tab split, not just
-   * Printing Press. A row whose login account holds that role always matches. A row with NO linked
-   * account (added via "بدون حساب مرتبط") has no real role to check at all, so it instead matches
-   * on intendedRoleName — the tab it was originally added from — so it still shows up somewhere
-   * instead of silently vanishing from both tabs. Once such a row IS linked to a real account, the
-   * account's actual role takes over completely; intendedRoleName is never consulted again.
+   * (e.g. "حمدي" → "فرع خيطان") without a separate lookup per row. `roleName` (optional) narrows
+   * this to one role's tab — see repRoleFilterSql() above for exactly how a row is matched to it.
    */
   findAllForCompany(companyId: string, roleName?: string): Promise<SalesRepresentative[]> {
     if (!roleName) {
@@ -169,18 +192,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .createQueryBuilder('rep')
       .leftJoinAndSelect('rep.branch', 'branch')
       .where('rep."companyId" = :companyId', { companyId })
-      .andWhere(
-        `(
-          EXISTS (
-            SELECT 1 FROM users u
-            INNER JOIN user_roles ur ON ur."userId" = u.id
-            INNER JOIN roles r ON r.id = ur."roleId" AND r.name = :roleName
-            WHERE u.id = rep."userId"
-          )
-          OR (rep."userId" IS NULL AND rep."intendedRoleName" = :roleName)
-        )`,
-        { roleName },
-      )
+      .andWhere(this.repRoleFilterSql(roleName), { roleName })
       .orderBy('rep."createdAt"', 'ASC')
       .getMany();
   }
@@ -374,12 +386,12 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   }
 
   /** Every company's own "مدراء الأفرع"/"المناديب" split, for report screens — mirrors
-   * findAllForCompany()'s identical rule (a linked account's own role always decides; an unlinked
-   * row falls back to intendedRoleName) so a report can never show a different population than the
-   * list tab it's reporting on, e.g. a مدير فرع showing up under "تقارير المناديب". A bare
-   * `this.repo.find({ where: { companyId } })` with no role filtering at all was the actual bug
-   * here — every report below used to mix both roles together, distinguishing them only by which
-   * tab's labels the frontend happened to draw on top of identical, unfiltered data. */
+   * findAllForCompany()'s identical rule (see repRoleFilterSql() above) so a report can never show
+   * a different population than the list tab it's reporting on, e.g. a مدير فرع showing up under
+   * "تقارير المناديب". A bare `this.repo.find({ where: { companyId } })` with no role filtering at
+   * all was the actual bug here — every report below used to mix both roles together,
+   * distinguishing them only by which tab's labels the frontend happened to draw on top of
+   * identical, unfiltered data. */
   private async findRepsForReport(
     companyId: string,
     roleName?: string,
@@ -390,18 +402,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     }
     const qb = this.repo.createQueryBuilder('rep').where('rep."companyId" = :companyId', { companyId });
     relations.forEach((r) => qb.leftJoinAndSelect(`rep.${r}`, r));
-    qb.andWhere(
-      `(
-        EXISTS (
-          SELECT 1 FROM users u
-          INNER JOIN user_roles ur ON ur."userId" = u.id
-          INNER JOIN roles r ON r.id = ur."roleId" AND r.name = :roleName
-          WHERE u.id = rep."userId"
-        )
-        OR (rep."userId" IS NULL AND rep."intendedRoleName" = :roleName)
-      )`,
-      { roleName },
-    );
+    qb.andWhere(this.repRoleFilterSql(roleName), { roleName });
     return qb.orderBy('rep.name', 'ASC').getMany();
   }
 

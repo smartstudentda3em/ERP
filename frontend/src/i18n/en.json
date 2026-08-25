@@ -445,8 +445,8 @@
   "hr": {
     "employeeName": "Employee Name",
     "jobTitle": "Job Title",
-    "syncedFromRep": "🔗 Sales Rep",
-    "syncedFromRepHint": "This record is auto-synced from the Sales Representatives section",
+    "syncedFromRep": "🔗 Auto-synced",
+    "syncedFromRepHint": "This record is auto-synced from the Branch Managers & Sales Reps section — its identity fields (name, phone, email, branch, status) aren't editable here",
     "syncedFromRepNote": "This employee is linked to a sales representative record in \"Sales Representatives\" — name, phone, email, branch and status are managed there automatically. You can only edit the job title and base salary here.",
     "baseSalary": "Base Salary",
     "absenceDays": "Absence Days",

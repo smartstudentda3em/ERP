@@ -1122,7 +1122,8 @@
     "noneYet": "لا توجد استثناءات بعد",
     "typeProduct": "منتج",
     "typeCategory": "فئة",
-    "selectTarget": "اختر..."
+    "selectTarget": "اختر...",
+    "selectCategoryTarget": "اختر فئة المنتج..."
   },
   "quotations": {
     "convertToInvoice": "تحويل إلى فاتورة",

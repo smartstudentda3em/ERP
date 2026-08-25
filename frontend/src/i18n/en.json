@@ -1122,7 +1122,8 @@
     "noneYet": "No exceptions yet",
     "typeProduct": "Product",
     "typeCategory": "Category",
-    "selectTarget": "Select..."
+    "selectTarget": "Select...",
+    "selectCategoryTarget": "Select product category..."
   },
   "quotations": {
     "convertToInvoice": "Convert to Invoice",

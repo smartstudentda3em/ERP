@@ -53,9 +53,15 @@ interface ProductOption {
 
 interface RepFixedItemCommission {
   id: string;
-  productId: string;
+  categoryId: string;
   amount: number;
-  product?: { nameEn: string; nameAr?: string | null } | null;
+  category?: { nameEn: string; nameAr?: string | null } | null;
+}
+
+interface ProductCategoryOption {
+  id: string;
+  nameEn: string;
+  nameAr?: string | null;
 }
 
 const emptyForm = {
@@ -145,6 +151,15 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
     queryFn: () =>
       unwrap<RepFixedItemCommission[]>(apiClient.get(`/sales-representatives/${editingId}/fixed-item-commissions`)),
     enabled: modalOpen && !!editingId && isAcMandoubTab,
+  });
+
+  // AC "المناديب" fixed-commission picker only — AC's real catalog is 20+ individual product SKUs
+  // (every brand/model combination) but only a handful of product categories ("تكيفات", "كابول",
+  // "خدمات"...), so the admin configures a fixed amount per category rather than per exact product.
+  const fixedCommissionCategoriesQuery = useQuery({
+    queryKey: ['settings', 'product-categories', companyId],
+    queryFn: () => unwrap<ProductCategoryOption[]>(apiClient.get('/settings/product-categories')),
+    enabled: modalOpen && isAcMandoubTab,
   });
 
   // Same query shape/key as exceptionsQuery above (by design — the two share the TanStack Query
@@ -239,7 +254,7 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
   const addFixedCommissionMutation = useMutation({
     mutationFn: () =>
       apiClient.post(`/sales-representatives/${editingId}/fixed-item-commissions`, {
-        productId: fixedTargetId,
+        categoryId: fixedTargetId,
         amount: Number(fixedAmountValue || 0),
       }),
     onSuccess: () => {
@@ -265,7 +280,7 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
   });
 
   function fixedCommissionTargetLabel(row: RepFixedItemCommission): string {
-    return row.product?.nameAr || row.product?.nameEn || row.productId;
+    return row.category?.nameAr || row.category?.nameEn || row.categoryId;
   }
 
   function exceptionTargetLabel(ex: CommissionException): string {
@@ -495,10 +510,10 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
                   </div>
                   <div className="flex flex-wrap items-end gap-2">
                     <Select value={fixedTargetId} onChange={(e) => setFixedTargetId(e.target.value)}>
-                      <option value="">{t('commissionExceptions.selectTarget')}</option>
-                      {exceptionProducts.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nameAr || p.nameEn}
+                      <option value="">{t('commissionExceptions.selectCategoryTarget')}</option>
+                      {(fixedCommissionCategoriesQuery.data ?? []).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nameAr || c.nameEn}
                         </option>
                       ))}
                     </Select>

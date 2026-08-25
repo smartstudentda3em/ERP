@@ -215,19 +215,20 @@ export class EmployeesService {
       .createQueryBuilder()
       .select('i."invoiceDate"', 'invoiceDate')
       .addSelect('l."quantity"', 'quantity')
-      .addSelect('l."productId"', 'productId')
+      .addSelect('p."categoryId"', 'categoryId')
       .from('sales_invoice_lines', 'l')
       .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+      .innerJoin('products', 'p', 'p.id = l."productId"')
       .where('i."companyId" = :companyId', { companyId })
       .andWhere('i."assistingSalesRepresentativeId" = :repId', { repId })
       .andWhere('i."invoiceDate" >= :periodStart AND i."invoiceDate" <= :periodEnd', { periodStart, periodEnd })
       .getRawMany();
 
     const fixedRows = await this.fixedItemCommissionsRepo.find({ where: { companyId, salesRepresentativeId: repId } });
-    const fixedAmountByProductId = new Map(fixedRows.map((r) => [r.productId, Number(r.amount)]));
+    const fixedAmountByCategoryId = new Map(fixedRows.map((r) => [r.categoryId, Number(r.amount)]));
 
     for (const line of lineRows) {
-      const unitAmount = fixedAmountByProductId.get(line.productId);
+      const unitAmount = line.categoryId ? fixedAmountByCategoryId.get(line.categoryId) : undefined;
       if (!unitAmount) continue;
       const month = Number(String(line.invoiceDate).slice(5, 7));
       const commission = unitAmount * Number(line.quantity);

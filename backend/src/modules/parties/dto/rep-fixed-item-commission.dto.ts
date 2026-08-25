@@ -1,6 +1,6 @@
 import { IsNumber, IsUUID, Min } from 'class-validator';
 
 export class CreateRepFixedItemCommissionDto {
-  @IsUUID() productId: string;
+  @IsUUID() categoryId: string;
   @IsNumber() @Min(0) amount: number;
 }

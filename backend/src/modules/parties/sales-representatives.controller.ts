@@ -122,12 +122,12 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   }
 
   /** AC only — a مندوب's fixed-per-item commission rates, mirroring listCommissionExceptions
-   * above (one row per product, no category tier — see RepFixedItemCommission). */
+   * above (one row per product category — see RepFixedItemCommission). */
   async listFixedItemCommissions(companyId: string, repId: string): Promise<RepFixedItemCommission[]> {
     await this.findOneForCompany(repId, companyId);
     return this.fixedItemCommissionsRepo.find({
       where: { companyId, salesRepresentativeId: repId },
-      relations: ['product'],
+      relations: ['category'],
       order: { createdAt: 'ASC' },
     });
   }
@@ -141,7 +141,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     const row = this.fixedItemCommissionsRepo.create({
       companyId,
       salesRepresentativeId: repId,
-      productId: dto.productId,
+      categoryId: dto.categoryId,
       amount: dto.amount,
     });
     return this.fixedItemCommissionsRepo.save(row);
@@ -1034,6 +1034,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
         .addSelect('l."lineTotal"', 'lineTotal')
         .addSelect('l."quantity"', 'quantity')
         .addSelect('l."productId"', 'productId')
+        .addSelect('p."categoryId"', 'categoryId')
         .addSelect('COALESCE(p."nameAr", p."nameEn")', 'productName')
         .from('sales_invoice_lines', 'l')
         .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
@@ -1048,10 +1049,10 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       const fixedRows = await this.fixedItemCommissionsRepo.find({
         where: { companyId, salesRepresentativeId: rep.id },
       });
-      const fixedAmountByProductId = new Map(fixedRows.map((r) => [r.productId, Number(r.amount)]));
+      const fixedAmountByCategoryId = new Map(fixedRows.map((r) => [r.categoryId, Number(r.amount)]));
 
       for (const line of lineRows) {
-        const unitAmount = fixedAmountByProductId.get(line.productId);
+        const unitAmount = line.categoryId ? fixedAmountByCategoryId.get(line.categoryId) : undefined;
         if (!unitAmount) continue;
         const quantity = Number(line.quantity);
         const lineCommission = unitAmount * quantity;

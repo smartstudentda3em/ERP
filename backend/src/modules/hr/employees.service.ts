@@ -14,6 +14,8 @@ import { SalesRepAccessService } from '../../common/services/sales-rep-access.se
 
 /** Air Conditioning — mirrors sales-representatives.controller.ts's own AIR_CONDITIONING_COMPANY_CODE. */
 const AIR_CONDITIONING_COMPANY_CODE = 'AC';
+/** Printing Press — mirrors sales-representatives.controller.ts's own PRINTING_PRESS_COMPANY_CODE. */
+const PRINTING_PRESS_COMPANY_CODE = 'PRESS';
 
 /** = (end - start) inclusive, for 'YYYY-MM-DD' date strings — how many calendar days a leave record spans. */
 function daysBetweenInclusive(start: string, end: string): number {
@@ -147,13 +149,19 @@ export class EmployeesService {
     const rep = await this.salesRepresentativeRepo.findOne({ where: { userId: employee.userId, companyId } });
     if (!rep) return commissionByMonth;
 
-    // AC only: a مندوب's commission is a fixed amount per item on invoices they assisted with
-    // (assistingSalesRepresentativeId), never a percentage of their branch's whole sales — see
-    // sales-representatives.controller.ts's buildManagerDashboardForRep() for the identical split,
-    // which this mirrors so the two screens can never disagree.
+    // AC/PRESS only: a مندوب there never owns a branch's sales at all — their commission is always
+    // resolved via invoices they assisted with (assistingSalesRepresentativeId), never the
+    // branch-wide model below. AC pays a fixed amount per item; PRESS keeps the existing
+    // percentage/CommissionException model, just keyed off assisted (not branch-wide) invoices —
+    // see sales-representatives.controller.ts's buildManagerDashboardForRep() for the identical
+    // split, which this mirrors so the two screens can never disagree.
     const company = await this.companyRepo.findOne({ where: { id: companyId } });
-    if (company?.code === AIR_CONDITIONING_COMPANY_CODE && (await this.salesRepAccess.isSalesAgentRep(rep.id))) {
+    const isMandoubRep = await this.salesRepAccess.isSalesAgentRep(rep.id);
+    if (company?.code === AIR_CONDITIONING_COMPANY_CODE && isMandoubRep) {
       return this.getMonthlyFixedCommissions(rep.id, companyId, periodStart, periodEnd);
+    }
+    if (company?.code === PRINTING_PRESS_COMPANY_CODE && isMandoubRep) {
+      return this.getMonthlyAssistedPercentageCommissions(rep, companyId, periodStart, periodEnd);
     }
 
     if (!rep.branchId) return commissionByMonth;
@@ -223,6 +231,53 @@ export class EmployeesService {
       if (!unitAmount) continue;
       const month = Number(String(line.invoiceDate).slice(5, 7));
       const commission = unitAmount * Number(line.quantity);
+      commissionByMonth.set(month, (commissionByMonth.get(month) ?? 0) + commission);
+    }
+
+    return commissionByMonth;
+  }
+
+  /** PRESS only — the percentage-on-assisted-sales counterpart to getMonthlyFixedCommissions()
+   * above: same "assisted, not owned" invoice population, but commission is resolved via the
+   * رep's own percentage commissionRate/CommissionException list (resolveLineRate()) instead of a
+   * fixed amount, matching AC/PRESS's own diverging commission models. */
+  private async getMonthlyAssistedPercentageCommissions(
+    rep: SalesRepresentative,
+    companyId: string,
+    periodStart: string,
+    periodEnd: string,
+  ): Promise<Map<number, number>> {
+    const commissionByMonth = new Map<number, number>();
+    const generalRate = Number(rep.commissionRate ?? 0);
+
+    const lineRows = await this.dataSource
+      .createQueryBuilder()
+      .select('i."invoiceDate"', 'invoiceDate')
+      .addSelect('l."lineTotal"', 'lineTotal')
+      .addSelect('l."productId"', 'productId')
+      .addSelect('p."categoryId"', 'categoryId')
+      .from('sales_invoice_lines', 'l')
+      .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+      .innerJoin('products', 'p', 'p.id = l."productId"')
+      .where('i."companyId" = :companyId', { companyId })
+      .andWhere('i."assistingSalesRepresentativeId" = :repId', { repId: rep.id })
+      .andWhere('i."invoiceDate" >= :periodStart AND i."invoiceDate" <= :periodEnd', { periodStart, periodEnd })
+      .getRawMany();
+
+    const exceptionRows = await this.commissionExceptionsRepo.find({
+      where: { companyId, salesRepresentativeId: rep.id },
+    });
+    const exceptions = { byProductId: new Map<string, number>(), byCategoryId: new Map<string, number>() };
+    for (const e of exceptionRows) {
+      if (e.productId) exceptions.byProductId.set(e.productId, Number(e.commissionRate));
+      else if (e.categoryId) exceptions.byCategoryId.set(e.categoryId, Number(e.commissionRate));
+    }
+
+    for (const line of lineRows) {
+      const rate = this.resolveLineRate(line, exceptions, generalRate);
+      if (rate <= 0) continue;
+      const month = Number(String(line.invoiceDate).slice(5, 7));
+      const commission = (Number(line.lineTotal) * rate) / 100;
       commissionByMonth.set(month, (commissionByMonth.get(month) ?? 0) + commission);
     }
 

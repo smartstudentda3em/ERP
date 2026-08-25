@@ -48,6 +48,12 @@ const BRANCH_MANAGER_ROLE_NAME = 'مدير فرع';
  * (RepFixedItemCommission) instead of the percentage/CommissionException model. */
 const AIR_CONDITIONING_COMPANY_CODE = 'AC';
 
+/** AC and PRESS both run the "managed sales" process (see sales-invoices.service.ts's own copy of
+ * this constant): a مندوب there never owns an invoice, so their sales/commission figures are
+ * always resolved via SalesInvoice.assistingSalesRepresentativeId instead of ownership. STAT is
+ * deliberately excluded, unchanged from the original AC-only scope. */
+const MANAGED_SALES_COMPANY_CODES = [AIR_CONDITIONING_COMPANY_CODE, PRINTING_PRESS_COMPANY_CODE];
+
 /** Job title auto-assigned to the Employee row a سales rep is synced into — see
  * syncEmployeeForRep(). Only ever applied at creation time; an admin can rename it afterwards from
  * the Employees screen without a later rep update overwriting it back (see EmployeesService.update). */
@@ -202,13 +208,11 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
    * SalesRepAccessService.resolveBranchId()/resolveBranchManagerRepId()), so a branch is always
    * required whenever the linked login account (if any) holds that role.
    *
-   * AC only, and only when the rep is NOT a مدير فرع: a مندوب there isn't tied to one fixed branch
-   * — which one actually handles a sale depends on the customer's own location, not a permanent
-   * assignment — so branch is optional for them (and for any unlinked/manually-added AC rep whose
-   * intended role can't be determined at all). Not extended to STAT/PRESS: Press's مندوب commission
-   * is itself computed branch-wide (see buildManagerDashboardForRep's isPress branch), so a
-   * branchless Press مندوب would silently show zero sales; STAT is left unchanged too since nothing
-   * confirmed the same reasoning applies there. */
+   * AC/PRESS only, and only when the rep is NOT a مدير فرع: a مندوب there isn't tied to one fixed
+   * branch — which one actually handles a sale depends on the customer's own location, not a
+   * permanent assignment — so branch is optional for them (and for any unlinked/manually-added AC
+   * or PRESS rep whose intended role can't be determined at all). STAT is left unchanged since
+   * nothing confirmed the same reasoning applies there. */
   private async assertBranchRequired(
     branchId: string | null | undefined,
     userId: string | null | undefined,
@@ -226,7 +230,7 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     }
 
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
-    if (company?.code === AIR_CONDITIONING_COMPANY_CODE) return;
+    if (MANAGED_SALES_COMPANY_CODES.includes(company?.code ?? '')) return;
 
     throw new BadRequestException('يجب تحديد الفرع');
   }
@@ -411,10 +415,13 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
    * since a single id carries no role-tab context of its own), or no specific رep was picked and
    * the caller is viewing the "المناديب" tab itself (roleName === 'مندوب'). Drives the
    * assisted-sales branch in getReportsSummary()/getReportsInvoices() below — see their own doc
-   * comments for why AC مناديب need a completely different sales metric than every other رep. */
+   * comments for why AC/PRESS مناديب need a completely different sales metric than every other رep.
+   * Applies identically to both companies here — this only decides *which invoices count*
+   * (assisted, not owned), never *how much commission* they're worth, which is where AC (fixed)
+   * and PRESS (percentage) actually diverge (see buildManagerDashboardForRep()). */
   private async isMandoubReportContext(companyId: string, representativeId?: string, roleName?: string): Promise<boolean> {
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
-    if (company?.code !== AIR_CONDITIONING_COMPANY_CODE) return false;
+    if (!MANAGED_SALES_COMPANY_CODES.includes(company?.code ?? '')) return false;
     if (representativeId) return this.salesRepAccess.isSalesAgentRep(representativeId);
     return roleName === 'مندوب';
   }
@@ -986,13 +993,17 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     // whose creator's own userId matches this رep's.
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
     const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
+    const isMandoubRep = await this.salesRepAccess.isSalesAgentRep(rep.id);
     // AC only: a مندوب earns a fixed amount per item sold on invoices they assisted with (see
     // SalesInvoice.assistingSalesRepresentativeId / RepFixedItemCommission), never a percentage of
     // sales they don't themselves own. A مدير فرع (even on AC) keeps the percentage model below
     // completely unchanged — resolveInvoiceOwner() already always makes them the invoice's real
-    // owner, so isSalesAgentRep(rep.id) (which checks the *linked user's* role) is false for them.
-    const isFixedCommission =
-      company?.code === AIR_CONDITIONING_COMPANY_CODE && (await this.salesRepAccess.isSalesAgentRep(rep.id));
+    // owner, so isMandoubRep (which checks the *linked user's* role) is false for them.
+    const isFixedCommission = company?.code === AIR_CONDITIONING_COMPANY_CODE && isMandoubRep;
+    // PRESS only: same "assisted, not owned" attribution as AC's مندوب above, but commission stays
+    // the existing percentage/CommissionException model (the رep's own commissionRate) instead of a
+    // fixed amount — a Press مدير فرع is unaffected, still the branch-wide isPress branch below.
+    const isPressMandoubAssisted = isPress && isMandoubRep;
 
     // Only lines this رep actually earns a commission on ever reach the dashboard — for the
     // percentage model, a resolved rate of 0% (no general rate and no exception, or an exception
@@ -1077,7 +1088,9 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
         .innerJoin('products', 'p', 'p.id = l."productId"')
         .where('i."companyId" = :companyId', { companyId })
         .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo });
-      if (isPress) {
+      if (isPressMandoubAssisted) {
+        lineRowsQuery.andWhere('i."assistingSalesRepresentativeId" = :repId', { repId: rep.id });
+      } else if (isPress) {
         lineRowsQuery.andWhere('i."branchId" = :branchId', { branchId: rep.branchId });
       } else if (rep.userId) {
         lineRowsQuery.andWhere(
@@ -1158,8 +1171,8 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
 
   /** The actual invoices behind the "حجم المبيعات" chart bar(s) — same population (rep IS NOT NULL, or one specific rep) and date range as getReportsSummary, so the table always reconciles with the chart. */
   async getReportsInvoices(companyId: string, dateFrom: string, dateTo: string, representativeId?: string, roleName?: string) {
-    // AC only — same assisted-sales population as getReportsSummary's own AC-مندوب branch (see its
-    // doc comment): an AC مندوب's invoices are the ones they assisted with, never ones they own.
+    // AC/PRESS only — same assisted-sales population as getReportsSummary's own branch (see its doc
+    // comment): a مندوب's invoices there are the ones they assisted with, never ones they own.
     if (await this.isMandoubReportContext(companyId, representativeId, roleName)) {
       const qb2 = this.dataSource
         .createQueryBuilder()
@@ -1222,8 +1235,8 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
 
   /** The actual receipts behind the "تحصيل الأرصدة المستحقة" chart bar(s) — attributed with the exact same fallback chain (own rep, else invoice's rep, else customer's rep) getReportsSummary uses, so the table always reconciles with the chart. */
   async getReportsReceipts(companyId: string, dateFrom: string, dateTo: string, representativeId?: string, roleName?: string) {
-    // AC مناديب don't own (or record receipts against) any invoice at all — see
-    // getReportsSummary's own AC-مندوب branch — so there's nothing meaningful to show here for them.
+    // AC/PRESS مناديب don't own (or record receipts against) any invoice at all — see
+    // getReportsSummary's own branch — so there's nothing meaningful to show here for them.
     if (await this.isMandoubReportContext(companyId, representativeId, roleName)) return [];
 
     const rows = await this.dataSource

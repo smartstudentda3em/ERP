@@ -32,6 +32,14 @@ import { buildExceptionsByRepId, resolveLineCommissionRate } from '../../parties
 import { assertPaymentAccountProvided } from '../../../common/utils/payment-account.util';
 import { findOrCreateQuickCustomer } from '../../parties/customers/customer-quick-entry.util';
 
+/** AC and PRESS both run the "managed sales" process: a مندوب can never create an invoice
+ * themselves, an admin/manager-created invoice is credited to the chosen branch's مدير فرع, and
+ * "مساعدة مندوب" tracks who assisted the sale. STAT is deliberately excluded — untouched, matching
+ * the original AC-only scope until explicitly widened. AC and PRESS differ only in how a مندوب's
+ * assisted-sales commission is computed (see sales-representatives.controller.ts/employees.service.ts's
+ * own AC-fixed vs PRESS-percentage branches) — every other rule here applies identically to both. */
+const MANAGED_SALES_COMPANY_CODES = ['AC', 'PRESS'];
+
 @Injectable()
 export class SalesInvoicesService {
   constructor(
@@ -201,11 +209,11 @@ export class SalesInvoicesService {
   ): Promise<SalesInvoice> {
     const company = await this.companyRepo.findOne({ where: { id: companyId } });
 
-    // AC only: a مندوب (field rep) can no longer create invoices themselves — only مدير فرع /
+    // AC/PRESS only: a مندوب (field rep) can no longer create invoices themselves — only مدير فرع /
     // Manager / Administrator can. Deliberately not enforced via SALES_REP_PERMISSION_CODES
-    // (run-seed.ts), which is shared by STAT/PRESS's مناديب and must keep letting them create
+    // (run-seed.ts), which is shared by STAT's مناديب too and must keep letting them create
     // invoices exactly as before this restriction was added.
-    if (company?.code === 'AC' && (await this.salesRepAccess.isCallerSalesRep(callerId))) {
+    if (MANAGED_SALES_COMPANY_CODES.includes(company?.code ?? '') && (await this.salesRepAccess.isCallerSalesRep(callerId))) {
       throw new ForbiddenException('لا يمكن للمندوب إصدار فواتير بيع — يرجى التواصل مع مدير الفرع أو الإدارة.');
     }
 
@@ -239,13 +247,13 @@ export class SalesInvoicesService {
     // rep/owner override above.
     const branchId = await this.salesRepAccess.resolveBranchId(callerId, dto.branchId, companyId);
 
-    // AC only: an Administrator/Manager-created invoice is credited to the chosen branch's مدير
-    // فرع, never to the admin/manager who clicked save — resolveInvoiceOwner()'s admin path above
-    // just passes through whatever the client sent (or null), so this overrides it deliberately.
-    // A مدير فرع creating their own AC invoice is untouched: resolveInvoiceOwner()'s non-admin path
-    // already auto-locks them to their own rep id.
+    // AC/PRESS only: an Administrator/Manager-created invoice is credited to the chosen branch's
+    // مدير فرع, never to the admin/manager who clicked save — resolveInvoiceOwner()'s admin path
+    // above just passes through whatever the client sent (or null), so this overrides it
+    // deliberately. A مدير فرع creating their own invoice is untouched: resolveInvoiceOwner()'s
+    // non-admin path already auto-locks them to their own rep id.
     let salesRepresentativeIdFinal = salesRepresentativeId;
-    if (company?.code === 'AC' && (await this.salesRepAccess.isSystemAdmin(callerId))) {
+    if (MANAGED_SALES_COMPANY_CODES.includes(company?.code ?? '') && (await this.salesRepAccess.isSystemAdmin(callerId))) {
       if (!branchId) throw new BadRequestException('يجب اختيار الفرع');
       const branchManagerRepId = await this.salesRepAccess.resolveBranchManagerRepId(companyId, branchId);
       if (!branchManagerRepId) {
@@ -256,11 +264,11 @@ export class SalesInvoicesService {
       salesRepresentativeIdFinal = branchManagerRepId;
     }
 
-    // AC only — "هل تمت هذه العملية بمساعدة مندوب؟": a company-scoped existence check, same depth
-    // as the customerId check above; which reps may be picked (مندوب-role only) is enforced by the
-    // frontend's filtered dropdown, not re-validated here.
+    // AC/PRESS only — "هل تمت هذه العملية بمساعدة مندوب؟": a company-scoped existence check, same
+    // depth as the customerId check above; which reps may be picked (مندوب-role only) is enforced
+    // by the frontend's filtered dropdown, not re-validated here.
     let assistingSalesRepresentativeId: string | null = null;
-    if (company?.code === 'AC' && dto.assistingSalesRepresentativeId) {
+    if (MANAGED_SALES_COMPANY_CODES.includes(company?.code ?? '') && dto.assistingSalesRepresentativeId) {
       const assistingRep = await this.salesRepRepo.findOne({
         where: { id: dto.assistingSalesRepresentativeId, companyId },
       });

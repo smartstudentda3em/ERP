@@ -90,18 +90,19 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
   // AC "المناديب" tab only — fixed-per-item commission fully replaces the percentage/exceptions
   // model above for this one combination (see RepFixedItemCommission on the backend).
   const isAcMandoubTab = isAirConditioning && roleNameFilter === 'مندوب';
-  // AC only — a مندوب there isn't tied to one fixed branch at all: which one actually handles a
-  // sale depends on the customer's own location (a Cairo customer is served by whoever covers
-  // Cairo, a Mansoura customer by whoever covers Mansoura, etc.), so the field is hidden entirely
-  // rather than just optional — a single branch on their profile wouldn't mean anything. Not
-  // extended to STAT/PRESS — Press's مندوب
-  // commission is itself computed branch-wide (see buildManagerDashboardForRep's isPress branch on
-  // the backend), so a branchless Press مندوب would silently show zero sales; STAT is left
-  // unchanged too since nothing confirmed the same reasoning applies there. A مدير فرع genuinely
-  // manages one specific branch in every company (their own invoice/commission attribution depends
-  // on it — see resolveBranchManagerRepId on the backend), so the field stays shown and required
-  // for them always.
-  const branchOptionalForRep = isAcMandoubTab;
+  // AC/PRESS only — a مندوب in either company isn't tied to one fixed branch at all: which one
+  // actually handles a sale depends on the customer's own location (a Cairo customer is served by
+  // whoever covers Cairo, a Mansoura customer by whoever covers Mansoura, etc.), so the field is
+  // hidden entirely rather than just optional — a single branch on their profile wouldn't mean
+  // anything. Both companies now resolve their مندوب's sales/commission via
+  // SalesInvoice.assistingSalesRepresentativeId (fixed amount for AC, percentage for PRESS — see
+  // buildManagerDashboardForRep on the backend), never a branch-wide or branch-owned figure, so a
+  // branchless رep is safe for either. STAT is left unchanged since nothing confirmed the same
+  // reasoning applies there. A مدير فرع genuinely manages one specific branch in every company
+  // (their own invoice/commission attribution depends on it — see resolveBranchManagerRepId on the
+  // backend), so the field stays shown and required for them always.
+  const isManagedSalesMandoubTab = (isAirConditioning || isPrintingPress) && roleNameFilter === 'مندوب';
+  const branchOptionalForRep = isManagedSalesMandoubTab;
   const [fixedTargetId, setFixedTargetId] = useState('');
   const [fixedAmountValue, setFixedAmountValue] = useState('');
   // Printing Press only — clicking anywhere on a manager's row (except the Edit/Delete actions,

@@ -17,7 +17,7 @@ export class GuidelinePricesService {
   async findAll(companyId: string): Promise<GuidelinePriceSheet[]> {
     return this.repo.find({
       where: { companyId },
-      relations: ['lines', 'lines.product', 'lines.product.brand', 'lines.product.tax', 'supplier'],
+      relations: ['lines', 'lines.product', 'lines.product.brand', 'supplier'],
       order: { year: 'DESC', month: 'DESC' },
     });
   }
@@ -25,7 +25,7 @@ export class GuidelinePricesService {
   async findOne(id: string, companyId: string): Promise<GuidelinePriceSheet> {
     const sheet = await this.repo.findOne({
       where: { id, companyId },
-      relations: ['lines', 'lines.product', 'lines.product.brand', 'lines.product.tax', 'supplier'],
+      relations: ['lines', 'lines.product', 'lines.product.brand', 'supplier'],
     });
     if (!sheet) throw new NotFoundException('Guideline price sheet not found');
     return sheet;
@@ -101,7 +101,15 @@ export class GuidelinePricesService {
    * happened to be the latest receipt). One row per product via DISTINCT ON, latest receipt wins.
    * quantityPurchased is a window-function SUM over every one of that product's receipts from this
    * supplier (same free-goods exclusion — "عدد العبوات المشتراة" means actually paid-for packages,
-   * not bonus stock), computed off this same purchase_receipts scan rather than a second query. */
+   * not bonus stock), computed off this same purchase_receipts scan rather than a second query.
+   *
+   * taxValuePerUnit replaces the old per-product taxRate-based "قيمة الضريبة" — by explicit
+   * request, this supplier's real ضريبة المبيعات payments (ac_supplier_tax_payments, recorded from
+   * the centralized "الضرائب" tab under الموردون) are spread evenly across every package ever
+   * bought from them: (total tax paid to this supplier) ÷ (total packages bought from this
+   * supplier, across every product). The SAME per-unit figure is attached to every row here — the
+   * tax isn't tracked per product, only per supplier, so there's no more granular number to give
+   * any one product than its fair share of the whole. */
   async findSupplierProducts(
     supplierId: string,
     companyId: string,
@@ -114,7 +122,6 @@ export class GuidelinePricesService {
       barcode: string | null;
       brandNameEn: string | null;
       brandNameAr: string | null;
-      taxRate: number | null;
       purchasePrice: number;
       /** The product's own configured PACKAGE/carton selling price ("سعر البيع (المصنع)") — a
        * fixed reference value from the Product record itself, not company/month-specific like
@@ -124,9 +131,24 @@ export class GuidelinePricesService {
       /** Total packages purchased from this supplier across every (non-free-goods) receipt of this
        * product — "عدد العبوات المشتراة" on the detail page's product table. */
       quantityPurchased: number;
+      /** This supplier's total tax payments ÷ total packages bought from them — see this method's
+       * own doc comment above. Identical across every row returned here. */
+      taxValuePerUnit: number;
     }[]
   > {
-    return this.dataSource.query(
+    const rows: {
+      productId: string;
+      sku: string | null;
+      nameEn: string;
+      nameAr: string | null;
+      barcode: string | null;
+      brandNameEn: string | null;
+      brandNameAr: string | null;
+      purchasePrice: number;
+      packageSellingPrice: number | null;
+      quantityPurchased: number;
+      totalQuantityFromSupplier: string;
+    }[] = await this.dataSource.query(
       `SELECT DISTINCT ON (pr."productId")
          pr."productId"          AS "productId",
          pr."unitCost"           AS "purchasePrice",
@@ -137,15 +159,24 @@ export class GuidelinePricesService {
          p."packageSellingPrice" AS "packageSellingPrice",
          b."nameEn"              AS "brandNameEn",
          b."nameAr"              AS "brandNameAr",
-         t."rate"                AS "taxRate",
-         SUM(pr."quantityPackages") OVER (PARTITION BY pr."productId") AS "quantityPurchased"
+         SUM(pr."quantityPackages") OVER (PARTITION BY pr."productId") AS "quantityPurchased",
+         SUM(pr."quantityPackages") OVER ()                            AS "totalQuantityFromSupplier"
        FROM purchase_receipts pr
        JOIN products p ON p.id = pr."productId"
        LEFT JOIN brands b ON b.id = p."brandId"
-       LEFT JOIN taxes t ON t.id = p."taxId"
        WHERE pr."supplierId" = $1 AND pr."companyId" = $2 AND pr."isFreeGoods" = false
        ORDER BY pr."productId", pr."receiptDate" DESC, pr."createdAt" DESC`,
       [supplierId, companyId],
     );
+    if (rows.length === 0) return [];
+
+    const [{ totalTax }] = await this.dataSource.query(
+      `SELECT COALESCE(SUM(amount), 0) AS "totalTax" FROM ac_supplier_tax_payments WHERE "supplierId" = $1 AND "companyId" = $2`,
+      [supplierId, companyId],
+    );
+    const totalQuantityFromSupplier = Number(rows[0].totalQuantityFromSupplier) || 0;
+    const taxValuePerUnit = totalQuantityFromSupplier > 0 ? Number(totalTax) / totalQuantityFromSupplier : 0;
+
+    return rows.map(({ totalQuantityFromSupplier: _drop, ...r }) => ({ ...r, taxValuePerUnit }));
   }
 }

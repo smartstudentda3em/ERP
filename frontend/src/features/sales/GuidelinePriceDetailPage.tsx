@@ -30,7 +30,6 @@ interface GuidelinePriceLine {
     barcode?: string | null;
     packageSellingPrice?: number | null;
     brand?: { nameEn: string; nameAr?: string | null } | null;
-    tax?: { rate: number } | null;
   } | null;
 }
 
@@ -52,12 +51,14 @@ interface SupplierProductPrice {
   barcode: string | null;
   brandNameEn: string | null;
   brandNameAr: string | null;
-  taxRate: number | null;
   purchasePrice: number;
   packageSellingPrice: number | null;
   /** Total packages bought from this supplier across every (non-free-goods) receipt of this
    * product — see GuidelinePricesService.findSupplierProducts. */
   quantityPurchased: number;
+  /** This supplier's total ضريبة المبيعات payments ÷ total packages bought from them — identical
+   * across every product returned for the same supplier. See findSupplierProducts's own comment. */
+  taxValuePerUnit: number;
 }
 
 interface ProductRow {
@@ -73,7 +74,8 @@ interface ProductRow {
    * fallback row with no purchase history at all (see the rows useMemo below). */
   quantityPurchased: number;
   purchasePrice: number;
-  taxRate: number;
+  /** This row's supplier-wide tax-per-package share — see SupplierProductPrice's own comment. */
+  taxValuePerUnit: number;
   discountPercentage: number;
   /** The product's own configured PACKAGE/carton selling price ("سعر البيع (المصنع)") — a fixed
    * reference value, distinct from "سعر البيع المتوقع" (the new guideline price being set on this
@@ -101,8 +103,11 @@ type SortField = 'capacity' | 'brand';
  * The product list auto-populates from each company's own Purchasing history (real paid receipts
  * only — free-goods receipts are excluded server-side since their price is always forced to 0),
  * plus any product that already has a saved guideline price line even without purchase history.
- * Discount value / tax value / net purchase price are pure display math off that row's own
- * discountPercentage/taxRate — nothing new to persist there. "سعر البيع المتوقع" is the only
+ * Discount value / net purchase price are pure display math off that row's own discountPercentage;
+ * tax value ("قيمة الضريبة") is this row's supplier-wide taxValuePerUnit instead — by explicit
+ * request, this supplier's total ضريبة المبيعات payments spread evenly across every package ever
+ * bought from them, not a per-product tax rate (see GuidelinePricesService.findSupplierProducts).
+ * Nothing here is persisted beyond what's already stored. "سعر البيع المتوقع" is the only
  * editable column and is exactly GuidelinePriceLine.price; saving groups the edited cells by their
  * owning sheet and PATCHes each sheet's lines independently (a sheet no cell was touched for is
  * left completely alone).
@@ -176,9 +181,14 @@ export function GuidelinePriceDetailPage() {
   // for its sheet — keeps a manually-priced product visible even if it has no purchase history.
   const rows: ProductRow[] = useMemo(() => {
     const map = new Map<string, ProductRow>();
+    // taxValuePerUnit is supplier-wide, not per-product — every product row from the same sheet
+    // carries the identical value, so it's captured once here and reused for the fallback loop
+    // below (which has no purchase-history row of its own to read it off).
+    const taxPerUnitBySheet = new Map<string, number>();
     for (const { sheet, products } of productsQuery.data ?? []) {
       for (const p of products) {
         const key = `${sheet.id}::${p.productId}`;
+        taxPerUnitBySheet.set(sheet.id, Number(p.taxValuePerUnit) || 0);
         map.set(key, {
           key,
           productId: p.productId,
@@ -188,7 +198,7 @@ export function GuidelinePriceDetailPage() {
           name: p.nameAr || p.nameEn,
           capacity: p.barcode ?? '—',
           brand: p.brandNameAr || p.brandNameEn || '—',
-          taxRate: Number(p.taxRate) || 0,
+          taxValuePerUnit: Number(p.taxValuePerUnit) || 0,
           discountPercentage: Number(sheet.discountPercentage) || 0,
           purchasePrice: Number(p.purchasePrice) || 0,
           quantityPurchased: Number(p.quantityPurchased) || 0,
@@ -209,7 +219,7 @@ export function GuidelinePriceDetailPage() {
             name: line.product?.nameAr || line.product?.nameEn || '—',
             capacity: line.product?.barcode ?? '—',
             brand: line.product?.brand?.nameAr || line.product?.brand?.nameEn || '—',
-            taxRate: Number(line.product?.tax?.rate) || 0,
+            taxValuePerUnit: taxPerUnitBySheet.get(sheet.id) ?? 0,
             discountPercentage: Number(sheet.discountPercentage) || 0,
             purchasePrice: 0,
             quantityPurchased: 0,
@@ -332,7 +342,7 @@ export function GuidelinePriceDetailPage() {
     },
     {
       header: t('guidelinePrices.taxValue'),
-      accessor: (r) => formatAmount(r.purchasePrice * (r.taxRate / 100)),
+      accessor: (r) => formatAmount(r.taxValuePerUnit),
       hideOnPrint: true,
     },
     {

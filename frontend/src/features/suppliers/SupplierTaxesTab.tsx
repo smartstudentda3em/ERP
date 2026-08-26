@@ -19,6 +19,14 @@ interface SupplierOption {
   companyName: string;
 }
 
+/** Only the two fields this tab reads off /dashboard/summary — same endpoint
+ * AcSupplierDetailPage.tsx's own "تسجيل دفعة" modal uses, so these numbers always agree with what
+ * that screen (and the Dashboard/Treasury screens) show for the same company. */
+interface BranchBalanceSummary {
+  cashBalance: number;
+  bankBalance: number;
+}
+
 interface PurchaseReceiptOption {
   id: string;
   documentNumber: string;
@@ -31,7 +39,7 @@ interface AcTaxPayment {
   taxDate: string;
   amount: number;
   notes?: string | null;
-  supplierId: string;
+  supplierId: string | null;
   purchaseReceiptId?: string | null;
   createdByName: string;
 }
@@ -39,6 +47,12 @@ interface AcTaxPayment {
 function money(n: number): string {
   return formatAmount(n);
 }
+
+// Not a real supplier id — the add form's own picklist entry for a "ضرائب عامة" tax entry
+// unattributed to any one supplier (see AcSupplierTaxPayment.supplierId's own doc comment).
+// SearchableSelect's value='' already means "nothing chosen", so this needs a distinct sentinel to
+// be a real, selectable option in its own right.
+const GENERAL_TAX_VALUE = '__GENERAL__';
 
 /**
  * Air Conditioning only — centralized "الضرائب" tab under the top-level الموردون section (see
@@ -64,6 +78,7 @@ export function SupplierTaxesTab() {
   const [taxDate, setTaxDate] = useState(localToday());
   const [receiptId, setReceiptId] = useState('');
   const [notes, setNotes] = useState('');
+  const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK'>('CASH');
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers', companyId],
@@ -75,8 +90,11 @@ export function SupplierTaxesTab() {
     [suppliersQuery.data],
   );
   const supplierOptions = useMemo(
-    () => (suppliersQuery.data ?? []).map((s) => ({ value: s.id, label: s.companyName })),
-    [suppliersQuery.data],
+    () => [
+      { value: GENERAL_TAX_VALUE, label: t('suppliers.generalTaxOption') },
+      ...(suppliersQuery.data ?? []).map((s) => ({ value: s.id, label: s.companyName })),
+    ],
+    [suppliersQuery.data, t],
   );
 
   // Only needed for the add form's optional "الفاتورة" picker — fetched once the modal is open,
@@ -92,6 +110,15 @@ export function SupplierTaxesTab() {
     () => (receiptsQuery.data ?? []).filter((r) => r.supplierId === supplierId),
     [receiptsQuery.data, supplierId],
   );
+
+  // Live Cash/Bank balances for the modal's payment-source badges below — same /dashboard/summary
+  // endpoint and design as AcSupplierDetailPage.tsx's own "تسجيل دفعة" modal, only fetched while
+  // this modal is actually open.
+  const branchBalanceQuery = useQuery({
+    queryKey: ['dashboard-summary', companyId],
+    queryFn: () => unwrap<BranchBalanceSummary>(apiClient.get('/dashboard/summary', { params: { companyId } })),
+    enabled: open && !!companyId,
+  });
 
   const taxQuery = useQuery({
     queryKey: ['ac-supplier-tax-payments', companyId],
@@ -111,10 +138,11 @@ export function SupplierTaxesTab() {
   const createMutation = useMutation({
     mutationFn: () =>
       apiClient.post('/ac-supplier-tax-payments', {
-        supplierId,
+        supplierId: supplierId === GENERAL_TAX_VALUE ? undefined : supplierId,
         taxDate,
         amount: Number(amount),
         purchaseReceiptId: receiptId || undefined,
+        paymentAccount,
         notes: notes || undefined,
       }),
     onSuccess: () => {
@@ -125,6 +153,7 @@ export function SupplierTaxesTab() {
       setTaxDate(localToday());
       setReceiptId('');
       setNotes('');
+      setPaymentAccount('CASH');
       toast.success(t('suppliers.taxSavedSuccess'));
     },
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
@@ -146,7 +175,10 @@ export function SupplierTaxesTab() {
 
   const columns: Column<AcTaxPayment>[] = [
     { header: t('common.date'), accessor: (r) => r.taxDate },
-    { header: t('fields.supplier'), accessor: (r) => supplierNameById.get(r.supplierId) ?? '—' },
+    {
+      header: t('fields.supplier'),
+      accessor: (r) => (r.supplierId ? supplierNameById.get(r.supplierId) ?? '—' : t('suppliers.generalTaxOption')),
+    },
     { header: t('fields.amount'), accessor: (r) => money(Number(r.amount)), align: 'right' },
     {
       header: t('fields.invoiceOptional'),
@@ -219,6 +251,51 @@ export function SupplierTaxesTab() {
               onChange={(e) => setAmount(e.target.value)}
             />
           </FormField>
+          <div className="col-span-2">
+            <FormField label={t('suppliers.withdrawalSource')}>
+              {/* Live balances, same endpoint/design as AcSupplierDetailPage.tsx's own "تسجيل دفعة"
+                  modal — lets the user see available liquidity before confirming. The account
+                  matching the current selection is highlighted; entering more than that account
+                  actually holds shows a warning below (the real, authoritative check still happens
+                  server-side in AcSupplierTaxPaymentsService via assertSufficientBalance). */}
+              <div className="mb-2 flex flex-wrap gap-2">
+                <div
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                    paymentAccount === 'BANK'
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                      : 'border-[var(--border)] text-[var(--text-muted)]'
+                  }`}
+                >
+                  <span>🏦</span>
+                  <span>
+                    {t('treasury.paymentAccounts.BANK')}: {formatAmount(branchBalanceQuery.data?.bankBalance ?? 0)}
+                  </span>
+                </div>
+                <div
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                    paymentAccount === 'CASH'
+                      ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                      : 'border-[var(--border)] text-[var(--text-muted)]'
+                  }`}
+                >
+                  <span>💵</span>
+                  <span>
+                    {t('treasury.paymentAccounts.CASH')}: {formatAmount(branchBalanceQuery.data?.cashBalance ?? 0)}
+                  </span>
+                </div>
+              </div>
+              <Select required value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}>
+                <option value="CASH">{t('suppliers.withdrawalSourceCash')}</option>
+                <option value="BANK">{t('suppliers.withdrawalSourceBank')}</option>
+              </Select>
+              {(() => {
+                const available =
+                  paymentAccount === 'BANK' ? branchBalanceQuery.data?.bankBalance : branchBalanceQuery.data?.cashBalance;
+                if (available === undefined || Number(amount) <= available) return null;
+                return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
+              })()}
+            </FormField>
+          </div>
           <div className="col-span-2">
             <FormField label={t('fields.invoiceOptional')}>
               <Select value={receiptId} onChange={(e) => setReceiptId(e.target.value)} disabled={!supplierId}>

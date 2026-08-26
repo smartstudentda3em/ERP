@@ -979,7 +979,8 @@
     "totalTaxForPeriod": "إجمالي الضرائب المدفوعة عن الفترة",
     "noSpecificInvoice": "بدون فاتورة محددة",
     "totalIndependentPayments": "إجمالي دفعات المورد المسجلة",
-    "taxesTabLabel": "الضرائب"
+    "taxesTabLabel": "الضرائب",
+    "generalTaxOption": "ضرائب عامة"
   },
   "printingProducts": {
     "addNew": "إضافة منتج جديد",

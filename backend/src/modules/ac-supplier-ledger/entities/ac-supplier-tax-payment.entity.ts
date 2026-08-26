@@ -5,10 +5,15 @@ import { Company } from "../../settings/entities/company.entity";
 import { PurchaseReceipt } from "../../inventory/stock-movements/entities/purchase-receipt.entity";
 
 /**
- * Air Conditioning company only — "ضريبة المبيعات" paid to a supplier, logged invoice by invoice.
- * purchaseReceiptId is optional context linking a tax entry to the purchase it relates to; there is
- * no tax-rate/calculation engine here, this is a manual log. Deliberately not a CashMovement — kept
- * independent of the treasury so it can be totalled for a period on its own.
+ * Air Conditioning company only — "ضريبة المبيعات" paid to a supplier, logged invoice by invoice
+ * from the centralized "الضرائب" tab under الموردون. purchaseReceiptId is optional context linking
+ * a tax entry to the purchase it relates to; there is no tax-rate/calculation engine here, this is
+ * a manual log. Recorded here AND (by explicit request) as a real Cash/Bank treasury debit via
+ * CashMovementsService, linked by CashMovement's sourceType=SUPPLIER_TAX_PAYMENT/sourceId=this
+ * row's id (see AcSupplierTaxPaymentsService.create()) — mirrors AcSupplierPayment's own dual
+ * bookkeeping exactly. supplierId is nullable — a null row is a "ضرائب عامة" (general tax) entry
+ * not attributed to any one supplier, the add form's own explicit picklist option for that case
+ * (see SupplierTaxesTab.tsx) rather than a placeholder/unset value.
  */
 @Entity("ac_supplier_tax_payments")
 export class AcSupplierTaxPayment extends BaseEntity {
@@ -19,12 +24,12 @@ export class AcSupplierTaxPayment extends BaseEntity {
   @JoinColumn({ name: "companyId" })
   company: Company;
 
-  @Column("uuid")
-  supplierId: string;
+  @Column("uuid", { nullable: true })
+  supplierId: string | null;
 
-  @ManyToOne(() => Supplier, { onDelete: "RESTRICT" })
+  @ManyToOne(() => Supplier, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "supplierId" })
-  supplier: Supplier;
+  supplier: Supplier | null;
 
   @Column("uuid", { nullable: true })
   purchaseReceiptId: string | null;

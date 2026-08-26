@@ -115,16 +115,16 @@ interface RepOption {
   name: string;
 }
 
-/** Air Conditioning only — "الضرائب" tab: every "ضريبة المبيعات" entry logged against any supplier
- * (see AcSupplierDetailPage.tsx's own tax tab, where these are normally recorded per-supplier via
- * the standalone ac_supplier_tax_payments ledger). Omitting supplierId from the request returns
- * every supplier's rows combined — see AcSupplierTaxPaymentsService.findAll. */
+/** Air Conditioning only — "الضرائب" tab: every "ضريبة المبيعات" entry logged against any supplier,
+ * plus unattributed "ضرائب عامة" entries (supplierId null — see SupplierTaxesTab.tsx, the
+ * centralized tab under الموردون these are actually recorded from). Omitting supplierId from the
+ * request returns every row combined — see AcSupplierTaxPaymentsService.findAll. */
 interface AcTaxPayment {
   id: string;
   taxDate: string;
   amount: number;
   notes: string | null;
-  supplierId: string;
+  supplierId: string | null;
   createdByName: string;
 }
 
@@ -682,11 +682,14 @@ export function ExpensesPage() {
     { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
   ];
 
-  // Read-only — managed per-supplier from AcSupplierDetailPage.tsx's own "ضريبة المبيعات" tab
+  // Read-only — managed centrally from SupplierTaxesTab.tsx's own "الضرائب" tab under الموردون
   // ("+ تسجيل ضريبة"), same convention as the other read-only tabs here.
   const taxColumns: Column<AcTaxPayment>[] = [
     { header: t('common.date'), accessor: (r) => r.taxDate },
-    { header: t('fields.supplier'), accessor: (r) => supplierNameById.get(r.supplierId) ?? '—' },
+    {
+      header: t('fields.supplier'),
+      accessor: (r) => (r.supplierId ? supplierNameById.get(r.supplierId) ?? '—' : t('suppliers.generalTaxOption')),
+    },
     { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
     { header: t('table.description'), accessor: (r) => r.notes ?? '—' },
     { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },

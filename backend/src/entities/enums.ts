@@ -74,6 +74,13 @@ export enum CashMovementSourceType {
   SALES_PAYMENT = 'SALES_PAYMENT',
   PURCHASE_RECEIPT = 'PURCHASE_RECEIPT',
   SUPPLIER_PAYMENT = 'SUPPLIER_PAYMENT',
+  /** Air Conditioning only — "ضريبة المبيعات" paid to a supplier, logged from the centralized
+   * "الضرائب" tab under الموردون (see AcSupplierTaxPaymentsService/SupplierTaxesTab.tsx). Kept
+   * distinct from SUPPLIER_PAYMENT so the two are never conflated in the Treasury ledger or a
+   * removeBySource() reversal — a tax entry's own AcSupplierTaxPayment row is unrelated to any
+   * regular AcSupplierPayment row. Excluded from getExpenseReport/getProfitReport the same way
+   * SUPPLIER_PAYMENT already is (both are balance-sheet cash-out, not P&L operating expenses). */
+  SUPPLIER_TAX_PAYMENT = 'SUPPLIER_TAX_PAYMENT',
   MANUAL = 'MANUAL',
   /** A partner capital injection — money in that isn't sales revenue, tracked separately so it never inflates the profit/revenue reports. */
   CAPITAL_INJECTION = 'CAPITAL_INJECTION',

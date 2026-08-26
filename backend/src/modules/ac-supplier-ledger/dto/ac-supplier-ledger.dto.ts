@@ -23,8 +23,11 @@ export class CreateAcSupplierPaymentDto {
 }
 
 export class CreateAcSupplierTaxPaymentDto {
+  /** Omitted entirely for a "ضرائب عامة" (general tax) entry not attributed to any one supplier —
+   * see AcSupplierTaxPayment.supplierId's own doc comment. */
+  @IsOptional()
   @IsUUID()
-  supplierId: string;
+  supplierId?: string;
 
   @IsOptional()
   @IsUUID()
@@ -36,6 +39,12 @@ export class CreateAcSupplierTaxPaymentDto {
   @IsNumber()
   @Min(0.01)
   amount: number;
+
+  /** Which treasury account this tax payment is drawn from — الخزينة النقدي (كاش) or الرصيد
+   * البنكي. See AcSupplierTaxPaymentsService.create() for the balance check and the linked
+   * CashMovement. */
+  @IsEnum(CashMovementAccount)
+  paymentAccount: CashMovementAccount;
 
   @IsOptional()
   @IsString()

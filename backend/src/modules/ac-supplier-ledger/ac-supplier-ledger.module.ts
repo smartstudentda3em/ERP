@@ -10,9 +10,10 @@ import { AcSupplierTaxPaymentsService } from './ac-supplier-tax-payments.service
 import { TreasuryModule } from '../treasury/treasury.module';
 
 /**
- * Air Conditioning company only — supplier-debt-payment and sales-tax logs. AcSupplierPaymentsService
- * now depends on TreasuryModule/CashMovementsService (a "تسجيل دفعة" now really debits Cash/Bank —
- * see that service's create()/remove()); AcSupplierTaxPaymentsService stays fully independent of it.
+ * Air Conditioning company only — supplier-debt-payment and sales-tax logs. Both
+ * AcSupplierPaymentsService ("تسجيل دفعة") and AcSupplierTaxPaymentsService ("تسجيل ضريبة") depend
+ * on TreasuryModule/CashMovementsService — each recorded entry really debits the chosen Cash/Bank
+ * account, see their respective create()/remove().
  */
 @Module({
   imports: [TypeOrmModule.forFeature([AcSupplierPayment, AcSupplierTaxPayment, Supplier, Company]), TreasuryModule],

@@ -349,6 +349,14 @@ async function main() {
     'sales.invoice.create',
     'sales.invoice.edit',
     'sales.invoice.delete',
+    // Explicitly requested: a Manager can price a line below its purchase cost without the
+    // ForbiddenException in sales-invoices.service.ts's create() blocking the save — same grant
+    // the Branch Manager ("مدير فرع") role already has below, for the identical reason (clearance,
+    // damaged stock, promotional pricing, correcting a mistaken cost entry, etc.). The
+    // warnOnSellBelowCost company setting still applies — this only lifts the block, not the
+    // check itself, and the inline "⚠ البيع أقل من سعر الشراء" warning in SalesLineEditor.tsx
+    // stays visible regardless.
+    'sales.invoice.sellBelowCost',
     'sales.payment.view',
     'sales.payment.create',
     'sales.payment.edit',

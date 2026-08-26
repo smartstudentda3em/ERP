@@ -346,8 +346,12 @@ export function GuidelinePriceDetailPage() {
       hideOnPrint: true,
     },
     {
+      // سعر الشراء الحقيقي = سعر الشراء + قيمة الضريبة (taxValuePerUnit) − قيمة الخصم — by
+      // explicit request, adds the per-unit tax share back on top instead of only netting the
+      // discount off, so this column and قيمة الضريبة/قيمة الخصم next to it can never disagree.
       header: t('guidelinePrices.netPurchasePrice'),
-      accessor: (r) => formatAmount(r.purchasePrice * (1 - r.discountPercentage / 100)),
+      accessor: (r) =>
+        formatAmount(r.purchasePrice + r.taxValuePerUnit - r.purchasePrice * (r.discountPercentage / 100)),
       hideOnPrint: true,
     },
     {

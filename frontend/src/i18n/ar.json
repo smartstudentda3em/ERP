@@ -1152,6 +1152,7 @@
     "capacity": "القدرة",
     "sku": "رمز الصنف",
     "itemName": "اسم الصنف",
+    "quantityPurchased": "عدد العبوات المشتراة",
     "purchasePrice": "سعر الشراء",
     "discountValue": "قيمة الخصم",
     "netPurchasePrice": "سعر الشراء الحقيقي",

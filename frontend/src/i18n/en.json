@@ -1152,6 +1152,7 @@
     "capacity": "Capacity",
     "sku": "SKU",
     "itemName": "Item Name",
+    "quantityPurchased": "Quantity Purchased",
     "purchasePrice": "Purchase Price",
     "discountValue": "Discount Value",
     "netPurchasePrice": "Net Purchase Price",

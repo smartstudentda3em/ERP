@@ -98,7 +98,10 @@ export class GuidelinePricesService {
   /** Powers the Guideline Price detail page's auto-populated product list: every product ever
    * bought from this supplier, each with its most recent real purchase price (free-goods receipts
    * excluded — their price is always forced to 0 and would otherwise mask the real figure if one
-   * happened to be the latest receipt). One row per product via DISTINCT ON, latest receipt wins. */
+   * happened to be the latest receipt). One row per product via DISTINCT ON, latest receipt wins.
+   * quantityPurchased is a window-function SUM over every one of that product's receipts from this
+   * supplier (same free-goods exclusion — "عدد العبوات المشتراة" means actually paid-for packages,
+   * not bonus stock), computed off this same purchase_receipts scan rather than a second query. */
   async findSupplierProducts(
     supplierId: string,
     companyId: string,
@@ -118,6 +121,9 @@ export class GuidelinePricesService {
        * the guideline price being set on this page. Deliberately the package price, not the
        * per-unit price, since the factory sells this product to us by the carton. */
       packageSellingPrice: number | null;
+      /** Total packages purchased from this supplier across every (non-free-goods) receipt of this
+       * product — "عدد العبوات المشتراة" on the detail page's product table. */
+      quantityPurchased: number;
     }[]
   > {
     return this.dataSource.query(
@@ -131,7 +137,8 @@ export class GuidelinePricesService {
          p."packageSellingPrice" AS "packageSellingPrice",
          b."nameEn"              AS "brandNameEn",
          b."nameAr"              AS "brandNameAr",
-         t."rate"                AS "taxRate"
+         t."rate"                AS "taxRate",
+         SUM(pr."quantityPackages") OVER (PARTITION BY pr."productId") AS "quantityPurchased"
        FROM purchase_receipts pr
        JOIN products p ON p.id = pr."productId"
        LEFT JOIN brands b ON b.id = p."brandId"

@@ -55,6 +55,9 @@ interface SupplierProductPrice {
   taxRate: number | null;
   purchasePrice: number;
   packageSellingPrice: number | null;
+  /** Total packages bought from this supplier across every (non-free-goods) receipt of this
+   * product — see GuidelinePricesService.findSupplierProducts. */
+  quantityPurchased: number;
 }
 
 interface ProductRow {
@@ -66,6 +69,9 @@ interface ProductRow {
   name: string;
   capacity: string;
   brand: string;
+  /** Total packages bought from this product's own supplier — "عدد العبوات المشتراة" — 0 for a
+   * fallback row with no purchase history at all (see the rows useMemo below). */
+  quantityPurchased: number;
   purchasePrice: number;
   taxRate: number;
   discountPercentage: number;
@@ -185,6 +191,7 @@ export function GuidelinePriceDetailPage() {
           taxRate: Number(p.taxRate) || 0,
           discountPercentage: Number(sheet.discountPercentage) || 0,
           purchasePrice: Number(p.purchasePrice) || 0,
+          quantityPurchased: Number(p.quantityPurchased) || 0,
           factorySellingPrice: Number(p.packageSellingPrice) || 0,
         });
       }
@@ -205,6 +212,7 @@ export function GuidelinePriceDetailPage() {
             taxRate: Number(line.product?.tax?.rate) || 0,
             discountPercentage: Number(sheet.discountPercentage) || 0,
             purchasePrice: 0,
+            quantityPurchased: 0,
             factorySellingPrice: Number(line.product?.packageSellingPrice) || 0,
           });
         }
@@ -310,6 +318,12 @@ export function GuidelinePriceDetailPage() {
     { header: t('guidelinePrices.brand'), accessor: (r) => r.brand },
     { header: t('guidelinePrices.sku'), accessor: (r) => r.sku },
     { header: t('guidelinePrices.itemName'), accessor: (r) => r.name },
+    {
+      header: t('guidelinePrices.quantityPurchased'),
+      accessor: (r) => formatAmount(r.quantityPurchased),
+      align: 'right',
+      hideOnPrint: true,
+    },
     { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice), hideOnPrint: true },
     {
       header: t('guidelinePrices.discountValue'),

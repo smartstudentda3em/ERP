@@ -2,13 +2,11 @@ import { Column, Entity, JoinColumn, ManyToOne } from "typeorm";
 import { BaseEntity } from "../../../entities/base.entity";
 import { Supplier } from "../../parties/suppliers/entities/supplier.entity";
 import { Company } from "../../settings/entities/company.entity";
-import { PurchaseReceipt } from "../../inventory/stock-movements/entities/purchase-receipt.entity";
 
 /**
- * Air Conditioning company only — "ضريبة المبيعات" paid to a supplier, logged invoice by invoice
- * from the centralized "الضرائب" tab under الموردون. purchaseReceiptId is optional context linking
- * a tax entry to the purchase it relates to; there is no tax-rate/calculation engine here, this is
- * a manual log. Recorded here AND (by explicit request) as a real Cash/Bank treasury debit via
+ * Air Conditioning company only — "ضريبة المبيعات" paid to a supplier, logged from the centralized
+ * "الضرائب" tab under الموردون; there is no tax-rate/calculation engine here, this is a manual log.
+ * Recorded here AND (by explicit request) as a real Cash/Bank treasury debit via
  * CashMovementsService, linked by CashMovement's sourceType=SUPPLIER_TAX_PAYMENT/sourceId=this
  * row's id (see AcSupplierTaxPaymentsService.create()) — mirrors AcSupplierPayment's own dual
  * bookkeeping exactly. supplierId is nullable — a null row is a "ضرائب عامة" (general tax) entry
@@ -30,13 +28,6 @@ export class AcSupplierTaxPayment extends BaseEntity {
   @ManyToOne(() => Supplier, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "supplierId" })
   supplier: Supplier | null;
-
-  @Column("uuid", { nullable: true })
-  purchaseReceiptId: string | null;
-
-  @ManyToOne(() => PurchaseReceipt, { onDelete: "SET NULL", nullable: true })
-  @JoinColumn({ name: "purchaseReceiptId" })
-  purchaseReceipt: PurchaseReceipt | null;
 
   @Column({ type: "date" })
   taxDate: string;

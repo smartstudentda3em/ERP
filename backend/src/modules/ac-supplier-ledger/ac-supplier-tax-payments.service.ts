@@ -72,7 +72,6 @@ export class AcSupplierTaxPaymentsService {
         manager.getRepository(AcSupplierTaxPayment).create({
           supplierId: dto.supplierId ?? null,
           companyId,
-          purchaseReceiptId: dto.purchaseReceiptId ?? null,
           taxDate: dto.taxDate,
           amount: dto.amount,
           notes: dto.notes ?? null,

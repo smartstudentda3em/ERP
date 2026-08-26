@@ -29,10 +29,6 @@ export class CreateAcSupplierTaxPaymentDto {
   @IsUUID()
   supplierId?: string;
 
-  @IsOptional()
-  @IsUUID()
-  purchaseReceiptId?: string;
-
   @IsDateString()
   taxDate: string;
 

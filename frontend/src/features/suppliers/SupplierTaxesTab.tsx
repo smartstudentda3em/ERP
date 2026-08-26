@@ -27,20 +27,12 @@ interface BranchBalanceSummary {
   bankBalance: number;
 }
 
-interface PurchaseReceiptOption {
-  id: string;
-  documentNumber: string;
-  receiptDate: string;
-  supplierId: string;
-}
-
 interface AcTaxPayment {
   id: string;
   taxDate: string;
   amount: number;
   notes?: string | null;
   supplierId: string | null;
-  purchaseReceiptId?: string | null;
   createdByName: string;
 }
 
@@ -72,11 +64,13 @@ export function SupplierTaxesTab() {
   const companyId = useAuthStore((s) => s.user?.companyId);
 
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
+  // Own search box (DataTable's built-in one is turned off — see searchable={false} below) so it
+  // can sit in the same header row as the date filters and the total, per explicit request.
+  const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
   const [supplierId, setSupplierId] = useState('');
   const [amount, setAmount] = useState('0');
   const [taxDate, setTaxDate] = useState(localToday());
-  const [receiptId, setReceiptId] = useState('');
   const [notes, setNotes] = useState('');
   const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK'>('CASH');
 
@@ -97,20 +91,6 @@ export function SupplierTaxesTab() {
     [suppliersQuery.data, t],
   );
 
-  // Only needed for the add form's optional "الفاتورة" picker — fetched once the modal is open,
-  // same convention as the per-supplier page this replaces.
-  const receiptsQuery = useQuery({
-    queryKey: ['purchase-receipts', companyId],
-    queryFn: () => unwrap<PurchaseReceiptOption[]>(apiClient.get('/inventory/purchase-receipts', { params: { companyId } })),
-    enabled: !!companyId && open,
-  });
-  // Narrowed to the chosen supplier — a receipt from a different supplier would never be a valid
-  // reference for this tax entry.
-  const receiptOptionsForSupplier = useMemo(
-    () => (receiptsQuery.data ?? []).filter((r) => r.supplierId === supplierId),
-    [receiptsQuery.data, supplierId],
-  );
-
   // Live Cash/Bank balances for the modal's payment-source badges below — same /dashboard/summary
   // endpoint and design as AcSupplierDetailPage.tsx's own "تسجيل دفعة" modal, only fetched while
   // this modal is actually open.
@@ -129,6 +109,20 @@ export function SupplierTaxesTab() {
     () => (taxQuery.data ?? []).filter((r) => inDateRange(r.taxDate, dateRange)),
     [taxQuery.data, dateRange],
   );
+  function supplierLabel(supplierId: string | null): string {
+    return supplierId ? supplierNameById.get(supplierId) ?? '—' : t('suppliers.generalTaxOption');
+  }
+  // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the same
+  // pattern (turned off here via searchable={false} so this custom box can live in the header row).
+  const searchedTax = useMemo(() => {
+    const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (keywords.length === 0) return filteredTax;
+    return filteredTax.filter((r) => {
+      const haystack = [supplierLabel(r.supplierId), r.notes, r.createdByName].filter(Boolean).join(' ').toLowerCase();
+      return keywords.every((kw) => haystack.includes(kw));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredTax, search, supplierNameById]);
   const totalTax = filteredTax.reduce((sum, r) => sum + Number(r.amount), 0);
 
   function invalidateTax() {
@@ -141,7 +135,6 @@ export function SupplierTaxesTab() {
         supplierId: supplierId === GENERAL_TAX_VALUE ? undefined : supplierId,
         taxDate,
         amount: Number(amount),
-        purchaseReceiptId: receiptId || undefined,
         paymentAccount,
         notes: notes || undefined,
       }),
@@ -151,7 +144,6 @@ export function SupplierTaxesTab() {
       setSupplierId('');
       setAmount('0');
       setTaxDate(localToday());
-      setReceiptId('');
       setNotes('');
       setPaymentAccount('CASH');
       toast.success(t('suppliers.taxSavedSuccess'));
@@ -175,15 +167,8 @@ export function SupplierTaxesTab() {
 
   const columns: Column<AcTaxPayment>[] = [
     { header: t('common.date'), accessor: (r) => r.taxDate },
-    {
-      header: t('fields.supplier'),
-      accessor: (r) => (r.supplierId ? supplierNameById.get(r.supplierId) ?? '—' : t('suppliers.generalTaxOption')),
-    },
+    { header: t('fields.supplier'), accessor: (r) => supplierLabel(r.supplierId) },
     { header: t('fields.amount'), accessor: (r) => money(Number(r.amount)), align: 'right' },
-    {
-      header: t('fields.invoiceOptional'),
-      accessor: (r) => (receiptsQuery.data ?? []).find((rec) => rec.id === r.purchaseReceiptId)?.documentNumber ?? '—',
-    },
     { header: t('table.description'), accessor: (r) => r.notes ?? '—' },
     { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
     {
@@ -204,17 +189,26 @@ export function SupplierTaxesTab() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        <div className="min-w-[180px] max-w-xs flex-1">
+          <Input placeholder={t('common.search') ?? ''} value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
         <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-[var(--table-header-bg)] px-3 py-1.5 text-sm font-medium">
+          <div className="whitespace-nowrap rounded-lg bg-[var(--table-header-bg)] px-3 py-1.5 text-sm font-medium">
             {t('suppliers.totalTaxForPeriod')}: <span className="font-semibold">{money(totalTax)}</span>
           </div>
           <Button onClick={() => setOpen(true)}>+ {t('actions.recordTax')}</Button>
         </div>
       </div>
 
-      <DataTable columns={columns} data={filteredTax} keyField={(r) => r.id} isLoading={taxQuery.isLoading} />
+      <DataTable
+        columns={columns}
+        data={searchedTax}
+        keyField={(r) => r.id}
+        isLoading={taxQuery.isLoading}
+        searchable={false}
+      />
 
       <Modal open={open} onClose={() => setOpen(false)} title={t('actions.recordTax')}>
         <form
@@ -229,10 +223,7 @@ export function SupplierTaxesTab() {
               <SearchableSelect
                 options={supplierOptions}
                 value={supplierId}
-                onChange={(v) => {
-                  setSupplierId(v);
-                  setReceiptId('');
-                }}
+                onChange={setSupplierId}
                 placeholder={t('actions.selectSupplier') ?? ''}
                 required
               />
@@ -294,18 +285,6 @@ export function SupplierTaxesTab() {
                 if (available === undefined || Number(amount) <= available) return null;
                 return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
               })()}
-            </FormField>
-          </div>
-          <div className="col-span-2">
-            <FormField label={t('fields.invoiceOptional')}>
-              <Select value={receiptId} onChange={(e) => setReceiptId(e.target.value)} disabled={!supplierId}>
-                <option value="">{t('suppliers.noSpecificInvoice')}</option>
-                {receiptOptionsForSupplier.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.documentNumber} — {r.receiptDate}
-                  </option>
-                ))}
-              </Select>
             </FormField>
           </div>
           <div className="col-span-2">

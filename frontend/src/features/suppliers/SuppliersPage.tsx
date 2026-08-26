@@ -10,8 +10,17 @@ import { ShipmentPaymentsTab } from './ShipmentPaymentsTab';
 import { PurchasingTab, PurchasingTabHandle } from '../purchasing/PurchasingPage';
 import { ProductsTab, ProductsTabHandle } from '../inventory/ProductsPage';
 import { GuidelinePricesTab } from '../sales/GuidelinePricesTab';
+import { SupplierTaxesTab } from './SupplierTaxesTab';
 
-type Tab = 'suppliers' | 'cargo' | 'shipping' | 'shipmentPayments' | 'products' | 'purchasing' | 'guidelinePrices';
+type Tab =
+  | 'suppliers'
+  | 'cargo'
+  | 'shipping'
+  | 'shipmentPayments'
+  | 'products'
+  | 'purchasing'
+  | 'guidelinePrices'
+  | 'taxes';
 
 /**
  * The "الاستيراد" (Import) section: three tabs sharing one screen — Suppliers (who goods are
@@ -32,7 +41,10 @@ type Tab = 'suppliers' | 'cargo' | 'shipping' | 'shipmentPayments' | 'products' 
  * "الموردون" for AC only, see Sidebar.tsx), with the Suppliers table itself gaining a
  * "الرصيد المتبقي" column in their place — see SuppliersTab.tsx. AC also gets a second tab here,
  * "الأسعار الاسترشادية" (GuidelinePricesTab), relocated from the Quotations screen so everything
- * supplier- and guideline-price-related lives in one place for this tenant.
+ * supplier- and guideline-price-related lives in one place for this tenant. A third tab, "الضرائب"
+ * (SupplierTaxesTab), centralizes every supplier's "ضريبة المبيعات" entries here too — by explicit
+ * request, replacing the per-supplier tax tab that used to live on each supplier's own detail page
+ * (AcSupplierDetailPage.tsx no longer has one).
  *
  * Print/PDF only apply to the Cargo tab (Stationery) and the Purchase Invoice tab (Printing
  * Press), but sit in this shared top bar (opposite the page title, unlike a plain PageHeader)
@@ -55,7 +67,8 @@ export function SuppliersPage() {
       initialTab === 'cargo' ||
       initialTab === 'shipping' ||
       initialTab === 'shipmentPayments' ||
-      initialTab === 'guidelinePrices'
+      initialTab === 'guidelinePrices' ||
+      initialTab === 'taxes'
       ? initialTab
       : 'suppliers',
   );
@@ -88,6 +101,7 @@ export function SuppliersPage() {
       ? [
           { key: 'suppliers', label: t('nav.suppliers') },
           { key: 'guidelinePrices', label: t('guidelinePrices.tabLabel') },
+          { key: 'taxes', label: t('suppliers.taxesTabLabel') },
         ]
       : [
           { key: 'suppliers', label: t('nav.suppliers') },
@@ -168,6 +182,7 @@ export function SuppliersPage() {
         <PurchasingTab ref={purchasingRef} onPdfLoadingChange={setPurchasingPdfLoading} />
       )}
       {tab === 'guidelinePrices' && <GuidelinePricesTab />}
+      {tab === 'taxes' && <SupplierTaxesTab />}
     </div>
   );
 }

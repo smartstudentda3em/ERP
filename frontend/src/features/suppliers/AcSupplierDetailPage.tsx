@@ -37,7 +37,7 @@ import { localToday } from '../../lib/date-utils';
  * removed entirely by an earlier explicit request; it no longer exists anywhere in this screen.
  */
 
-type Tab = 'payments' | 'purchases' | 'tax';
+type Tab = 'payments' | 'purchases';
 type Quarter = 'ALL' | 'Q1' | 'Q2' | 'Q3' | 'Q4';
 
 /** Only the two fields this page reads off /dashboard/summary — same endpoint
@@ -76,15 +76,6 @@ interface AcSupplierPayment {
   paymentDate: string;
   amount: number;
   notes?: string | null;
-  createdByName: string;
-}
-
-interface AcSupplierTaxPayment {
-  id: string;
-  taxDate: string;
-  amount: number;
-  notes?: string | null;
-  purchaseReceiptId?: string | null;
   createdByName: string;
 }
 
@@ -127,12 +118,6 @@ export function AcSupplierDetailPage() {
   const [payNotes, setPayNotes] = useState('');
   const [payAccount, setPayAccount] = useState<'CASH' | 'BANK'>('CASH');
 
-  const [taxOpen, setTaxOpen] = useState(false);
-  const [taxAmount, setTaxAmount] = useState('0');
-  const [taxDate, setTaxDate] = useState(localToday());
-  const [taxReceiptId, setTaxReceiptId] = useState('');
-  const [taxNotes, setTaxNotes] = useState('');
-
   const suppliersQuery = useQuery({
     queryKey: ['suppliers', companyId],
     queryFn: () => unwrap<Supplier[]>(apiClient.get('/suppliers', { params: { companyId } })),
@@ -156,15 +141,6 @@ export function AcSupplierDetailPage() {
     queryKey: ['ac-supplier-payments', companyId, id],
     queryFn: () =>
       unwrap<AcSupplierPayment[]>(apiClient.get('/ac-supplier-payments', { params: { companyId, supplierId: id } })),
-    enabled: !!companyId && !!id,
-  });
-
-  const taxQuery = useQuery({
-    queryKey: ['ac-supplier-tax-payments', companyId, id],
-    queryFn: () =>
-      unwrap<AcSupplierTaxPayment[]>(
-        apiClient.get('/ac-supplier-tax-payments', { params: { companyId, supplierId: id } }),
-      ),
     enabled: !!companyId && !!id,
   });
 
@@ -205,15 +181,6 @@ export function AcSupplierDetailPage() {
   const filteredPayments = useMemo(
     () => (acPaymentsQuery.data ?? []).filter((p) => inDateRange(p.paymentDate, dateRange)),
     [acPaymentsQuery.data, dateRange],
-  );
-
-  const filteredTaxPayments = useMemo(
-    () => (taxQuery.data ?? []).filter((p) => inDateRange(p.taxDate, dateRange)),
-    [taxQuery.data, dateRange],
-  );
-  const totalTaxForPeriod = useMemo(
-    () => filteredTaxPayments.reduce((sum, p) => sum + Number(p.amount ?? 0), 0),
-    [filteredTaxPayments],
   );
 
   /**
@@ -269,10 +236,6 @@ export function AcSupplierDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
   }
 
-  function invalidateTax() {
-    queryClient.invalidateQueries({ queryKey: ['ac-supplier-tax-payments', companyId, id] });
-  }
-
   // Draws the amount from the chosen treasury account (see paymentAccount) and records it as a
   // "دفعة مورد" in the same standalone log, in one server-side transaction — see
   // AcSupplierPaymentsService.create().
@@ -310,41 +273,6 @@ export function AcSupplierDetailPage() {
     if (ok) deletePaymentMutation.mutate(p.id);
   }
 
-  const taxMutation = useMutation({
-    mutationFn: () =>
-      apiClient.post('/ac-supplier-tax-payments', {
-        supplierId: id,
-        taxDate,
-        amount: Number(taxAmount),
-        purchaseReceiptId: taxReceiptId || undefined,
-        notes: taxNotes || undefined,
-      }),
-    onSuccess: () => {
-      invalidateTax();
-      setTaxOpen(false);
-      setTaxAmount('0');
-      setTaxDate(localToday());
-      setTaxReceiptId('');
-      setTaxNotes('');
-      toast.success(t('suppliers.taxSavedSuccess'));
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
-  });
-
-  const deleteTaxMutation = useMutation({
-    mutationFn: (taxId: string) => apiClient.delete(`/ac-supplier-tax-payments/${taxId}`),
-    onSuccess: () => {
-      invalidateTax();
-      toast.success(t('common.deletedSuccessfully'));
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
-  });
-
-  async function handleDeleteTax(p: AcSupplierTaxPayment) {
-    const ok = await confirm({ message: t('common.confirmDelete', { name: money(Number(p.amount)) }) });
-    if (ok) deleteTaxMutation.mutate(p.id);
-  }
-
   const paymentColumns: Column<AcSupplierPayment>[] = [
     { header: t('common.date'), accessor: (r) => r.paymentDate },
     { header: t('fields.amount'), accessor: (r) => money(Number(r.amount)), align: 'right' },
@@ -358,31 +286,6 @@ export function AcSupplierDetailPage() {
           className="text-red-600 hover:underline"
           disabled={deletePaymentMutation.isPending}
           onClick={() => handleDeletePayment(r)}
-        >
-          {t('common.delete')}
-        </button>
-      ),
-      align: 'center',
-    },
-  ];
-
-  const taxColumns: Column<AcSupplierTaxPayment>[] = [
-    { header: t('common.date'), accessor: (r) => r.taxDate },
-    { header: t('fields.amount'), accessor: (r) => money(Number(r.amount)), align: 'right' },
-    {
-      header: t('fields.invoiceOptional'),
-      accessor: (r) => allSupplierReceipts.find((rec) => rec.id === r.purchaseReceiptId)?.documentNumber ?? '—',
-    },
-    { header: t('table.description'), accessor: (r) => r.notes ?? '—' },
-    { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
-    {
-      header: t('common.actions'),
-      accessor: (r) => (
-        <button
-          type="button"
-          className="text-red-600 hover:underline"
-          disabled={deleteTaxMutation.isPending}
-          onClick={() => handleDeleteTax(r)}
         >
           {t('common.delete')}
         </button>
@@ -464,12 +367,6 @@ export function AcSupplierDetailPage() {
         >
           {t('nav.purchasing')}
         </button>
-        <button
-          className={`rounded-lg px-3 py-1.5 ${tab === 'tax' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
-          onClick={() => setTab('tax')}
-        >
-          {t('suppliers.salesTaxTab')}
-        </button>
       </div>
 
       {tab === 'payments' && (
@@ -521,23 +418,6 @@ export function AcSupplierDetailPage() {
             />
           </div>
         </div>
-      )}
-
-      {tab === 'tax' && (
-        <>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="rounded-lg bg-[var(--table-header-bg)] px-3 py-1.5 text-sm font-medium">
-              {t('suppliers.totalTaxForPeriod')}: <span className="font-semibold">{money(totalTaxForPeriod)}</span>
-            </div>
-            <Button onClick={() => setTaxOpen(true)}>+ {t('actions.recordTax')}</Button>
-          </div>
-          <DataTable
-            columns={taxColumns}
-            data={filteredTaxPayments}
-            keyField={(r) => r.id}
-            isLoading={taxQuery.isLoading}
-          />
-        </>
       )}
 
       <Modal open={payOpen} onClose={() => setPayOpen(false)} title={t('actions.recordPayment')}>
@@ -617,55 +497,6 @@ export function AcSupplierDetailPage() {
               {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={payMutation.isPending}>
-              {t('common.save')}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      <Modal open={taxOpen} onClose={() => setTaxOpen(false)} title={t('actions.recordTax')}>
-        <form
-          className="grid grid-cols-2 gap-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            taxMutation.mutate();
-          }}
-        >
-          <FormField label={t('common.date')}>
-            <Input type="date" required value={taxDate} onChange={(e) => setTaxDate(e.target.value)} />
-          </FormField>
-          <FormField label={t('fields.amount')}>
-            <Input
-              type="number"
-              step="0.01"
-              min="0.01"
-              required
-              value={taxAmount}
-              onChange={(e) => setTaxAmount(e.target.value)}
-            />
-          </FormField>
-          <div className="col-span-2">
-            <FormField label={t('fields.invoiceOptional')}>
-              <Select value={taxReceiptId} onChange={(e) => setTaxReceiptId(e.target.value)}>
-                <option value="">{t('suppliers.noSpecificInvoice')}</option>
-                {allSupplierReceipts.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.documentNumber} — {r.receiptDate}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-          </div>
-          <div className="col-span-2">
-            <FormField label={t('table.description')}>
-              <Input value={taxNotes} onChange={(e) => setTaxNotes(e.target.value)} />
-            </FormField>
-          </div>
-          <div className="col-span-2 mt-2 flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setTaxOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" disabled={taxMutation.isPending}>
               {t('common.save')}
             </Button>
           </div>

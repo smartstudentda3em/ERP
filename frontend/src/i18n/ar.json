@@ -314,6 +314,8 @@
     "totalManagerPartnerProfits": "إجمالي الأرباح المصروفة",
     "commissionPayoutsTab": "العمولات المصروفة",
     "totalCommissionPayouts": "إجمالي العمولات المصروفة",
+    "taxTab": "الضرائب",
+    "totalTax": "إجمالي الضرائب",
     "commissionBeneficiaryType": "نوع المستفيد",
     "commissionBeneficiaryTypes": {
       "MANAGER": "مدير فرع",

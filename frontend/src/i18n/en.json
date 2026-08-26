@@ -314,6 +314,8 @@
     "totalManagerPartnerProfits": "Total Distributed Profits",
     "commissionPayoutsTab": "Disbursed Commissions",
     "totalCommissionPayouts": "Total Commission Payouts",
+    "taxTab": "Taxes",
+    "totalTax": "Total Taxes",
     "commissionBeneficiaryType": "Beneficiary Type",
     "commissionBeneficiaryTypes": {
       "MANAGER": "Branch Manager",

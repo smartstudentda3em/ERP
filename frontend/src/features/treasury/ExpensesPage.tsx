@@ -115,6 +115,24 @@ interface RepOption {
   name: string;
 }
 
+/** Air Conditioning only — "الضرائب" tab: every "ضريبة المبيعات" entry logged against any supplier
+ * (see AcSupplierDetailPage.tsx's own tax tab, where these are normally recorded per-supplier via
+ * the standalone ac_supplier_tax_payments ledger). Omitting supplierId from the request returns
+ * every supplier's rows combined — see AcSupplierTaxPaymentsService.findAll. */
+interface AcTaxPayment {
+  id: string;
+  taxDate: string;
+  amount: number;
+  notes: string | null;
+  supplierId: string;
+  createdByName: string;
+}
+
+interface SupplierOption {
+  id: string;
+  companyName: string;
+}
+
 /** Printing Press only — one row per purchase receipt, backing the "مشتريات المواد الخام" tab
  * instead of COGS. Reuses the same GET /inventory/purchase-receipts resource ProductsPage.tsx's
  * raw-materials report already fetches for this tenant. */
@@ -128,7 +146,7 @@ interface PurchaseReceipt {
   supplier: { companyName: string } | null;
 }
 
-type Tab = 'operating' | 'cogs' | 'salaries' | 'profits' | 'commissionPayouts' | 'disbursedProfits';
+type Tab = 'operating' | 'cogs' | 'salaries' | 'profits' | 'commissionPayouts' | 'disbursedProfits' | 'tax';
 
 function money(n: number): string {
   return formatAmount(n);
@@ -290,6 +308,23 @@ export function ExpensesPage() {
     enabled: !!companyId && (isStationery || isAirConditioning),
   });
 
+  // Air Conditioning only — "الضرائب" tab: every supplier's ضريبة المبيعات entries combined
+  // (omitting supplierId returns the whole company's rows — see AcSupplierTaxPaymentsService).
+  // The endpoint carries no server-side date filter, so it's fetched once per company and narrowed
+  // client-side, same convention as rawMaterialPurchasesQuery/dateFilteredRawMaterialPurchases above.
+  const acTaxPaymentsQuery = useQuery({
+    queryKey: ['ac-supplier-tax-payments', companyId],
+    queryFn: () => unwrap<AcTaxPayment[]>(apiClient.get('/ac-supplier-tax-payments', { params: { companyId } })),
+    enabled: !!companyId && isAirConditioning,
+  });
+  // Air Conditioning only — supplier names for the "الضرائب" tab's table (the tax endpoint itself
+  // returns only supplierId, matching AcSupplierDetailPage.tsx's own per-supplier tax tab).
+  const acSuppliersQuery = useQuery({
+    queryKey: ['suppliers', companyId],
+    queryFn: () => unwrap<SupplierOption[]>(apiClient.get('/suppliers', { params: { companyId } })),
+    enabled: !!companyId && isAirConditioning,
+  });
+
   // Stationery only — "الأرباح المصروفة" tab's two beneficiary picklists, and its own two
   // independently-filtered queries (each narrowed by its own select below, unlike the unfiltered
   // commissionPayoutsQuery above which always feeds the separate "العمولات المصروفة" tab's full list).
@@ -371,6 +406,17 @@ export function ExpensesPage() {
         (r) => inDateRange(r.receiptDate, dateRange) && matchesBranch(r.branchId),
       ),
     [rawMaterialPurchasesQuery.data, dateRange, branchFilter],
+  );
+  // Air Conditioning only — "الضرائب" tab, date-filtered client-side (no branch dimension: these
+  // entries aren't tied to a branch, and AC has a single real branch anyway — see the
+  // companyWideTotal/grandTotal note above).
+  const dateFilteredTaxPayments = useMemo(
+    () => (acTaxPaymentsQuery.data ?? []).filter((r) => inDateRange(r.taxDate, dateRange)),
+    [acTaxPaymentsQuery.data, dateRange],
+  );
+  const supplierNameById = useMemo(
+    () => new Map((acSuppliersQuery.data ?? []).map((s) => [s.id, s.companyName])),
+    [acSuppliersQuery.data],
   );
 
   const createMutation = useMutation({
@@ -504,19 +550,22 @@ export function ExpensesPage() {
   const totalSalaries = filteredSalaries.reduce((sum, s) => sum + s.amount, 0);
   const totalProfitsPaidOut = filteredProfits.reduce((sum, p) => sum + p.amount, 0);
   const totalCommissionPayouts = (commissionPayoutsQuery.data ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+  const totalTax = dateFilteredTaxPayments.reduce((sum, r) => sum + Number(r.amount), 0);
   // Printing Press's second tab totals raw material purchases instead of COGS — see tabs/columns
   // below — so the grand total follows suit for this tenant only.
   const secondTabTotal = isPrintingPress ? totalRawMaterialPurchases : totalCogs;
   // Grand total across all expense types shown on this screen: operating + raw materials/COGS +
-  // salaries + (Printing Press only) manager/partner profit payouts + (Stationery only) مندوب
-  // commission payouts. Moves with the branch filter — this is the "sub-total" the request refers
-  // to, shown next to the branch-independent companyWideTotal below.
+  // salaries + (Printing Press only) manager/partner profit payouts + (Stationery/AC only) مندوب
+  // commission payouts + (Air Conditioning only) ضريبة المبيعات. Moves with the branch filter —
+  // this is the "sub-total" the request refers to, shown next to the branch-independent
+  // companyWideTotal below.
   const grandTotal =
     totalExpenses +
     secondTabTotal +
     totalSalaries +
     (isPrintingPress ? totalProfitsPaidOut : 0) +
-    (isStationery || isAirConditioning ? totalCommissionPayouts : 0);
+    (isStationery || isAirConditioning ? totalCommissionPayouts : 0) +
+    (isAirConditioning ? totalTax : 0);
 
   // Same formula as grandTotal, but deliberately sourced from every branch (ignores branchFilter —
   // only the date range still applies) — "إجمالي الشركة ككل" stays fixed as the branch filter above
@@ -534,7 +583,8 @@ export function ExpensesPage() {
     secondTabTotalAllBranches +
     totalSalariesAllBranches +
     (isPrintingPress ? totalProfitsAllBranches : 0) +
-    (isStationery || isAirConditioning ? totalCommissionPayouts : 0);
+    (isStationery || isAirConditioning ? totalCommissionPayouts : 0) +
+    (isAirConditioning ? totalTax : 0);
 
   const secondTabCount = isPrintingPress ? dateFilteredRawMaterialPurchases.length : (cogsQuery.data ?? []).length;
   // The transaction-count badge next to each tab's name — the whole reason this exists is so a
@@ -560,6 +610,11 @@ export function ExpensesPage() {
             count: (commissionPayoutsQuery.data ?? []).length,
           },
         ]
+      : []),
+    // Air Conditioning only — "ضريبة المبيعات" entries logged per supplier (see acTaxPaymentsQuery
+    // above), folded into grandTotal/companyWideTotal alongside every other expense type here.
+    ...(isAirConditioning
+      ? [{ key: 'tax' as Tab, label: t('accounting.taxTab'), count: dateFilteredTaxPayments.length }]
       : []),
     // Combines commission payouts with partner dividends into one beneficiary-filterable log —
     // Air Conditioning has no partners/dividends concept wired up, so this stays Stationery-only
@@ -624,6 +679,16 @@ export function ExpensesPage() {
     { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
     { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.account}`) },
     { header: t('table.description'), accessor: (r) => r.description ?? '—' },
+    { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
+  ];
+
+  // Read-only — managed per-supplier from AcSupplierDetailPage.tsx's own "ضريبة المبيعات" tab
+  // ("+ تسجيل ضريبة"), same convention as the other read-only tabs here.
+  const taxColumns: Column<AcTaxPayment>[] = [
+    { header: t('common.date'), accessor: (r) => r.taxDate },
+    { header: t('fields.supplier'), accessor: (r) => supplierNameById.get(r.supplierId) ?? '—' },
+    { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
+    { header: t('table.description'), accessor: (r) => r.notes ?? '—' },
     { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
   ];
 
@@ -883,6 +948,24 @@ export function ExpensesPage() {
             data={commissionPayoutsQuery.data ?? []}
             keyField={(r) => r.id}
             isLoading={commissionPayoutsQuery.isLoading}
+          />
+        </>
+      )}
+
+      {tab === 'tax' && (
+        <>
+          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="text-xs text-[var(--text-muted)]">{t('accounting.totalTax')}</div>
+              <div className="mt-1 text-2xl font-semibold">{money(totalTax)}</div>
+            </div>
+          </div>
+
+          <DataTable
+            columns={taxColumns}
+            data={dateFilteredTaxPayments}
+            keyField={(r) => r.id}
+            isLoading={acTaxPaymentsQuery.isLoading}
           />
         </>
       )}

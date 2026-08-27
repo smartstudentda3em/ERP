@@ -85,7 +85,7 @@ function quarterDateRange(year: number, quarter: Quarter): { dateFrom: string; d
 
 export function SalesReportPage() {
   const { t } = useTranslation();
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isAirConditioning } = useActiveCompany();
   const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const printRef = useRef<HTMLDivElement>(null);
@@ -190,20 +190,29 @@ export function SalesReportPage() {
     },
     isPrintingPress
       ? { header: t('fields.branch'), accessor: (r: SalesLine) => r.branchName ?? '—' }
-      : {
-          header: t('fields.salesRepresentative'),
-          accessor: (r: SalesLine) =>
-            r.salesRepresentativeIsBranchManager ? (
-              <span className="inline-flex items-center gap-1.5">
-                <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 dark:bg-primary-500/15 dark:text-primary-300">
-                  {t('salesRepresentativesReports.branchManager')}
+      : isAirConditioning
+        ? {
+            // Air Conditioning: every invoice's "salesRepresentative" slot is always a مدير فرع by
+            // design (the AC-only managed sales process — see SalesInvoicesService.create()), so
+            // the badge STAT still shows below would be redundant on every single row once the
+            // header itself already says "مدير الفرع" — just the plain name.
+            header: t('nav.branchManager'),
+            accessor: (r: SalesLine) => r.salesRepresentativeName ?? '—',
+          }
+        : {
+            header: t('fields.salesRepresentative'),
+            accessor: (r: SalesLine) =>
+              r.salesRepresentativeIsBranchManager ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 dark:bg-primary-500/15 dark:text-primary-300">
+                    {t('salesRepresentativesReports.branchManager')}
+                  </span>
+                  {r.salesRepresentativeName}
                 </span>
-                {r.salesRepresentativeName}
-              </span>
-            ) : (
-              r.salesRepresentativeName ?? '—'
-            ),
-        },
+              ) : (
+                r.salesRepresentativeName ?? '—'
+              ),
+          },
     ...(isPrintingPress
       ? [
           {
@@ -212,12 +221,12 @@ export function SalesReportPage() {
               t(r.productType === 'CATALOG_ITEM' ? 'salesReport.finishedProduct' : 'salesReport.rawMaterialItem'),
           },
         ]
-      : canSeeCosts
+      : !isAirConditioning && canSeeCosts
         ? [{ header: t('fields.cogs'), accessor: (r: SalesLine) => money(r.costOfGoodsSold ?? 0), align: 'right' as const }]
         : []),
     { header: t('salesReport.totalAmount'), accessor: (r) => money(r.lineTotal), align: 'right' },
     { header: t('salesReport.paidAmount'), accessor: (r) => money(r.paidAmount), align: 'right' },
-    ...(isPrintingPress || !canSeeCosts
+    ...(isPrintingPress || isAirConditioning || !canSeeCosts
       ? []
       : [
           {
@@ -337,7 +346,7 @@ export function SalesReportPage() {
 
         <div
           className={`mb-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 ${
-            !isPrintingPress && canSeeCosts ? 'lg:grid-cols-4' : ''
+            !isPrintingPress && !isAirConditioning && canSeeCosts ? 'lg:grid-cols-4' : ''
           }`}
         >
           <Card className="rounded-2xl shadow-sm transition-shadow hover:shadow-md">
@@ -358,7 +367,7 @@ export function SalesReportPage() {
             </div>
             <div className="mt-2.5 text-2xl font-bold tracking-tight text-green-600">{money(totalPaid)}</div>
           </Card>
-          {!isPrintingPress && canSeeCosts && (
+          {!isPrintingPress && !isAirConditioning && canSeeCosts && (
             <>
               <Card className="rounded-2xl shadow-sm transition-shadow hover:shadow-md">
                 <div className="flex items-center gap-2 text-xs font-medium text-[var(--text-muted)]">

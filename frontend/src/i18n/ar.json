@@ -1178,6 +1178,8 @@
     "secondarySort": "الترتيب الفرعي",
     "taxValue": "قيمة الضريبة",
     "cabolyPrice": "سعر الكابولي",
+    "setCabolyPrice": "تحديد السعر",
+    "cabolyPriceSaved": "تم حفظ سعر الكابولي بنجاح",
     "allCompanies": "جميع الشركات",
     "footerNoteLabel": "جملة تذييل الطباعة",
     "footerNotePlaceholder": "اكتب جملة تظهر أسفل صفحة الطباعة…"

@@ -1178,6 +1178,8 @@
     "secondarySort": "Secondary Sort",
     "taxValue": "Tax Value",
     "cabolyPrice": "Caboly Price",
+    "setCabolyPrice": "Set Price",
+    "cabolyPriceSaved": "Caboly price saved successfully",
     "allCompanies": "All Companies",
     "footerNoteLabel": "Print Footer Note",
     "footerNotePlaceholder": "Write a note to show at the bottom of the printed page…"

@@ -10,6 +10,7 @@ import { exportElementToPdf } from '../../lib/pdf-export';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
 import { FormField, Input, Select } from '../../components/ui/Input';
 import { SearchableSelect } from '../../components/ui/SearchableSelect';
 import { DataTable, Column } from '../../components/ui/DataTable';
@@ -23,7 +24,6 @@ interface GuidelinePriceLine {
   id: string;
   productId: string;
   price: number;
-  cabolyPrice?: number | null;
   product?: {
     sku?: string | null;
     nameEn: string;
@@ -62,10 +62,20 @@ interface SupplierProductPrice {
   taxValuePerUnit: number;
 }
 
+/** "سعر الكابولي" — one row per (supplier, القدرة/capacity), shared across every product with
+ * that same capacity from that supplier. See AcCabolyPrice's own backend entity doc comment. */
+interface AcCabolyPrice {
+  id: string;
+  supplierId: string;
+  capacity: string;
+  price: number;
+}
+
 interface ProductRow {
   key: string;
   productId: string;
   sheetId: string;
+  supplierId: string;
   companyName: string;
   sku: string;
   name: string;
@@ -194,6 +204,7 @@ export function GuidelinePriceDetailPage() {
           key,
           productId: p.productId,
           sheetId: sheet.id,
+          supplierId: sheet.supplierId,
           companyName: sheet.supplier?.companyName ?? '—',
           sku: p.sku ?? '—',
           name: p.nameAr || p.nameEn,
@@ -215,6 +226,7 @@ export function GuidelinePriceDetailPage() {
             key,
             productId: line.productId,
             sheetId: sheet.id,
+            supplierId: sheet.supplierId,
             companyName: sheet.supplier?.companyName ?? '—',
             sku: line.product?.sku ?? '—',
             name: line.product?.nameAr || line.product?.nameEn || '—',
@@ -266,32 +278,27 @@ export function GuidelinePriceDetailPage() {
   }, [sortedRows, primarySort]);
 
   const [prices, setPrices] = useState<Record<string, string>>({});
-  const [cabolyPrices, setCabolyPrices] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const initial: Record<string, string> = {};
-    const initialCaboly: Record<string, string> = {};
     for (const sheet of activeSheets) {
       for (const line of sheet.lines ?? []) {
         const key = `${sheet.id}::${line.productId}`;
         initial[key] = String(Number(line.price));
-        if (line.cabolyPrice != null) initialCaboly[key] = String(Number(line.cabolyPrice));
       }
     }
     setPrices(initial);
-    setCabolyPrices(initialCaboly);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supplierId]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const bySheet = new Map<string, { productId: string; price: number; cabolyPrice?: number }[]>();
+      const bySheet = new Map<string, { productId: string; price: number }[]>();
       for (const [key, priceStr] of Object.entries(prices)) {
         if (priceStr === '') continue;
         const [sheetId, productId] = key.split('::');
         const list = bySheet.get(sheetId) ?? [];
-        const cabolyStr = cabolyPrices[key];
-        list.push({ productId, price: Number(priceStr), cabolyPrice: cabolyStr ? Number(cabolyStr) : undefined });
+        list.push({ productId, price: Number(priceStr) });
         bySheet.set(sheetId, list);
       }
       await Promise.all(
@@ -303,6 +310,44 @@ export function GuidelinePriceDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guideline-price-sheets'] });
       toast.success(t('guidelinePrices.updated'));
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
+  });
+
+  // "سعر الكابولي" — company-wide (every supplier, not just the one currently selected), since
+  // "جميع الشركات" mode shows rows from more than one supplier at once and each needs its own
+  // lookup. See AcCabolyPrice's own doc comment for why this is keyed by (supplierId, capacity)
+  // instead of living on the guideline-price line itself.
+  const cabolyPricesQuery = useQuery({
+    queryKey: ['ac-caboly-prices', companyId],
+    queryFn: () => unwrap<AcCabolyPrice[]>(apiClient.get('/ac-caboly-prices', { params: { companyId } })),
+    enabled: !!companyId,
+  });
+  const cabolyPriceByKey = useMemo(
+    () => new Map((cabolyPricesQuery.data ?? []).map((c) => [`${c.supplierId}::${c.capacity}`, Number(c.price)])),
+    [cabolyPricesQuery.data],
+  );
+  function cabolyPriceFor(row: ProductRow): number | null {
+    return cabolyPriceByKey.get(`${row.supplierId}::${row.capacity}`) ?? null;
+  }
+
+  const [cabolyModalRow, setCabolyModalRow] = useState<ProductRow | null>(null);
+  const [cabolyModalPrice, setCabolyModalPrice] = useState('0');
+  function openCabolyModal(row: ProductRow) {
+    setCabolyModalRow(row);
+    setCabolyModalPrice(String(cabolyPriceFor(row) ?? 0));
+  }
+  const cabolyMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post('/ac-caboly-prices', {
+        supplierId: cabolyModalRow!.supplierId,
+        capacity: cabolyModalRow!.capacity,
+        price: Number(cabolyModalPrice),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ac-caboly-prices', companyId] });
+      setCabolyModalRow(null);
+      toast.success(t('guidelinePrices.cabolyPriceSaved'));
     },
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
   });
@@ -354,24 +399,28 @@ export function GuidelinePriceDetailPage() {
     },
     {
       header: t('guidelinePrices.cabolyPrice'),
-      accessor: (r) => (
-        <>
-          {/* Same print/PDF live-input caveat as "سعر البيع المتوقع" below — see that column's
-              own comment. */}
-          <span className="print-only">
-            {cabolyPrices[r.key] ? formatAmount(Number(cabolyPrices[r.key])) : '—'}
-          </span>
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
-            value={cabolyPrices[r.key] ?? ''}
-            onChange={(e) => setCabolyPrices((p) => ({ ...p, [r.key]: e.target.value }))}
-            disabled={!canEdit}
-            className="screen-only text-center"
-          />
-        </>
-      ),
+      accessor: (r) => {
+        const value = cabolyPriceFor(r);
+        const display = value != null ? formatAmount(value) : t('guidelinePrices.setCabolyPrice');
+        // No real القدرة on this row (a fallback line with no purchase-history barcode) — nothing
+        // meaningful to key a shared price by, so this cell stays plain instead of offering a link
+        // that can never actually resolve to any other row.
+        if (r.capacity === '—') return <span className="text-[var(--text-muted)]">—</span>;
+        return (
+          <>
+            {/* Print/PDF gets plain text — a clickable-looking blue link makes no sense on paper. */}
+            <span className="print-only">{value != null ? display : '—'}</span>
+            <button
+              type="button"
+              onClick={() => openCabolyModal(r)}
+              disabled={!canEdit}
+              className="screen-only text-primary-600 underline-offset-2 hover:underline disabled:cursor-default disabled:text-[var(--text-muted)] disabled:no-underline"
+            >
+              {display}
+            </button>
+          </>
+        );
+      },
     },
     {
       // سعر الشراء الحقيقي = سعر الشراء + قيمة الضريبة (taxValuePerUnit) − قيمة الخصم — by
@@ -528,6 +577,43 @@ export function GuidelinePriceDetailPage() {
           )}
         </div>
       )}
+
+      <Modal open={!!cabolyModalRow} onClose={() => setCabolyModalRow(null)} title={t('guidelinePrices.cabolyPrice')}>
+        <form
+          className="grid grid-cols-2 gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            cabolyMutation.mutate();
+          }}
+        >
+          <FormField label={t('guidelinePrices.company')}>
+            <Input disabled value={cabolyModalRow?.companyName ?? ''} />
+          </FormField>
+          <FormField label={t('guidelinePrices.capacity')}>
+            <Input disabled value={cabolyModalRow?.capacity ?? ''} />
+          </FormField>
+          <div className="col-span-2">
+            <FormField label={t('guidelinePrices.cabolyPrice')}>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                required
+                value={cabolyModalPrice}
+                onChange={(e) => setCabolyModalPrice(e.target.value)}
+              />
+            </FormField>
+          </div>
+          <div className="col-span-2 mt-2 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setCabolyModalRow(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={cabolyMutation.isPending}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Quotation, QuotationLine } from './quotations/entities/quotation.entity';
-import { GuidelinePriceSheet, GuidelinePriceLine } from './guideline-prices/entities/guideline-price.entity';
+import {
+  GuidelinePriceSheet,
+  GuidelinePriceLine,
+  AcCabolyPrice,
+} from './guideline-prices/entities/guideline-price.entity';
+import { Supplier } from '../parties/suppliers/entities/supplier.entity';
 import {
   SalesOrder,
   SalesOrderLine,
@@ -22,8 +27,9 @@ import { Customer } from '../parties/customers/entities/customer.entity';
 
 import { QuotationsController } from './quotations/quotations.controller';
 import { QuotationsService } from './quotations/quotations.service';
-import { GuidelinePricesController } from './guideline-prices/guideline-prices.controller';
+import { GuidelinePricesController, AcCabolyPricesController } from './guideline-prices/guideline-prices.controller';
 import { GuidelinePricesService } from './guideline-prices/guideline-prices.service';
+import { AcCabolyPricesService } from './guideline-prices/ac-caboly-prices.service';
 import { SalesOrdersController } from './sales-orders/sales-orders.controller';
 import { SalesOrdersService } from './sales-orders/sales-orders.service';
 import { SalesInvoicesController } from './sales-invoices/sales-invoices.controller';
@@ -43,6 +49,8 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
       QuotationLine,
       GuidelinePriceSheet,
       GuidelinePriceLine,
+      AcCabolyPrice,
+      Supplier,
       SalesOrder,
       SalesOrderLine,
       DeliveryNote,
@@ -65,6 +73,7 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
   controllers: [
     QuotationsController,
     GuidelinePricesController,
+    AcCabolyPricesController,
     SalesOrdersController,
     SalesInvoicesController,
     SalesPaymentsController,
@@ -72,6 +81,7 @@ import { SalesRepAccessModule } from '../../common/sales-rep-access.module';
   providers: [
     QuotationsService,
     GuidelinePricesService,
+    AcCabolyPricesService,
     SalesOrdersService,
     SalesInvoicesService,
     SalesPaymentsService,

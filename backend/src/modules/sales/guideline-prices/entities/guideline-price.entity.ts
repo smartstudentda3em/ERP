@@ -66,10 +66,38 @@ export class GuidelinePriceLine extends BaseEntity {
 
   @Column({ type: "numeric", precision: 18, scale: 4 })
   price: number;
+}
 
-  /** "سعر الكابولي" — Air Conditioning only, an optional per-product/per-sheet price entered
-   * alongside "سعر البيع المتوقع" (price), same editable granularity. Null when never entered for
-   * this line. */
-  @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
-  cabolyPrice: number | null;
+/** "سعر الكابولي" — Air Conditioning only. Deliberately NOT a per-product-line field (unlike
+ * GuidelinePriceLine.price): by explicit request, one caboly price is shared across every product
+ * of the same القدرة (capacity — the same Product.barcode field GuidelinePricesService's own
+ * findSupplierProducts() already returns) bought from the same supplier, so setting it once for
+ * "شركة فريش" + "1.5 حصان" applies to every product on that sheet with that exact capacity. Upsert
+ * by (companyId, supplierId, capacity) — see AcCabolyPricesService.upsert().
+ */
+@Entity("ac_caboly_prices")
+@Unique(["companyId", "supplierId", "capacity"])
+export class AcCabolyPrice extends BaseEntity {
+  @Column("uuid")
+  companyId: string;
+
+  @ManyToOne(() => Company, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "companyId" })
+  company: Company;
+
+  @Column("uuid")
+  supplierId: string;
+
+  @ManyToOne(() => Supplier, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "supplierId" })
+  supplier: Supplier;
+
+  @Column({ type: "varchar", length: 100 })
+  capacity: string;
+
+  @Column({ type: "numeric", precision: 18, scale: 4 })
+  price: number;
+
+  @Column("uuid")
+  createdById: string;
 }

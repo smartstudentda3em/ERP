@@ -1,14 +1,18 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
 
 export class GuidelinePriceLineDto {
   @IsUUID() productId: string;
   @IsNumber() @Min(0) price: number;
+}
 
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  cabolyPrice?: number;
+/** AcCabolyPricesController's upsert body — one price shared by every product of the same
+ * supplier+capacity, keyed by (companyId from the caller, supplierId, capacity). See
+ * AcCabolyPrice's own entity doc comment. */
+export class UpsertCabolyPriceDto {
+  @IsUUID() supplierId: string;
+  @IsString() capacity: string;
+  @IsNumber() @Min(0) price: number;
 }
 
 export class GuidelinePriceCompanyEntryDto {

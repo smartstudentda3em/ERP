@@ -85,7 +85,6 @@ export class GuidelinePricesService {
             sheetId: id,
             productId: line.productId,
             price: line.price,
-            cabolyPrice: line.cabolyPrice ?? null,
           }),
         );
       }

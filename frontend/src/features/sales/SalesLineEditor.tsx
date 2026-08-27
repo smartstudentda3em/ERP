@@ -533,10 +533,12 @@ export function SalesLineEditor({
                                 <option value="UNIT">{unitLabelAr(product!.unitId)}</option>
                                 <option value="PACKAGE">{packageTypeLabelAr(product!.packageTypeId)}</option>
                               </Select>
+                              {/* Generic "العبوة"/"الوحدة" tier label, not the product's own configured
+                                  unit/package-type name (e.g. a package type can itself be named
+                                  "وحدة كاملة" — showing that raw name here read as if it meant الوحدة
+                                  even while PACKAGE was selected, contradicting the dropdown). */}
                               <span className="shrink-0 whitespace-nowrap rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-medium text-primary-700 dark:border-primary-500/30 dark:bg-primary-500/15 dark:text-primary-300">
-                                {line.unitKind === 'PACKAGE'
-                                  ? packageTypeLabelAr(product!.packageTypeId)
-                                  : unitLabelAr(product!.unitId)}
+                                {line.unitKind === 'PACKAGE' ? t('fields.package') : t('fields.unit')}
                               </span>
                             </div>
                           ) : (
@@ -658,10 +660,10 @@ export function SalesLineEditor({
                             <option value="UNIT">{unitLabelAr(product!.unitId)}</option>
                             <option value="PACKAGE">{packageTypeLabelAr(product!.packageTypeId)}</option>
                           </Select>
+                          {/* Generic tier label — see the matching desktop-row badge's comment above
+                              for why this can't just show the product's own unit/package-type name. */}
                           <span className="shrink-0 whitespace-nowrap rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-medium text-primary-700 dark:border-primary-500/30 dark:bg-primary-500/15 dark:text-primary-300">
-                            {line.unitKind === 'PACKAGE'
-                              ? packageTypeLabelAr(product!.packageTypeId)
-                              : unitLabelAr(product!.unitId)}
+                            {line.unitKind === 'PACKAGE' ? t('fields.package') : t('fields.unit')}
                           </span>
                         </div>
                       ) : (

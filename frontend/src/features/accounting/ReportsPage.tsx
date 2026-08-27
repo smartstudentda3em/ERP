@@ -94,6 +94,9 @@ interface ProfitReport {
   expenses: ExpenseRow[];
   totalExpenses: number;
   netProfit: number;
+  // AC only — 0 for every other company. See CashMovementsService.getProfitReport()'s own comment.
+  unpaidRevenue: number;
+  bonusTotal: number;
   distributedDividends: number;
   expenseBreakdown: ExpenseBreakdown;
 }
@@ -123,6 +126,10 @@ export function ReportsPage() {
   const [quarter, setQuarter] = useState<Quarter>((Math.floor(now.getMonth() / 3) + 1) as Quarter);
   // Printing Press only — "الفرع" filter; empty string means every branch (جميع الفروع).
   const [branchFilter, setBranchFilter] = useState('');
+  // AC only — "صافي الربح الشامل" (checked: paid + unpaid + bonus revenue) vs "صافي الربح النقدي"
+  // (unchecked: paid + bonus only, unpaid revenue ignored entirely). Defaults unchecked so nothing
+  // changes from today's existing cash-only net profit unless the user deliberately opts in.
+  const [includeUnpaidRevenue, setIncludeUnpaidRevenue] = useState(false);
   // Administrator-only, AC/STAT only — lets an owner who oversees both companies view either one's
   // report, or the two combined, from this one screen without switching their active-company
   // session. Everyone else (non-admin, or Printing Press) never sees this and the request shape is
@@ -303,7 +310,18 @@ export function ReportsPage() {
     }
   }
 
-  const netProfit = (profitQuery.data?.revenue ?? 0) - (profitQuery.data?.expenseBreakdown?.total ?? 0);
+  // AC only — بونص و(اختياريًا) الإيرادات غير المدفوعة fold into the paid-revenue base before
+  // subtracting expenses; every other company's calculation is completely unchanged (bonusTotal/
+  // unpaidRevenue are always 0 for them, so the extra terms are no-ops even without the isAirConditioning
+  // guard — kept explicit anyway for clarity).
+  const paidRevenue = profitQuery.data?.revenue ?? 0;
+  const bonusTotal = profitQuery.data?.bonusTotal ?? 0;
+  const unpaidRevenue = profitQuery.data?.unpaidRevenue ?? 0;
+  const totalExpensesFigure = profitQuery.data?.expenseBreakdown?.total ?? 0;
+  const netProfit =
+    isAirConditioning
+      ? paidRevenue + bonusTotal + (includeUnpaidRevenue ? unpaidRevenue : 0) - totalExpensesFigure
+      : paidRevenue - totalExpensesFigure;
   // A negative result is an accounting deficit, not a "negative profit" — shown with its own label
   // and the amount parenthesized (accounting convention) rather than a leading minus sign.
   const isNetLoss = netProfit < 0;
@@ -378,13 +396,35 @@ export function ReportsPage() {
 
         {tab === 'profit' && (
           <Card>
+            {isAirConditioning && (
+              <label className="mb-3 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={includeUnpaidRevenue}
+                  onChange={(e) => setIncludeUnpaidRevenue(e.target.checked)}
+                />
+                {t('accounting.includeUnpaidRevenueToggle')}
+              </label>
+            )}
             <div className="overflow-x-auto">
               <table className="app-table">
                 <tbody>
                   <tr>
-                    <td>{t('accounting.revenue')}</td>
+                    <td>{t(isAirConditioning ? 'accounting.paidRevenue' : 'accounting.revenue')}</td>
                     <td>{formatAmount(profitQuery.data?.revenue ?? 0)}</td>
                   </tr>
+                  {isAirConditioning && (
+                    <>
+                      <tr>
+                        <td>{t('accounting.unpaidRevenue')}</td>
+                        <td>{formatAmount(profitQuery.data?.unpaidRevenue ?? 0)}</td>
+                      </tr>
+                      <tr>
+                        <td>{t('suppliers.bonusTab')}</td>
+                        <td>{formatAmount(profitQuery.data?.bonusTotal ?? 0)}</td>
+                      </tr>
+                    </>
+                  )}
                   <tr>
                     <td>{t('accounting.totalExpenses')}</td>
                     <td>{formatAmount(profitQuery.data?.expenseBreakdown?.total ?? 0)}</td>
@@ -643,9 +683,21 @@ export function ReportsPage() {
           <table className="app-table">
             <tbody>
               <tr>
-                <td>{t('accounting.revenue')}</td>
+                <td>{t(isAirConditioning ? 'accounting.paidRevenue' : 'accounting.revenue')}</td>
                 <td>{formatAmount(profitQuery.data?.revenue ?? 0)}</td>
               </tr>
+              {isAirConditioning && (
+                <>
+                  <tr>
+                    <td>{t('accounting.unpaidRevenue')}</td>
+                    <td>{formatAmount(profitQuery.data?.unpaidRevenue ?? 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>{t('suppliers.bonusTab')}</td>
+                    <td>{formatAmount(profitQuery.data?.bonusTotal ?? 0)}</td>
+                  </tr>
+                </>
+              )}
               <tr>
                 <td>{t('accounting.totalExpenses')}</td>
                 <td>{formatAmount(profitQuery.data?.expenseBreakdown?.total ?? 0)}</td>

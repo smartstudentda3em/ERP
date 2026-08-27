@@ -1087,6 +1087,71 @@ export class CashMovementsService {
    * commission-payout forms). Omitted/undefined means every branch combined — identical to today's
    * behavior.
    */
+  /** AC only — "الإيرادات غير المدفوعة" ÷ "الأقساط" component: every uncollected جنيه (principal +
+   * interest) still owed across every ACTIVE installment plan's schedule. Mirrors
+   * InstallmentPlansService.getSummary() exactly — duplicated here rather than injecting that
+   * service to avoid a cross-module dependency for one read-only aggregate (sales↔treasury already
+   * has enough one-way coupling as it is). */
+  private async getInstallmentOutstanding(companyId: string): Promise<number> {
+    const dueRow = await this.dataSource
+      .createQueryBuilder()
+      .select('COALESCE(SUM(si."amountDue"), 0)', 'totalDue')
+      .from('installment_schedule_items', 'si')
+      .innerJoin('installment_plans', 'p', 'p.id = si."installmentPlanId"')
+      .where('p."companyId" = :companyId', { companyId })
+      .andWhere(`p.status = 'ACTIVE'`)
+      .getRawOne();
+    const paidRow = await this.dataSource
+      .createQueryBuilder()
+      .select('COALESCE(SUM(ip.amount), 0)', 'totalPaid')
+      .from('installment_payments', 'ip')
+      .innerJoin('installment_plans', 'p', 'p.id = ip."installmentPlanId"')
+      .where('p."companyId" = :companyId', { companyId })
+      .andWhere(`p.status = 'ACTIVE'`)
+      .andWhere('ip."scheduleItemId" IS NOT NULL')
+      .getRawOne();
+    return Number(dueRow?.totalDue ?? 0) - Number(paidRow?.totalPaid ?? 0);
+  }
+
+  /** AC only — "الإيرادات غير المدفوعة" ÷ "الأرصدة المستحقة" component: every unpaid sales invoice
+   * balance as of `asOfDate`. Mirrors CustomersService.getOutstandingTotal() exactly — same
+   * cross-module-avoidance reasoning as getInstallmentOutstanding above. Never overlaps with that
+   * installment figure: installment plans have their own separate schedule/payment tables, never
+   * touching sales_invoices/sales_payments at all. */
+  private async getOutstandingCustomerBalance(companyId: string, asOfDate: string): Promise<number> {
+    const [invoiceTotal, paymentTotal] = await Promise.all([
+      this.dataSource
+        .createQueryBuilder()
+        .select('COALESCE(SUM(i."grandTotal"), 0)', 'total')
+        .from('sales_invoices', 'i')
+        .where('i."companyId" = :companyId', { companyId })
+        .andWhere("i.status != 'CANCELLED'")
+        .andWhere('i."invoiceDate" <= :asOfDate', { asOfDate })
+        .getRawOne(),
+      this.dataSource
+        .createQueryBuilder()
+        .select('COALESCE(SUM(p.amount), 0)', 'total')
+        .from('sales_payments', 'p')
+        .where('p."companyId" = :companyId', { companyId })
+        .andWhere('p."paymentDate" <= :asOfDate', { asOfDate })
+        .getRawOne(),
+    ]);
+    return Number(invoiceTotal?.total ?? 0) - Number(paymentTotal?.total ?? 0);
+  }
+
+  /** AC only — "البونص" row: every AcSupplierBonus row recorded within [dateFrom, dateTo], across
+   * every supplier (companyId-only filter — see AcSupplierBonusesService.findAll's own optional
+   * supplierId param). A bonus never touches Cash/Bank, so this has no cash_movements counterpart
+   * to reconcile against — it's a pure supplier-ledger read. */
+  private async getBonusTotal(companyId: string, dateFrom: string, dateTo: string): Promise<number> {
+    const [{ total }] = await this.dataSource.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total FROM ac_supplier_bonuses
+       WHERE "companyId" = $1 AND "bonusDate" >= $2 AND "bonusDate" <= $3`,
+      [companyId, dateFrom, dateTo],
+    );
+    return Number(total);
+  }
+
   async getProfitReport(companyId: string, dateFrom: string, dateTo: string, branchId?: string) {
     const salesQb = this.dataSource
       .createQueryBuilder()
@@ -1110,6 +1175,7 @@ export class CashMovementsService {
 
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
     const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
+    const isAirConditioning = company?.code === 'AC';
     const revenue = Number(salesRow?.revenue ?? 0);
     const cogs = isPress
       ? await this.getRawMaterialPurchasesTotal(companyId, dateFrom, dateTo, branchId)
@@ -1117,6 +1183,18 @@ export class CashMovementsService {
     const consumedMaterials = isPress ? await this.getConsumedMaterialsTotal(companyId, dateFrom, dateTo, branchId) : 0;
     const grossProfit = revenue - cogs;
     const netProfit = grossProfit - totalExpenses;
+
+    // AC only — "تقرير الأرباح"'s الإيرادات المدفوعة/غير المدفوعة/البونص split. unpaidRevenue is a
+    // point-in-time snapshot (installment/customer balances outstanding as of dateTo) rather than a
+    // period flow like revenue itself — there's no "became outstanding during this period" tracking
+    // in this codebase, so "as of the report's end date" is the closest honest reading. bonusTotal
+    // IS period-scoped like revenue, since AcSupplierBonus rows carry their own real bonusDate.
+    // netProfit above stays exactly the existing cash-only figure — the "شامل"/"نقدي" toggle these
+    // feed lives entirely client-side in ReportsPage.tsx, computed from these raw building blocks.
+    const unpaidRevenue = isAirConditioning
+      ? (await this.getInstallmentOutstanding(companyId)) + (await this.getOutstandingCustomerBalance(companyId, dateTo))
+      : 0;
+    const bonusTotal = isAirConditioning ? await this.getBonusTotal(companyId, dateFrom, dateTo) : 0;
 
     return {
       dateFrom,
@@ -1128,6 +1206,8 @@ export class CashMovementsService {
       expenses: expenseRows,
       totalExpenses,
       netProfit,
+      unpaidRevenue,
+      bonusTotal,
       distributedDividends,
       expenseBreakdown: {
         cogs,
@@ -1194,6 +1274,10 @@ export class CashMovementsService {
       expenses: Array.from(expenseByLabel, ([label, total]) => ({ label, total })),
       totalExpenses: a.totalExpenses + b.totalExpenses,
       netProfit: a.netProfit + b.netProfit,
+      // Only ever non-zero on the AC side (STAT computes both as 0 — see getProfitReport) — summing
+      // is harmless and keeps a combined "ALL" scope report internally consistent either way.
+      unpaidRevenue: a.unpaidRevenue + b.unpaidRevenue,
+      bonusTotal: a.bonusTotal + b.bonusTotal,
       distributedDividends: a.distributedDividends + b.distributedDividends,
       expenseBreakdown: {
         cogs: a.expenseBreakdown.cogs + b.expenseBreakdown.cogs,

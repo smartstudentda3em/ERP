@@ -12,11 +12,14 @@ export class SalesInvoicesController {
 
   @Get()
   @Permissions('sales.invoice.view')
-  findAll(@CurrentUser() user: AuthenticatedUser) {
+  findAll(@CurrentUser() user: AuthenticatedUser, @Query('branchId') branchId?: string) {
     // Branch/own-invoice scoping and the "مدير فرع" zero-commission filter are both resolved inside
     // the service itself now (re-derived from the DB via SalesRepAccessService), not inferred here
-    // from JWT permission codes — see SalesInvoicesService.findAll()'s own doc comment.
-    return this.service.findAll(user.companyId!, user.userId);
+    // from JWT permission codes — see SalesInvoicesService.findAll()'s own doc comment. branchId is
+    // an optional request from the caller (currently only sent by Air Conditioning's list-view
+    // filter — see SalesInvoicesPage.tsx) — resolveBranchId() re-pins/ignores it for a non-admin
+    // regardless of what's passed, exactly like the sibling report/lines route below already does.
+    return this.service.findAll(user.companyId!, user.userId, branchId);
   }
 
   /** Lightweight active-user list for the "attributed to" field — gated by sales.invoice.create rather than users.view, so a salesperson without user-management access can still attribute their own invoices. */

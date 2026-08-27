@@ -70,12 +70,27 @@ interface UserOption {
   fullName: string;
 }
 
+// Air Conditioning only — sentinel for the list view's "كل الفروع" branch filter option. Not the
+// usual empty-string placeholder: Select auto-picks a dropdown's one real option whenever its
+// value is still '', which is right for a required field but wrong for a filter — AC currently
+// has exactly one branch, so an empty-string sentinel would silently narrow the list to it the
+// moment this page loads instead of actually showing "all branches". Mirrors SalesReportPage.tsx's
+// own ALL_BRANCHES sentinel for the identical reason.
+const ALL_BRANCHES = 'all';
+
 export function SalesInvoicesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
   const companyId = currentUser?.companyId;
+  // Printing Press has no Customers screen at all (confirmed scope: every other company is
+  // unaffected) — every sale there is silently attributed to the one seeded walk-in customer
+  // instead of showing a picker, since there's nowhere to manage real customer records for it.
+  // Queries /auth/my-companies (via useActiveCompany) rather than the settings.company.view-gated
+  // /settings/companies — a role like "مدير فرع" or "مندوب" has neither that permission nor any
+  // reason to, so the gated endpoint 403'd silently and left isPrintingPress always false for them.
+  const { company: currentCompany, isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
   // "مدير فرع" holds sales.invoice.view/create but never .edit/.delete (see run-seed.ts's
   // BRANCH_MANAGER_PRESS_PERMISSION_CODES) — the server already 403s those calls, this just keeps
   // the buttons from ever appearing for a role that can't use them, instead of failing on click.
@@ -115,6 +130,8 @@ export function SalesInvoicesPage() {
   const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK'>('CASH');
   const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
+  // Air Conditioning only — the list view's "الفرع" filter, working alongside dateRange above.
+  const [branchFilter, setBranchFilter] = useState(ALL_BRANCHES);
   const confirm = useConfirm();
   const toast = useToast();
 
@@ -147,9 +164,21 @@ export function SalesInvoicesPage() {
     [grandTotal, acDownPayment, acInterestType, acInterestRate, acTenureMonths],
   );
 
+  // Air Conditioning only — branchFilter narrows the request itself (real backend/DB filtering via
+  // SalesInvoicesService.findAll's existing resolveBranchId() plumbing), not a client-side reduce
+  // over an already-fetched array; every other company always sends branchId: undefined, exactly
+  // matching this endpoint's pre-existing behavior.
   const invoicesQuery = useQuery({
-    queryKey: ['sales-invoices', companyId],
-    queryFn: () => unwrap<SalesInvoice[]>(apiClient.get('/sales/invoices', { params: { companyId } })),
+    queryKey: ['sales-invoices', companyId, isAirConditioning ? branchFilter : null],
+    queryFn: () =>
+      unwrap<SalesInvoice[]>(
+        apiClient.get('/sales/invoices', {
+          params: {
+            companyId,
+            branchId: isAirConditioning && branchFilter !== ALL_BRANCHES ? branchFilter : undefined,
+          },
+        }),
+      ),
     enabled: !!companyId,
   });
 
@@ -179,14 +208,6 @@ export function SalesInvoicesPage() {
 
   const { isAdmin: isSystemAdmin, ownRep, currentUserId, currentUserName } = useSalesRepLock(salesRepsQuery.data);
   const lockedAssigneeLabel = ownRep?.name ?? currentUserName;
-
-  // Printing Press has no Customers screen at all (confirmed scope: every other company is
-  // unaffected) — every sale there is silently attributed to the one seeded walk-in customer
-  // instead of showing a picker, since there's nowhere to manage real customer records for it.
-  // Queries /auth/my-companies (via useActiveCompany) rather than the settings.company.view-gated
-  // /settings/companies — a role like "مدير فرع" or "مندوب" has neither that permission nor any
-  // reason to, so the gated endpoint 403'd silently and left isPrintingPress always false for them.
-  const { company: currentCompany, isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
   // Stationery-only governance: even a true Administrator is locked to their own identity here —
   // no free rep/user picker — so the "المندوب أو المسؤول" field always shows exactly whoever is
   // logged in, matching Manager/مندوب's existing lock below. AC and Press keep the Administrator's
@@ -212,6 +233,15 @@ export function SalesInvoicesPage() {
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
     enabled: (isPrintingPress || (isAirConditioning && isAdmin)) && modalOpen && !!companyId,
+  });
+
+  // Air Conditioning only — options for the list view's "الفرع" filter (see branchFilter above),
+  // independent of the create-modal's own modalOpen-gated branchesQuery just above (same queryKey,
+  // so the two share one cache entry — whichever is enabled first populates it for both).
+  const invoiceListBranchesQuery = useQuery({
+    queryKey: ['branches', companyId],
+    queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
+    enabled: isAirConditioning && !!companyId,
   });
 
   // AC/PRESS admin/Manager only — resolves the chosen branch's مدير فرع, so the invoice form can
@@ -527,7 +557,21 @@ export function SalesInvoicesPage() {
         }
       />
 
-      <DateRangeFilter value={dateRange} onChange={setDateRange} />
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        {isAirConditioning && (
+          <FormField label={t('fields.branch')}>
+            <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              <option value={ALL_BRANCHES}>{t('accounting.allBranches')}</option>
+              {(invoiceListBranchesQuery.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nameAr || b.nameEn}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
+      </div>
       <DataTable
         columns={columns}
         data={filteredInvoices}

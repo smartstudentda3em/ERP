@@ -61,7 +61,10 @@ export class SalesInvoicesService {
   /** Resolves each invoice's `createdById` to the user's display name — a plain audit column, not
    * a relation, so this is a raw lookup rather than an ORM join. Branch-scoped exactly like
    * getSalesLines()/resolveBranchId(): a non-admin pinned to a branch (via their own linked
-   * SalesRepresentative) only ever sees that branch's invoices.
+   * SalesRepresentative) only ever sees that branch's invoices. requestedBranchId is an optional
+   * admin-facing filter (currently only sent by Air Conditioning's list-view "الفرع" dropdown —
+   * see SalesInvoicesPage.tsx); resolveBranchId() ignores it entirely for a non-admin caller, so
+   * it can never widen what they see beyond their own branch.
    *
    * A "مندوب" caller is additionally pinned to ONLY their own invoices (salesRepresentativeId must
    * match their own linked rep) — unlike "مدير فرع", a مندوب has no concept of "my branch's sales"
@@ -78,8 +81,8 @@ export class SalesInvoicesService {
    * "0% commission" can never mean something different on this screen than it does there. An
    * invoice with no lines at all (shouldn't happen, but never crashes on it) counts as
    * zero-commission and is hidden too. */
-  async findAll(companyId: string, userId: string) {
-    const branchId = await this.salesRepAccess.resolveBranchId(userId, undefined, companyId);
+  async findAll(companyId: string, userId: string, requestedBranchId?: string) {
+    const branchId = await this.salesRepAccess.resolveBranchId(userId, requestedBranchId, companyId);
     const isSalesRep = await this.salesRepAccess.isCallerSalesRep(userId);
     let ownRepId: string | null = null;
     if (isSalesRep) {

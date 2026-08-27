@@ -27,17 +27,18 @@ import { localToday } from '../../lib/date-utils';
  * also debits a real treasury account, see payMutation) where AC purchase receipts paid via "رصيد
  * المورد" post their consumption too (PurchaseReceiptsService.deductForPurchase).
  *
- * The reconciliation row's 3 cards, by explicit request, now pivot entirely around this standalone
+ * The reconciliation row's 4 cards, by explicit request, pivot entirely around this standalone
  * ledger instead of the legacy per-receipt paidAmount/SupplierPayment bookkeeping the rest of the
  * app still uses elsewhere (e.g. SupplierStatementPage.tsx): "إجمالي دفعات المورد المسجلة" (this
  * ledger's own all-time sum — reuses the same figure the "دفعات المورد" tab's own badge shows,
- * just unfiltered by the year/quarter picker) stands in for what "إجمالي المدفوعات" used to mean,
- * and "الرصيد المتبقي الفعلي" is now إجمالي الفواتير − هذا المجموع. There used to be a 4th card
- * comparing this log's total against purchases ("الفرق بين دفعات المورد وإجمالي المشتراة") —
- * removed entirely by an earlier explicit request; it no longer exists anywhere in this screen.
+ * just unfiltered by the year/quarter picker) stands in for what "إجمالي المدفوعات" used to mean.
+ * "إجمالي الفواتير بعد البونص" nets the AcSupplierBonus ledger's own all-time sum out of the base
+ * purchases total (a bonus never touches Cash/Bank — see that entity's doc comment), and "الرصيد
+ * المتبقي الفعلي" folds that same reduction in: إجمالي دفعات المورد المسجلة − إجمالي الفواتير بعد
+ * البونص. A recorded bonus therefore lowers the company's on-paper debt without any money moving.
  */
 
-type Tab = 'payments' | 'purchases';
+type Tab = 'payments' | 'purchases' | 'bonus';
 type Quarter = 'ALL' | 'Q1' | 'Q2' | 'Q3' | 'Q4';
 
 /** Only the two fields this page reads off /dashboard/summary — same endpoint
@@ -74,6 +75,16 @@ interface PurchaseReceipt {
 interface AcSupplierPayment {
   id: string;
   paymentDate: string;
+  amount: number;
+  notes?: string | null;
+  createdByName: string;
+}
+
+/** "البونص" tab's own log (see AcSupplierBonus entity) — a monetary rebate the supplier granted,
+ * never linked to Cash/Bank; only reduces what the company owes the supplier on paper. */
+interface AcSupplierBonus {
+  id: string;
+  bonusDate: string;
   amount: number;
   notes?: string | null;
   createdByName: string;
@@ -118,6 +129,10 @@ export function AcSupplierDetailPage() {
   const [payNotes, setPayNotes] = useState('');
   const [payAccount, setPayAccount] = useState<'CASH' | 'BANK'>('CASH');
 
+  const [bonusOpen, setBonusOpen] = useState(false);
+  const [bonusAmount, setBonusAmount] = useState('0');
+  const [bonusNotes, setBonusNotes] = useState('');
+
   const suppliersQuery = useQuery({
     queryKey: ['suppliers', companyId],
     queryFn: () => unwrap<Supplier[]>(apiClient.get('/suppliers', { params: { companyId } })),
@@ -141,6 +156,14 @@ export function AcSupplierDetailPage() {
     queryKey: ['ac-supplier-payments', companyId, id],
     queryFn: () =>
       unwrap<AcSupplierPayment[]>(apiClient.get('/ac-supplier-payments', { params: { companyId, supplierId: id } })),
+    enabled: !!companyId && !!id,
+  });
+
+  // "البونص" tab's own log — never linked to treasury, see AcSupplierBonus entity.
+  const acBonusesQuery = useQuery({
+    queryKey: ['ac-supplier-bonuses', companyId, id],
+    queryFn: () =>
+      unwrap<AcSupplierBonus[]>(apiClient.get('/ac-supplier-bonuses', { params: { companyId, supplierId: id } })),
     enabled: !!companyId && !!id,
   });
 
@@ -183,6 +206,13 @@ export function AcSupplierDetailPage() {
     [acPaymentsQuery.data, dateRange],
   );
 
+  // "البونص" tab: same period-filtered/all-time split as دفعات المورد above — the table below
+  // browses one period, the reconciliation cards use the unfiltered all-time total.
+  const filteredBonuses = useMemo(
+    () => (acBonusesQuery.data ?? []).filter((b) => inDateRange(b.bonusDate, dateRange)),
+    [acBonusesQuery.data, dateRange],
+  );
+
   /**
    * Account reconciliation (top 3 cards), by explicit request: إجمالي دفعات المورد المسجلة -
    * إجمالي الفواتير المشتراة بالسعر الأساسي = الرصيد المتبقي الفعلي — payments minus purchases, not
@@ -218,7 +248,17 @@ export function AcSupplierDetailPage() {
         .reduce((sum, p) => sum + Number(p.amount), 0),
     [acPaymentsQuery.data],
   );
-  const netBalanceOwed = totalRegisteredSupplierPaymentsAllTime - totalCashPurchasesAllTime;
+  // "البونص" — a monetary rebate granted BY the supplier, never touching Cash/Bank (see
+  // AcSupplierBonus entity's own doc comment). Always all-time, same as every other figure in this
+  // reconciliation block. "إجمالي الفواتير بعد البونص" (the 4th card) is purchases net of this
+  // total; "الرصيد المتبقي الفعلي" folds the same reduction into its own formula below, so a
+  // recorded bonus lowers what the company still owes without ever pretending real money moved.
+  const totalBonusAllTime = useMemo(
+    () => (acBonusesQuery.data ?? []).reduce((sum, b) => sum + Number(b.amount), 0),
+    [acBonusesQuery.data],
+  );
+  const totalPurchasesAfterBonus = totalCashPurchasesAllTime - totalBonusAllTime;
+  const netBalanceOwed = totalRegisteredSupplierPaymentsAllTime - totalPurchasesAfterBonus;
   /** Dynamic label + color for netBalanceOwed's card, by explicit request — three states, not
    * just positive/negative, so an exactly-settled account gets its own neutral treatment instead
    * of silently falling into whichever branch happens to match zero. */
@@ -234,6 +274,11 @@ export function AcSupplierDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['ac-supplier-payments', companyId, id] });
     queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
     queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
+  }
+
+  // Never touches treasury/dashboard-summary — a bonus has no CashMovement to invalidate for.
+  function invalidateBonuses() {
+    queryClient.invalidateQueries({ queryKey: ['ac-supplier-bonuses', companyId, id] });
   }
 
   // Draws the amount from the chosen treasury account (see paymentAccount) and records it as a
@@ -273,6 +318,39 @@ export function AcSupplierDetailPage() {
     if (ok) deletePaymentMutation.mutate(p.id);
   }
 
+  // Plain record, no treasury linkage — see AcSupplierBonusesService.create().
+  const bonusMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post('/ac-supplier-bonuses', {
+        bonusDate: localToday(),
+        supplierId: id,
+        amount: Number(bonusAmount),
+        notes: bonusNotes || undefined,
+      }),
+    onSuccess: () => {
+      invalidateBonuses();
+      setBonusOpen(false);
+      setBonusAmount('0');
+      setBonusNotes('');
+      toast.success(t('suppliers.bonusSavedSuccess'));
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
+  });
+
+  const deleteBonusMutation = useMutation({
+    mutationFn: (bonusId: string) => apiClient.delete(`/ac-supplier-bonuses/${bonusId}`),
+    onSuccess: () => {
+      invalidateBonuses();
+      toast.success(t('common.deletedSuccessfully'));
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
+  });
+
+  async function handleDeleteBonus(b: AcSupplierBonus) {
+    const ok = await confirm({ message: t('common.confirmDelete', { name: money(Number(b.amount)) }) });
+    if (ok) deleteBonusMutation.mutate(b.id);
+  }
+
   const paymentColumns: Column<AcSupplierPayment>[] = [
     { header: t('common.date'), accessor: (r) => r.paymentDate },
     { header: t('fields.amount'), accessor: (r) => money(Number(r.amount)), align: 'right' },
@@ -286,6 +364,27 @@ export function AcSupplierDetailPage() {
           className="text-red-600 hover:underline"
           disabled={deletePaymentMutation.isPending}
           onClick={() => handleDeletePayment(r)}
+        >
+          {t('common.delete')}
+        </button>
+      ),
+      align: 'center',
+    },
+  ];
+
+  const bonusColumns: Column<AcSupplierBonus>[] = [
+    { header: t('common.date'), accessor: (r) => r.bonusDate },
+    { header: t('fields.amount'), accessor: (r) => money(Number(r.amount)), align: 'right' },
+    { header: t('table.description'), accessor: (r) => r.notes ?? '—' },
+    { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
+    {
+      header: t('common.actions'),
+      accessor: (r) => (
+        <button
+          type="button"
+          className="text-red-600 hover:underline"
+          disabled={deleteBonusMutation.isPending}
+          onClick={() => handleDeleteBonus(r)}
         >
           {t('common.delete')}
         </button>
@@ -336,7 +435,7 @@ export function AcSupplierDetailPage() {
       {/* Point 2: مطابقة الأرصدة — always the supplier's full history, independent of the
           year/quarter filter above (see netBalanceOwed's own comment for why). Shown regardless of
           which tab is active since it's a standing summary, not something tied to one tab's data. */}
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalIndependentPayments')}</div>
           <div className="mt-1 text-lg font-semibold">{money(totalRegisteredSupplierPaymentsAllTime)}</div>
@@ -344,6 +443,10 @@ export function AcSupplierDetailPage() {
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalCashPurchasesBase')}</div>
           <div className="mt-1 text-lg font-semibold">{money(totalCashPurchasesAllTime)}</div>
+        </div>
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+          <div className="text-xs text-[var(--text-muted)]">{t('suppliers.totalPurchasesAfterBonus')}</div>
+          <div className="mt-1 text-lg font-semibold">{money(totalPurchasesAfterBonus)}</div>
         </div>
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
           <div className="text-xs text-[var(--text-muted)]">{t('suppliers.netBalanceOwed')}</div>
@@ -366,6 +469,12 @@ export function AcSupplierDetailPage() {
           onClick={() => setTab('purchases')}
         >
           {t('nav.purchasing')}
+        </button>
+        <button
+          className={`rounded-lg px-3 py-1.5 ${tab === 'bonus' ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+          onClick={() => setTab('bonus')}
+        >
+          {t('suppliers.bonusTab')}
         </button>
       </div>
 
@@ -418,6 +527,20 @@ export function AcSupplierDetailPage() {
             />
           </div>
         </div>
+      )}
+
+      {tab === 'bonus' && (
+        <>
+          <div className="mb-4 flex justify-end">
+            <Button onClick={() => setBonusOpen(true)}>+ {t('suppliers.addBonus')}</Button>
+          </div>
+          <DataTable
+            columns={bonusColumns}
+            data={filteredBonuses}
+            keyField={(r) => r.id}
+            isLoading={acBonusesQuery.isLoading}
+          />
+        </>
       )}
 
       <Modal open={payOpen} onClose={() => setPayOpen(false)} title={t('actions.recordPayment')}>
@@ -497,6 +620,45 @@ export function AcSupplierDetailPage() {
               {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={payMutation.isPending}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* البونص — deliberately no withdrawal-source field, unlike the payment modal above: a
+          bonus never touches Cash/Bank, see AcSupplierBonus entity's own doc comment. */}
+      <Modal open={bonusOpen} onClose={() => setBonusOpen(false)} title={t('suppliers.addBonus')}>
+        <form
+          className="grid grid-cols-2 gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            bonusMutation.mutate();
+          }}
+        >
+          <FormField label={t('common.name')}>
+            <Input disabled value={supplier?.companyName ?? '—'} />
+          </FormField>
+          <FormField label={t('fields.amount')}>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              value={bonusAmount}
+              onChange={(e) => setBonusAmount(e.target.value)}
+            />
+          </FormField>
+          <div className="col-span-2">
+            <FormField label={t('table.description')}>
+              <Input value={bonusNotes} onChange={(e) => setBonusNotes(e.target.value)} />
+            </FormField>
+          </div>
+          <div className="col-span-2 mt-2 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setBonusOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={bonusMutation.isPending}>
               {t('common.save')}
             </Button>
           </div>

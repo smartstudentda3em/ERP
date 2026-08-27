@@ -981,7 +981,11 @@
     "totalTaxForPeriod": "Total Tax Paid for Period",
     "totalIndependentPayments": "Total Registered Supplier Payments",
     "taxesTabLabel": "Taxes",
-    "generalTaxOption": "General Taxes"
+    "generalTaxOption": "General Taxes",
+    "bonusTab": "Bonus",
+    "addBonus": "Add Bonus",
+    "bonusSavedSuccess": "Bonus saved successfully",
+    "totalPurchasesAfterBonus": "Total Invoices After Bonus"
   },
   "printingProducts": {
     "addNew": "Add New Product",

@@ -22,6 +22,22 @@ export class CreateAcSupplierPaymentDto {
   notes?: string;
 }
 
+export class CreateAcSupplierBonusDto {
+  @IsUUID()
+  supplierId: string;
+
+  @IsDateString()
+  bonusDate: string;
+
+  @IsNumber()
+  @Min(0.01)
+  amount: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
 export class CreateAcSupplierTaxPaymentDto {
   /** Omitted entirely for a "ضرائب عامة" (general tax) entry not attributed to any one supplier —
    * see AcSupplierTaxPayment.supplierId's own doc comment. */

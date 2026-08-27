@@ -981,7 +981,11 @@
     "totalTaxForPeriod": "إجمالي الضرائب المدفوعة عن الفترة",
     "totalIndependentPayments": "إجمالي دفعات المورد المسجلة",
     "taxesTabLabel": "الضرائب",
-    "generalTaxOption": "ضرائب عامة"
+    "generalTaxOption": "ضرائب عامة",
+    "bonusTab": "البونص",
+    "addBonus": "إضافة بونص",
+    "bonusSavedSuccess": "تم حفظ البونص بنجاح",
+    "totalPurchasesAfterBonus": "إجمالي الفواتير بعد البونص"
   },
   "printingProducts": {
     "addNew": "إضافة منتج جديد",

@@ -88,6 +88,7 @@ import { WhatsAppOutboxMessage } from '../modules/whatsapp/entities/whatsapp-out
 import { BackupRecord } from '../modules/backups/entities/backup-record.entity';
 import { AcSupplierPayment } from '../modules/ac-supplier-ledger/entities/ac-supplier-payment.entity';
 import { AcSupplierTaxPayment } from '../modules/ac-supplier-ledger/entities/ac-supplier-tax-payment.entity';
+import { AcSupplierBonus } from '../modules/ac-supplier-ledger/entities/ac-supplier-bonus.entity';
 import { SharedDocument } from '../modules/shared-documents/entities/shared-document.entity';
 
 export const allEntities = [
@@ -160,6 +161,7 @@ export const allEntities = [
   BackupRecord,
   AcSupplierPayment,
   AcSupplierTaxPayment,
+  AcSupplierBonus,
   SharedDocument,
 ];
 

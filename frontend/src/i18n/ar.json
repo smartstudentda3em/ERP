@@ -1243,7 +1243,16 @@
     "amountToPay": "المبلغ المراد صرفه",
     "executePayout": "تنفيذ",
     "noManagerForBranch": "لا يوجد مدير مرتبط بهذا الفرع",
-    "noPayoutsData": "لا توجد بيانات لهذا الشهر"
+    "noPayoutsData": "لا توجد بيانات لهذا الشهر",
+    "totalCommissionsTab": "إجمالي العمولات",
+    "totalCommissionsName": "الاسم",
+    "totalCommissionsType": "النوع",
+    "totalCommissionsTypeManager": "مدير فرع",
+    "totalCommissionsTypeRep": "مندوب",
+    "totalCommissionsPaidAmount": "إجمالي العمولة المصروفة",
+    "totalCommissionsPayoutCount": "عدد عمليات الصرف",
+    "totalCommissionsGrandTotal": "إجمالي العمولات المصروفة للفترة",
+    "totalCommissionsNote": "تعرض هذه الشاشة فقط العمولات التي تم صرفها وإقرارها فعلياً من خلال لوحة المدير أو المندوب — ولا تشمل أي مبالغ مستحقة لم يتم صرفها بعد."
   },
   "printDocument": {
     "invoiceTitle": "فاتورة بيع",

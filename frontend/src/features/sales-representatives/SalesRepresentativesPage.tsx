@@ -12,8 +12,9 @@ import { RepresentativesListTab } from './RepresentativesListTab';
 import { RepresentativesReportsTab, ReportsQuarter } from './RepresentativesReportsTab';
 import { MyManagerDashboardTab, DashboardQuarter } from './MyManagerDashboardTab';
 import { CommissionPayoutsTab } from './CommissionPayoutsTab';
+import { TotalCommissionsTab } from './TotalCommissionsTab';
 
-type MainSection = 'managers' | 'reps';
+type MainSection = 'managers' | 'reps' | 'totalCommissions';
 type ManagerSubTab = 'list' | 'reports' | 'mine' | 'payouts';
 type RepSubTab = 'list' | 'reports' | 'mine';
 
@@ -60,6 +61,12 @@ export function SalesRepresentativesPage() {
   // calendar month at a time. Managers section only.
   const [payoutsYear, setPayoutsYear] = useState(now.getFullYear());
   const [payoutsMonth, setPayoutsMonth] = useState(now.getMonth() + 1);
+
+  // "إجمالي العمولات" filter — its own month/year state (not shared with "صرف الأرباح" above),
+  // since this tab is system-wide (every company) while "صرف الأرباح" only ever renders for the
+  // Printing Press — keeping them separate avoids one tab's filter silently driving the other's.
+  const [totalCommissionsYear, setTotalCommissionsYear] = useState(now.getFullYear());
+  const [totalCommissionsMonth, setTotalCommissionsMonth] = useState(now.getMonth() + 1);
 
   // مدراء الأفرع and المناديب are a different specialty each, with their own permissions/commission
   // model (see today's AC fixed-commission work) — a رep picked while viewing one section must
@@ -126,7 +133,7 @@ export function SalesRepresentativesPage() {
     { key: 'mine', label: t('managerDashboard.tabLabel') },
   ];
 
-  const activeSubTab = mainSection === 'managers' ? managerSubTab : repSubTab;
+  const activeSubTab = mainSection === 'managers' ? managerSubTab : mainSection === 'reps' ? repSubTab : undefined;
 
   return (
     <div>
@@ -150,10 +157,20 @@ export function SalesRepresentativesPage() {
         >
           {t('salesRepresentativesReports.repsTab')}
         </button>
+        <button
+          className={`-mb-px border-b-2 px-4 py-2 ${
+            mainSection === 'totalCommissions' ? 'border-primary-600 text-primary-600' : 'border-transparent text-[var(--text-muted)]'
+          }`}
+          onClick={() => switchMainSection('totalCommissions')}
+        >
+          {t('salesRepresentativesReports.totalCommissionsTab')}
+        </button>
       </div>
 
-      {/* Level 2: the sub-tabs belonging only to the currently selected section above */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+      {/* Level 2: the sub-tabs belonging only to the currently selected section above — "إجمالي
+          العمولات" has no sub-tabs of its own, just a month/year filter, rendered separately below. */}
+      {mainSection !== 'totalCommissions' && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex gap-2 text-sm">
           {(mainSection === 'managers' ? managerSubTabs : repSubTabs).map((tb) => (
             <button
@@ -273,6 +290,30 @@ export function SalesRepresentativesPage() {
           </div>
         )}
       </div>
+      )}
+
+      {mainSection === 'totalCommissions' && (
+        <div className="mb-4 flex items-center gap-2">
+          <div className="w-24">
+            <Select value={totalCommissionsYear} onChange={(e) => setTotalCommissionsYear(Number(e.target.value))}>
+              {dashboardYearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="w-40">
+            <Select value={totalCommissionsMonth} onChange={(e) => setTotalCommissionsMonth(Number(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {monthNameOnly(m, i18n.language)}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+      )}
 
       {mainSection === 'managers' && activeSubTab === 'list' && (
         <RepresentativesListTab roleNameFilter={branchManagerRoleName} />
@@ -295,6 +336,9 @@ export function SalesRepresentativesPage() {
       )}
       {mainSection === 'managers' && activeSubTab === 'payouts' && !payoutsTabRestricted && (
         <CommissionPayoutsTab year={payoutsYear} month={payoutsMonth} />
+      )}
+      {mainSection === 'totalCommissions' && (
+        <TotalCommissionsTab year={totalCommissionsYear} month={totalCommissionsMonth} />
       )}
     </div>
   );

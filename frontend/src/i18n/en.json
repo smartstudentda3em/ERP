@@ -1243,7 +1243,16 @@
     "amountToPay": "Amount to Pay",
     "executePayout": "Execute",
     "noManagerForBranch": "No manager linked to this branch",
-    "noPayoutsData": "No data for this month"
+    "noPayoutsData": "No data for this month",
+    "totalCommissionsTab": "Total Commissions",
+    "totalCommissionsName": "Name",
+    "totalCommissionsType": "Type",
+    "totalCommissionsTypeManager": "Branch Manager",
+    "totalCommissionsTypeRep": "Sales Representative",
+    "totalCommissionsPaidAmount": "Total Commission Paid",
+    "totalCommissionsPayoutCount": "Number of Payouts",
+    "totalCommissionsGrandTotal": "Total Commissions Paid for This Period",
+    "totalCommissionsNote": "This screen shows only commissions that have actually been paid out and finalized through the manager or representative dashboard — it does not include any earned-but-unpaid amounts."
   },
   "printDocument": {
     "invoiceTitle": "Sales Invoice",

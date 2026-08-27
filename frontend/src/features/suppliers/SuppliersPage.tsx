@@ -11,6 +11,7 @@ import { PurchasingTab, PurchasingTabHandle } from '../purchasing/PurchasingPage
 import { ProductsTab, ProductsTabHandle } from '../inventory/ProductsPage';
 import { GuidelinePricesTab } from '../sales/GuidelinePricesTab';
 import { SupplierTaxesTab } from './SupplierTaxesTab';
+import { SupplierBonusesTab } from './SupplierBonusesTab';
 
 type Tab =
   | 'suppliers'
@@ -20,7 +21,8 @@ type Tab =
   | 'products'
   | 'purchasing'
   | 'guidelinePrices'
-  | 'taxes';
+  | 'taxes'
+  | 'bonuses';
 
 /**
  * The "الاستيراد" (Import) section: three tabs sharing one screen — Suppliers (who goods are
@@ -68,7 +70,8 @@ export function SuppliersPage() {
       initialTab === 'shipping' ||
       initialTab === 'shipmentPayments' ||
       initialTab === 'guidelinePrices' ||
-      initialTab === 'taxes'
+      initialTab === 'taxes' ||
+      initialTab === 'bonuses'
       ? initialTab
       : 'suppliers',
   );
@@ -102,6 +105,7 @@ export function SuppliersPage() {
           { key: 'suppliers', label: t('nav.suppliers') },
           { key: 'guidelinePrices', label: t('guidelinePrices.tabLabel') },
           { key: 'taxes', label: t('suppliers.taxesTabLabel') },
+          { key: 'bonuses', label: t('suppliers.totalBonusTabLabel') },
         ]
       : [
           { key: 'suppliers', label: t('nav.suppliers') },
@@ -183,6 +187,7 @@ export function SuppliersPage() {
       )}
       {tab === 'guidelinePrices' && <GuidelinePricesTab />}
       {tab === 'taxes' && <SupplierTaxesTab />}
+      {tab === 'bonuses' && <SupplierBonusesTab />}
     </div>
   );
 }

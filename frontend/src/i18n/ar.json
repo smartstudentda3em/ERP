@@ -988,7 +988,11 @@
     "bonusTab": "البونص",
     "addBonus": "إضافة بونص",
     "bonusSavedSuccess": "تم حفظ البونص بنجاح",
-    "totalPurchasesAfterBonus": "إجمالي الفواتير بعد البونص"
+    "totalPurchasesAfterBonus": "إجمالي الفواتير بعد البونص",
+    "totalBonusTabLabel": "إجمالي البونص",
+    "bonusEntryCount": "عدد العمليات",
+    "totalBonusColumn": "إجمالي البونص",
+    "totalBonusForPeriod": "إجمالي البونص عن الفترة"
   },
   "printingProducts": {
     "addNew": "إضافة منتج جديد",

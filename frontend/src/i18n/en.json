@@ -988,7 +988,11 @@
     "bonusTab": "Bonus",
     "addBonus": "Add Bonus",
     "bonusSavedSuccess": "Bonus saved successfully",
-    "totalPurchasesAfterBonus": "Total Invoices After Bonus"
+    "totalPurchasesAfterBonus": "Total Invoices After Bonus",
+    "totalBonusTabLabel": "Total Bonus",
+    "bonusEntryCount": "Entries",
+    "totalBonusColumn": "Total Bonus",
+    "totalBonusForPeriod": "Total Bonus for Period"
   },
   "printingProducts": {
     "addNew": "Add New Product",

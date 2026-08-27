@@ -82,16 +82,22 @@ export function SalesInvoiceDetailPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
-  const { isPrintingPress, isAirConditioning } = useActiveCompany();
+  const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  const isSalesRep = useIsSalesRep();
   // The mobile app (مندوب/مدير فرع) never gets a "طباعة" button — there's no printer attached to
   // a phone, and if they really do want a paper copy they'd print from the desktop site anyway.
   // Print stays for every other role (Administrator, Manager, desktop browsing in general).
-  const isMobileRestrictedRole = useIsSalesRep() || useIsBranchManager();
+  const isMobileRestrictedRole = isSalesRep || useIsBranchManager();
+  // Press/Stationery/Air Conditioning must explicitly pick the treasury account this payment
+  // actually lands in — same requirement as the standalone سند قبض form (SalesPaymentsPage.tsx),
+  // which this modal itself calls into (see payMutation below, POSTs to the same /sales/payments
+  // endpoint whose assertPaymentAccountProvided enforces this). A مندوب's own follow-up collection
+  // routes into their REP_TREASURY pocket instead and never chooses an account.
+  const requiresPaymentAccount = (isPrintingPress || isStationery || isAirConditioning) && !isSalesRep;
   const [payOpen, setPayOpen] = useState(false);
   const [amount, setAmount] = useState('0');
-  // Printing Press only — which treasury account this collected amount actually lands in. Starts
-  // unset (not defaulted to CASH) so the branch manager must explicitly say where the money went,
-  // same as the standalone سند قبض form's own paymentAccount field.
+  // Starts unset (not defaulted to CASH) so whoever records the payment must explicitly say where
+  // the money went, same as the standalone سند قبض form's own paymentAccount field.
   const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK' | ''>('');
   const [shareLoading, setShareLoading] = useState(false);
   // Set only on the "upload a link, then share it" path (canShare({files}) is false but
@@ -137,8 +143,8 @@ export function SalesInvoiceDetailPage() {
         customerId: invoiceQuery.data?.customer.id,
         invoiceId: id,
         companyId: invoiceQuery.data?.companyId,
-        method: isPrintingPress ? undefined : 'CASH',
-        paymentAccount: isPrintingPress ? paymentAccount || undefined : undefined,
+        method: requiresPaymentAccount ? undefined : 'CASH',
+        paymentAccount: requiresPaymentAccount ? paymentAccount || undefined : undefined,
         branchId: isPrintingPress ? invoiceQuery.data?.branchId ?? undefined : undefined,
         amount: Number(amount),
       }),
@@ -430,7 +436,7 @@ export function SalesInvoiceDetailPage() {
           <FormField label={t('fields.amount')}>
             <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </FormField>
-          {isPrintingPress && (
+          {requiresPaymentAccount && (
             <FormField label={t('salesPayments.depositAccountLabel')} required>
               <Select
                 required
@@ -452,7 +458,7 @@ export function SalesInvoiceDetailPage() {
             <Button type="button" variant="secondary" onClick={() => setPayOpen(false)}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={payMutation.isPending || (isPrintingPress && !paymentAccount)}>
+            <Button type="submit" disabled={payMutation.isPending || (requiresPaymentAccount && !paymentAccount)}>
               {t('common.save')}
             </Button>
           </div>

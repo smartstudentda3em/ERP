@@ -331,6 +331,12 @@ export function GuidelinePriceDetailPage() {
     return cabolyPriceByKey.get(`${row.supplierId}::${row.capacity}`) ?? null;
   }
 
+  // "سعر التكلفة" (formerly "سعر الشراء الحقيقي") = سعر الشراء + قيمة الضريبة + سعر الكابولي −
+  // قيمة الخصم — shared by that column and "الربح" below so the two can never disagree.
+  function netPurchasePriceFor(row: ProductRow): number {
+    return row.purchasePrice + row.taxValuePerUnit + (cabolyPriceFor(row) ?? 0) - row.purchasePrice * (row.discountPercentage / 100);
+  }
+
   const [cabolyModalRow, setCabolyModalRow] = useState<ProductRow | null>(null);
   const [cabolyModalPrice, setCabolyModalPrice] = useState('0');
   function openCabolyModal(row: ProductRow) {
@@ -423,14 +429,8 @@ export function GuidelinePriceDetailPage() {
       hideOnPrint: true,
     },
     {
-      // سعر الشراء الحقيقي = سعر الشراء + قيمة الضريبة (taxValuePerUnit) + سعر الكابولي − قيمة
-      // الخصم — by explicit request, adds both the per-unit tax share and the caboly price (0 when
-      // none is configured for this supplier+capacity) back on top before netting the discount off.
       header: t('guidelinePrices.netPurchasePrice'),
-      accessor: (r) =>
-        formatAmount(
-          r.purchasePrice + r.taxValuePerUnit + (cabolyPriceFor(r) ?? 0) - r.purchasePrice * (r.discountPercentage / 100),
-        ),
+      accessor: (r) => formatAmount(netPurchasePriceFor(r)),
       hideOnPrint: true,
     },
     {
@@ -460,6 +460,17 @@ export function GuidelinePriceDetailPage() {
           />
         </>
       ),
+    },
+    {
+      // الربح = سعر البيع المتوقع (the editable field just before this column) − سعر التكلفة.
+      // Blank until a سعر البيع المتوقع is actually entered for that line — there's no meaningful
+      // profit figure to show yet otherwise.
+      header: t('guidelinePrices.profit'),
+      accessor: (r) => {
+        const expected = prices[r.key];
+        if (!expected) return <span className="text-[var(--text-muted)]">—</span>;
+        return formatAmount(Number(expected) - netPurchasePriceFor(r));
+      },
     },
   ];
 

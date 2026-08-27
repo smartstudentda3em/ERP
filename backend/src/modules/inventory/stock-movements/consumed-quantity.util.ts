@@ -62,10 +62,13 @@ export async function getConsumedQuantitiesByProductId(
 
 /** "الكمية المشتراة" (Warehouses table, Air Conditioning only) — total packages ever actually
  * received into the company for each product, company-wide across every warehouse and all time
- * (never scoped to the warehouse currently being viewed or to any date range), excluding free-goods
- * receipts exactly like GuidelinePricesService's own "عدد العبوات المشتراة" column. One grouped SUM
- * query scoped to just the given product ids, same cost discipline as getConsumedQuantitiesByProductId
- * above. */
+ * (never scoped to the warehouse currently being viewed or to any date range). Unlike
+ * GuidelinePricesService's own "عدد العبوات المشتراة" column, free-goods receipts are NOT excluded
+ * here — this column represents genuine physical receiving (a free/in-kind receipt still enters
+ * real stock, per PurchaseReceipt.isFreeGoods's own doc comment), not a cost-distribution base, so
+ * excluding them would silently undercount a product that was ever received as free goods even
+ * once. One grouped SUM query scoped to just the given product ids, same cost discipline as
+ * getConsumedQuantitiesByProductId above. */
 export async function getPurchasedQuantitiesByProductId(
   dataSource: DataSource,
   companyId: string,
@@ -81,7 +84,6 @@ export async function getPurchasedQuantitiesByProductId(
     .from('purchase_receipts', 'pr')
     .where('pr."companyId" = :companyId', { companyId })
     .andWhere('pr."productId" IN (:...productIds)', { productIds })
-    .andWhere('pr."isFreeGoods" = false')
     .groupBy('pr."productId"')
     .getRawMany();
 

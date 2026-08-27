@@ -316,8 +316,12 @@ export function TreasuryTransactionsPage() {
 
       {showAccountSplit ? (
         // RTL reading order right-to-left: بنك، كاش، خزينة المندوب، إجمالي — first JSX child
-        // renders rightmost.
-        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
+        // renders rightmost. Air Conditioning drops خزينة المندوب (see above), so its row is one
+        // card short of everyone else's — lg:grid-cols-3 keeps that row evenly filled instead of
+        // leaving a blank fourth slot.
+        <div
+          className={`mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 print:hidden ${isAirConditioning ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}
+        >
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('treasury.bankBalance')}</div>
             <div className="mt-1 text-2xl font-semibold">
@@ -330,18 +334,22 @@ export function TreasuryTransactionsPage() {
               {summaryQuery.data ? money(summaryQuery.data.cashBalance) : '—'}
             </div>
           </Card>
-          {/* Stationery only: the card renames to plural "خزينة المناديب" and becomes clickable,
-              opening the per-rep breakdown screen (RepTreasuriesPage). Air Conditioning and
-              Printing Press keep today's exact static card, unchanged. */}
-          <Card
-            onClick={isStationery ? () => navigate('/treasury/rep-treasuries') : undefined}
-            className={isStationery ? 'cursor-pointer transition hover:shadow-md' : undefined}
-          >
-            <div className="text-xs text-[var(--text-muted)]">
-              {t(isStationery ? 'treasury.repTreasuriesBalance' : 'treasury.repTreasuryBalance')}
-            </div>
-            <div className="mt-1 text-2xl font-semibold">{money(repTreasuryTotal)}</div>
-          </Card>
+          {/* Air Conditioning only — خزينة المندوب is dropped from this summary row entirely (see
+              getLedger()'s matching exclusion from "الرصيد الإجمالي" below), not just re-labeled.
+              Stationery: the card renames to plural "خزينة المناديب" and becomes clickable, opening
+              the per-rep breakdown screen (RepTreasuriesPage). Printing Press keeps today's exact
+              static card, unchanged. */}
+          {!isAirConditioning && (
+            <Card
+              onClick={isStationery ? () => navigate('/treasury/rep-treasuries') : undefined}
+              className={isStationery ? 'cursor-pointer transition hover:shadow-md' : undefined}
+            >
+              <div className="text-xs text-[var(--text-muted)]">
+                {t(isStationery ? 'treasury.repTreasuriesBalance' : 'treasury.repTreasuryBalance')}
+              </div>
+              <div className="mt-1 text-2xl font-semibold">{money(repTreasuryTotal)}</div>
+            </Card>
+          )}
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('treasury.totalBalance')}</div>
             <div className="mt-1 text-2xl font-semibold">{money(currentBalance)}</div>

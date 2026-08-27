@@ -460,6 +460,13 @@ export class CashMovementsService {
    * standalone movements and must stay visible.
    */
   async getLedger(companyId: string, dateFrom?: string, dateTo?: string, branchId?: string) {
+    // Air Conditioning only — "الرصيد الإجمالي" must read as كاش + بنك alone, with خزينة المندوب
+    // neither shown as its own summary card (see TreasuryTransactionsPage.tsx) nor folded into
+    // this total; REP_TREASURY movements still appear as ordinary rows below for a full audit
+    // trail, they just don't move the running balance carried alongside them.
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    const excludeRepTreasuryFromBalance = company?.code === 'AC';
+
     const qb = this.dataSource
       .createQueryBuilder()
       .select('m."movementDate"', 'date')
@@ -491,7 +498,10 @@ export class CashMovementsService {
       const amount = Number(row.amount);
       const debit = row.type === 'INCOME' ? amount : 0;
       const credit = row.type === 'EXPENSE' ? amount : 0;
-      runningBalance += debit - credit;
+      const isRepTreasury = row.account === CashMovementAccount.REP_TREASURY;
+      if (!(excludeRepTreasuryFromBalance && isRepTreasury)) {
+        runningBalance += debit - credit;
+      }
       return {
         date: row.date,
         movementType: row.sourceType,

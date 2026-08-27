@@ -192,6 +192,7 @@ export class PurchaseReceiptsService {
           warehouseId: dto.warehouseId,
           quantity: totalUnits,
           unitCost,
+          excludeFromAverageCost: dto.isFreeGoods,
           referenceType: 'PURCHASE_RECEIPT',
           referenceNumber: documentNumber,
           createdById,
@@ -201,8 +202,8 @@ export class PurchaseReceiptsService {
       );
 
       // A free goods receipt's price is 0 by definition — it must never overwrite the product's
-      // own reference purchase price with that 0 (averageCost still updates normally via
-      // stockService.receive() above, which is the correct place for a free batch to lower it).
+      // own reference purchase price with that 0 (averageCost is left untouched by this batch
+      // entirely — excludeFromAverageCost above — never diluted by stock nobody paid for).
       await manager.getRepository(Product).update(dto.productId, {
         ...(dto.isFreeGoods ? {} : { packagePurchasePrice: dto.packagePurchasePrice, purchasePrice: unitCost }),
         ...(dto.packageSellingPrice != null ? { packageSellingPrice: dto.packageSellingPrice } : {}),
@@ -380,6 +381,7 @@ export class PurchaseReceiptsService {
           warehouseId: dto.warehouseId,
           quantity: totalUnits,
           unitCost,
+          excludeFromAverageCost: dto.isFreeGoods,
           referenceType: 'PURCHASE_RECEIPT_EDIT',
           referenceNumber: existing.documentNumber,
           createdById: updatedById,

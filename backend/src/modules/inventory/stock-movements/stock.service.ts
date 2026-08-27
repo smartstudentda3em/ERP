@@ -20,6 +20,11 @@ export interface StockMovementInput {
 
 export interface ReceiveStockInput extends StockMovementInput {
   unitCost: number;
+  /** Air Conditioning's free/in-kind goods receipts (see PurchaseReceipt.isFreeGoods) only ever
+   * set this true — never paid for, so they must raise quantityOnHand like any other receipt
+   * without ever being divided into the weighted-average cost basis (see the comment on
+   * newAverageCost below). Every other caller omits this and gets today's exact behavior. */
+  excludeFromAverageCost?: boolean;
 }
 
 export interface IssueResult {
@@ -73,8 +78,16 @@ export class StockService {
       const incomingCost = Number(input.unitCost);
 
       const newQty = currentQty + incomingQty;
-      const newAverageCost =
-        newQty === 0 ? 0 : (currentQty * currentCost + incomingQty * incomingCost) / newQty;
+      // A free/bonus receipt (excludeFromAverageCost) still grows the physical quantity on hand
+      // like any real receipt, but never enters the cost basis — folding its incomingQty (at
+      // incomingCost=0) into the weighted average would silently dilute متوسط تكلفة العبوة with
+      // stock nobody actually paid for, understating the true per-package cost. The average simply
+      // carries forward unchanged; only a real paid receipt ever moves it.
+      const newAverageCost = input.excludeFromAverageCost
+        ? currentCost
+        : newQty === 0
+          ? 0
+          : (currentQty * currentCost + incomingQty * incomingCost) / newQty;
 
       level.quantityOnHand = newQty;
       level.averageCost = newAverageCost;

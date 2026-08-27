@@ -81,7 +81,12 @@ export class GuidelinePricesService {
         // products can freely add/remove/reorder lines with no stable identity to diff against.
         await lineRepo.delete({ sheetId: id });
         sheet.lines = dto.lines.map((line) =>
-          lineRepo.create({ sheetId: id, productId: line.productId, price: line.price }),
+          lineRepo.create({
+            sheetId: id,
+            productId: line.productId,
+            price: line.price,
+            cabolyPrice: line.cabolyPrice ?? null,
+          }),
         );
       }
       if (dto.isAuthorizedAgent !== undefined) sheet.isAuthorizedAgent = dto.isAuthorizedAgent;
@@ -99,9 +104,10 @@ export class GuidelinePricesService {
    * bought from this supplier, each with its most recent real purchase price (free-goods receipts
    * excluded — their price is always forced to 0 and would otherwise mask the real figure if one
    * happened to be the latest receipt). One row per product via DISTINCT ON, latest receipt wins.
-   * quantityPurchased is a window-function SUM over every one of that product's receipts from this
-   * supplier (same free-goods exclusion — "عدد العبوات المشتراة" means actually paid-for packages,
-   * not bonus stock), computed off this same purchase_receipts scan rather than a second query.
+   * quantityPurchased is overridden below by a separate, unfiltered query — it must match the
+   * Warehouses table's own "عدد العبوات المشتراة" total, which counts free-goods receipts too (see
+   * that query's own comment further down for why this can't just be the main query's filter
+   * dropped).
    *
    * taxValuePerUnit replaces the old per-product taxRate-based "قيمة الضريبة" — by explicit
    * request, this supplier's real ضريبة المبيعات payments (ac_supplier_tax_payments, recorded from
@@ -128,8 +134,9 @@ export class GuidelinePricesService {
        * the guideline price being set on this page. Deliberately the package price, not the
        * per-unit price, since the factory sells this product to us by the carton. */
       packageSellingPrice: number | null;
-      /** Total packages purchased from this supplier across every (non-free-goods) receipt of this
-       * product — "عدد العبوات المشتراة" on the detail page's product table. */
+      /** Total packages purchased from this supplier across every receipt of this product,
+       * including free-goods ones — "عدد العبوات المشتراة" on the detail page's product table,
+       * matching the Warehouses table's own total. */
       quantityPurchased: number;
       /** This supplier's total tax payments ÷ total packages bought from them — see this method's
        * own doc comment above. Identical across every row returned here. */
@@ -177,6 +184,25 @@ export class GuidelinePricesService {
     const totalQuantityFromSupplier = Number(rows[0].totalQuantityFromSupplier) || 0;
     const taxValuePerUnit = totalQuantityFromSupplier > 0 ? Number(totalTax) / totalQuantityFromSupplier : 0;
 
-    return rows.map(({ totalQuantityFromSupplier: _drop, ...r }) => ({ ...r, taxValuePerUnit }));
+    // "عدد العبوات المشتراة" must match the Warehouses table's own all-receipts total (see
+    // WarehouseViewService/getPurchasedQuantitiesByProductId) — free-goods receipts genuinely
+    // entered stock and are counted there, so they're counted here too. This is a SEPARATE query
+    // (rather than just dropping the main query's own isFreeGoods filter) because that filter still
+    // has to apply to the DISTINCT ON "latest real price" pick and to taxValuePerUnit's denominator
+    // above — a free-goods receipt has no real price and its tax burden was never actually paid.
+    const purchasedRows: { productId: string; total: string }[] = await this.dataSource.query(
+      `SELECT pr."productId" AS "productId", COALESCE(SUM(pr."quantityPackages"), 0) AS "total"
+       FROM purchase_receipts pr
+       WHERE pr."supplierId" = $1 AND pr."companyId" = $2
+       GROUP BY pr."productId"`,
+      [supplierId, companyId],
+    );
+    const quantityPurchasedByProductId = new Map(purchasedRows.map((r) => [r.productId, Number(r.total)]));
+
+    return rows.map(({ totalQuantityFromSupplier: _drop, ...r }) => ({
+      ...r,
+      quantityPurchased: quantityPurchasedByProductId.get(r.productId) ?? r.quantityPurchased,
+      taxValuePerUnit,
+    }));
   }
 }

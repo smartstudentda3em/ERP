@@ -23,6 +23,7 @@ interface GuidelinePriceLine {
   id: string;
   productId: string;
   price: number;
+  cabolyPrice?: number | null;
   product?: {
     sku?: string | null;
     nameEn: string;
@@ -265,26 +266,32 @@ export function GuidelinePriceDetailPage() {
   }, [sortedRows, primarySort]);
 
   const [prices, setPrices] = useState<Record<string, string>>({});
+  const [cabolyPrices, setCabolyPrices] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const initial: Record<string, string> = {};
+    const initialCaboly: Record<string, string> = {};
     for (const sheet of activeSheets) {
       for (const line of sheet.lines ?? []) {
-        initial[`${sheet.id}::${line.productId}`] = String(Number(line.price));
+        const key = `${sheet.id}::${line.productId}`;
+        initial[key] = String(Number(line.price));
+        if (line.cabolyPrice != null) initialCaboly[key] = String(Number(line.cabolyPrice));
       }
     }
     setPrices(initial);
+    setCabolyPrices(initialCaboly);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supplierId]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const bySheet = new Map<string, { productId: string; price: number }[]>();
+      const bySheet = new Map<string, { productId: string; price: number; cabolyPrice?: number }[]>();
       for (const [key, priceStr] of Object.entries(prices)) {
         if (priceStr === '') continue;
         const [sheetId, productId] = key.split('::');
         const list = bySheet.get(sheetId) ?? [];
-        list.push({ productId, price: Number(priceStr) });
+        const cabolyStr = cabolyPrices[key];
+        list.push({ productId, price: Number(priceStr), cabolyPrice: cabolyStr ? Number(cabolyStr) : undefined });
         bySheet.set(sheetId, list);
       }
       await Promise.all(
@@ -344,6 +351,27 @@ export function GuidelinePriceDetailPage() {
       header: t('guidelinePrices.taxValue'),
       accessor: (r) => formatAmount(r.taxValuePerUnit),
       hideOnPrint: true,
+    },
+    {
+      header: t('guidelinePrices.cabolyPrice'),
+      accessor: (r) => (
+        <>
+          {/* Same print/PDF live-input caveat as "سعر البيع المتوقع" below — see that column's
+              own comment. */}
+          <span className="print-only">
+            {cabolyPrices[r.key] ? formatAmount(Number(cabolyPrices[r.key])) : '—'}
+          </span>
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            value={cabolyPrices[r.key] ?? ''}
+            onChange={(e) => setCabolyPrices((p) => ({ ...p, [r.key]: e.target.value }))}
+            disabled={!canEdit}
+            className="screen-only text-center"
+          />
+        </>
+      ),
     },
     {
       // سعر الشراء الحقيقي = سعر الشراء + قيمة الضريبة (taxValuePerUnit) − قيمة الخصم — by

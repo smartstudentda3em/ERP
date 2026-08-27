@@ -66,4 +66,10 @@ export class GuidelinePriceLine extends BaseEntity {
 
   @Column({ type: "numeric", precision: 18, scale: 4 })
   price: number;
+
+  /** "سعر الكابولي" — Air Conditioning only, an optional per-product/per-sheet price entered
+   * alongside "سعر البيع المتوقع" (price), same editable granularity. Null when never entered for
+   * this line. */
+  @Column({ type: "numeric", precision: 18, scale: 4, nullable: true })
+  cabolyPrice: number | null;
 }

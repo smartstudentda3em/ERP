@@ -4,6 +4,11 @@ import { ArrayMinSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsUUID, 
 export class GuidelinePriceLineDto {
   @IsUUID() productId: string;
   @IsNumber() @Min(0) price: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cabolyPrice?: number;
 }
 
 export class GuidelinePriceCompanyEntryDto {

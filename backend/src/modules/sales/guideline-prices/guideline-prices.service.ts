@@ -100,9 +100,12 @@ export class GuidelinePricesService {
   }
 
   /** Powers the Guideline Price detail page's auto-populated product list: every product ever
-   * bought from this supplier, each with its most recent real purchase price (free-goods receipts
-   * excluded — their price is always forced to 0 and would otherwise mask the real figure if one
-   * happened to be the latest receipt). One row per product via DISTINCT ON, latest receipt wins.
+   * bought from this supplier (free-goods receipts excluded from price/DISTINCT ON — their price is
+   * always forced to 0 and would otherwise mask the real figure if one happened to be the latest
+   * receipt). One row per product via DISTINCT ON, latest receipt wins for row identity/ordering.
+   * purchasePrice ("سعر الشراء") is overridden below by a separate, trailing-3-months
+   * quantity-weighted-average query — by explicit request, replacing the old single-latest-receipt
+   * price — falling back to that latest-receipt price for a product with no receipts in that window.
    * quantityPurchased is overridden below by a separate, unfiltered query — it must match the
    * Warehouses table's own "عدد العبوات المشتراة" total, which counts free-goods receipts too (see
    * that query's own comment further down for why this can't just be the main query's filter
@@ -198,8 +201,25 @@ export class GuidelinePricesService {
     );
     const quantityPurchasedByProductId = new Map(purchasedRows.map((r) => [r.productId, Number(r.total)]));
 
+    // "سعر الشراء" — by explicit request, a quantity-weighted average of unitCost across every
+    // (non-free-goods) receipt of that product from this supplier in the trailing 3 months, rather
+    // than just the single latest receipt's price. A product with no receipts in that window (still
+    // listed here via the DISTINCT ON query above, since a product once bought from this supplier
+    // stays on the sheet regardless of recency) falls back to its latest-ever price below.
+    const recentAvgRows: { productId: string; avgPrice: string }[] = await this.dataSource.query(
+      `SELECT pr."productId" AS "productId",
+              SUM(pr."unitCost" * pr."quantityPackages") / NULLIF(SUM(pr."quantityPackages"), 0) AS "avgPrice"
+       FROM purchase_receipts pr
+       WHERE pr."supplierId" = $1 AND pr."companyId" = $2 AND pr."isFreeGoods" = false
+         AND pr."receiptDate" >= (CURRENT_DATE - INTERVAL '3 months')
+       GROUP BY pr."productId"`,
+      [supplierId, companyId],
+    );
+    const recentAvgPriceByProductId = new Map(recentAvgRows.map((r) => [r.productId, Number(r.avgPrice)]));
+
     return rows.map(({ totalQuantityFromSupplier: _drop, ...r }) => ({
       ...r,
+      purchasePrice: recentAvgPriceByProductId.get(r.productId) ?? r.purchasePrice,
       quantityPurchased: quantityPurchasedByProductId.get(r.productId) ?? r.quantityPurchased,
       taxValuePerUnit,
     }));

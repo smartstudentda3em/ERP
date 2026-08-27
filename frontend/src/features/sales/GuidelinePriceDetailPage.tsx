@@ -388,16 +388,6 @@ export function GuidelinePriceDetailPage() {
     },
     { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice), hideOnPrint: true },
     {
-      header: t('guidelinePrices.discountValue'),
-      accessor: (r) => formatAmount(r.purchasePrice * (r.discountPercentage / 100)),
-      hideOnPrint: true,
-    },
-    {
-      header: t('guidelinePrices.taxValue'),
-      accessor: (r) => formatAmount(r.taxValuePerUnit),
-      hideOnPrint: true,
-    },
-    {
       header: t('guidelinePrices.cabolyPrice'),
       accessor: (r) => {
         const value = cabolyPriceFor(r);
@@ -423,12 +413,24 @@ export function GuidelinePriceDetailPage() {
       },
     },
     {
-      // سعر الشراء الحقيقي = سعر الشراء + قيمة الضريبة (taxValuePerUnit) − قيمة الخصم — by
-      // explicit request, adds the per-unit tax share back on top instead of only netting the
-      // discount off, so this column and قيمة الضريبة/قيمة الخصم next to it can never disagree.
+      header: t('guidelinePrices.taxValue'),
+      accessor: (r) => formatAmount(r.taxValuePerUnit),
+      hideOnPrint: true,
+    },
+    {
+      header: t('guidelinePrices.discountValue'),
+      accessor: (r) => formatAmount(r.purchasePrice * (r.discountPercentage / 100)),
+      hideOnPrint: true,
+    },
+    {
+      // سعر الشراء الحقيقي = سعر الشراء + قيمة الضريبة (taxValuePerUnit) + سعر الكابولي − قيمة
+      // الخصم — by explicit request, adds both the per-unit tax share and the caboly price (0 when
+      // none is configured for this supplier+capacity) back on top before netting the discount off.
       header: t('guidelinePrices.netPurchasePrice'),
       accessor: (r) =>
-        formatAmount(r.purchasePrice + r.taxValuePerUnit - r.purchasePrice * (r.discountPercentage / 100)),
+        formatAmount(
+          r.purchasePrice + r.taxValuePerUnit + (cabolyPriceFor(r) ?? 0) - r.purchasePrice * (r.discountPercentage / 100),
+        ),
       hideOnPrint: true,
     },
     {

@@ -46,11 +46,13 @@ interface Product {
 interface Unit {
   id: string;
   nameEn: string;
+  nameAr?: string | null;
 }
 
 interface PackageType {
   id: string;
   nameEn: string;
+  nameAr?: string | null;
 }
 
 export function emptyLine(): SalesLineForm {
@@ -184,6 +186,20 @@ export function SalesLineEditor({
 
   function packageTypeName(id?: string | null): string {
     return packageTypesQuery.data?.find((p) => p.id === id)?.nameEn ?? '';
+  }
+
+  // Air Conditioning only — the plain unitName/packageTypeName above stay English-only (nameEn),
+  // exactly as every other company still sees them; these two prefer nameAr so the الوحدة/العبوة
+  // toggle and its badge read in Arabic like the rest of this tenant's invoice form, instead of
+  // "Carton"/"Piece" sitting oddly among Arabic labels.
+  function unitLabelAr(id?: string | null): string {
+    const u = unitsQuery.data?.find((u) => u.id === id);
+    return u ? u.nameAr || u.nameEn : '';
+  }
+
+  function packageTypeLabelAr(id?: string | null): string {
+    const p = packageTypesQuery.data?.find((p) => p.id === id);
+    return p ? p.nameAr || p.nameEn : '';
   }
 
   const productOptions = useMemo(
@@ -506,15 +522,40 @@ export function SalesLineEditor({
                           placeholder={t('actions.searchProduct') ?? ''}
                           clearable
                         />
-                        {canSellByPackage && (
-                          <Select
-                            className="mt-1"
-                            value={line.unitKind}
-                            onChange={(e) => switchUnitKind(i, e.target.value as UnitKind)}
-                          >
-                            <option value="UNIT">{unitName(product!.unitId)}</option>
-                            <option value="PACKAGE">{packageTypeName(product!.packageTypeId)}</option>
-                          </Select>
+                        {canSellByPackage ? (
+                          isAirConditioning ? (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              <Select
+                                className="flex-1"
+                                value={line.unitKind}
+                                onChange={(e) => switchUnitKind(i, e.target.value as UnitKind)}
+                              >
+                                <option value="UNIT">{unitLabelAr(product!.unitId)}</option>
+                                <option value="PACKAGE">{packageTypeLabelAr(product!.packageTypeId)}</option>
+                              </Select>
+                              <span className="shrink-0 whitespace-nowrap rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-medium text-primary-700 dark:border-primary-500/30 dark:bg-primary-500/15 dark:text-primary-300">
+                                {line.unitKind === 'PACKAGE'
+                                  ? packageTypeLabelAr(product!.packageTypeId)
+                                  : unitLabelAr(product!.unitId)}
+                              </span>
+                            </div>
+                          ) : (
+                            <Select
+                              className="mt-1"
+                              value={line.unitKind}
+                              onChange={(e) => switchUnitKind(i, e.target.value as UnitKind)}
+                            >
+                              <option value="UNIT">{unitName(product!.unitId)}</option>
+                              <option value="PACKAGE">{packageTypeName(product!.packageTypeId)}</option>
+                            </Select>
+                          )
+                        ) : (
+                          isAirConditioning &&
+                          product && (
+                            <span className="mt-1 inline-block shrink-0 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--table-header-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
+                              {unitLabelAr(product.unitId)}
+                            </span>
+                          )
                         )}
                       </td>
                       <td className="w-24">
@@ -606,15 +647,40 @@ export function SalesLineEditor({
                       placeholder={t('actions.searchProduct') ?? ''}
                       clearable
                     />
-                    {canSellByPackage && (
-                      <Select
-                        className="mt-2"
-                        value={line.unitKind}
-                        onChange={(e) => switchUnitKind(i, e.target.value as UnitKind)}
-                      >
-                        <option value="UNIT">{unitName(product!.unitId)}</option>
-                        <option value="PACKAGE">{packageTypeName(product!.packageTypeId)}</option>
-                      </Select>
+                    {canSellByPackage ? (
+                      isAirConditioning ? (
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <Select
+                            className="flex-1"
+                            value={line.unitKind}
+                            onChange={(e) => switchUnitKind(i, e.target.value as UnitKind)}
+                          >
+                            <option value="UNIT">{unitLabelAr(product!.unitId)}</option>
+                            <option value="PACKAGE">{packageTypeLabelAr(product!.packageTypeId)}</option>
+                          </Select>
+                          <span className="shrink-0 whitespace-nowrap rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[10px] font-medium text-primary-700 dark:border-primary-500/30 dark:bg-primary-500/15 dark:text-primary-300">
+                            {line.unitKind === 'PACKAGE'
+                              ? packageTypeLabelAr(product!.packageTypeId)
+                              : unitLabelAr(product!.unitId)}
+                          </span>
+                        </div>
+                      ) : (
+                        <Select
+                          className="mt-2"
+                          value={line.unitKind}
+                          onChange={(e) => switchUnitKind(i, e.target.value as UnitKind)}
+                        >
+                          <option value="UNIT">{unitName(product!.unitId)}</option>
+                          <option value="PACKAGE">{packageTypeName(product!.packageTypeId)}</option>
+                        </Select>
+                      )
+                    ) : (
+                      isAirConditioning &&
+                      product && (
+                        <span className="mt-2 inline-block shrink-0 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--table-header-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
+                          {unitLabelAr(product.unitId)}
+                        </span>
+                      )
                     )}
                   </div>
                   <button

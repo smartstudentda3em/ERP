@@ -395,6 +395,7 @@ export function GuidelinePriceDetailPage() {
     { header: t('guidelinePrices.purchasePrice'), accessor: (r) => formatAmount(r.purchasePrice), hideOnPrint: true },
     {
       header: t('guidelinePrices.cabolyPrice'),
+      hideOnPrint: true,
       accessor: (r) => {
         const value = cabolyPriceFor(r);
         const display = value != null ? formatAmount(value) : t('guidelinePrices.setCabolyPrice');
@@ -466,6 +467,7 @@ export function GuidelinePriceDetailPage() {
       // Blank until a سعر البيع المتوقع is actually entered for that line — there's no meaningful
       // profit figure to show yet otherwise.
       header: t('guidelinePrices.profit'),
+      hideOnPrint: true,
       accessor: (r) => {
         const expected = prices[r.key];
         if (!expected) return <span className="text-[var(--text-muted)]">—</span>;

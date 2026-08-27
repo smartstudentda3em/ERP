@@ -1,5 +1,6 @@
 {
   "app": { "title": "نظام إدارة الحسابات" },
+  "sidebar": { "pin": "تثبيت القائمة", "unpin": "إلغاء تثبيت القائمة" },
   "errorBoundary": {
     "title": "حدث خطأ غير متوقع",
     "description": "واجه التطبيق مشكلة أثناء عرض هذه الصفحة. يمكنك إعادة تحميل الصفحة أو العودة إلى الرئيسية.",
@@ -781,6 +782,7 @@
     "freeGoods": "بضاعة مجانية / عينية (خصم تارجت)",
     "unitSellingPriceOptional": "سعر بيع الوحدة (اختياري)",
     "packageSellingPriceOptional": "سعر بيع العبوة (اختياري)",
+    "packageSellingPrice": "سعر البيع",
     "paidAmountNow": "المبلغ المدفوع الآن",
     "paymentSource": "مصدر الدفع / طريقة السحب",
     "paymentSourceSupplierBalance": "رصيد المورد",

@@ -1,5 +1,6 @@
 {
   "app": { "title": "ERP Accounting System" },
+  "sidebar": { "pin": "Pin Sidebar", "unpin": "Unpin Sidebar" },
   "errorBoundary": {
     "title": "An unexpected error occurred",
     "description": "The app ran into a problem while showing this page. You can reload the page or go back to the dashboard.",
@@ -781,6 +782,7 @@
     "freeGoods": "Free / In-Kind Goods (Target Discount)",
     "unitSellingPriceOptional": "Unit Selling Price (optional)",
     "packageSellingPriceOptional": "Package Selling Price (optional)",
+    "packageSellingPrice": "Selling Price",
     "paidAmountNow": "Amount Paid Now",
     "paymentSource": "Payment Source / Withdrawal Method",
     "paymentSourceSupplierBalance": "Supplier Balance",

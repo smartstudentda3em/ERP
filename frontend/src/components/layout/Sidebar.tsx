@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/auth-store';
+import { useSidebarStore } from '../../store/sidebar-store';
 import { useActiveCompany, useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
 
 interface NavItem {
@@ -246,6 +248,11 @@ function sortByOrder(visible: NavItem[], order: string[]): NavItem[] {
 export function Sidebar({ open }: { open: boolean }) {
   const { t } = useTranslation();
   const hasPermission = useAuthStore((s) => s.hasPermission);
+  const pinned = useSidebarStore((s) => s.pinned);
+  const togglePinned = useSidebarStore((s) => s.togglePinned);
+  // Desktop-only reveal-on-hover when unpinned — mobile keeps its existing `open` drawer behavior
+  // untouched (see the `open` prop, still driven by Topbar's hamburger button).
+  const [hovering, setHovering] = useState(false);
   // "مدير فرع" specifically (role-derived, not permission-inferred) — a مندوب ALSO lacks
   // sales-representatives.view, so the old `!hasPermission('sales-representatives.view')` signal
   // this used to be actually matched both roles, silently hiding hideForBranchManager items (like
@@ -270,15 +277,41 @@ export function Sidebar({ open }: { open: boolean }) {
       : filteredItems;
 
   return (
-    <aside
-      className={`fixed inset-y-0 start-0 z-40 w-64 shrink-0 border-e border-[var(--border)] bg-[var(--surface)] transition-transform print:hidden lg:translate-x-0 lg:rtl:translate-x-0 ${
-        open ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full'
-      }`}
-    >
-      <div className="flex h-14 items-center gap-2 border-b border-[var(--border)] px-4">
-        <img src="/icon-192.png" alt="" className="h-7 w-7 rounded object-contain" />
-        <span className="truncate text-sm font-semibold">{t('app.title')}</span>
-      </div>
+    <>
+      {/* Desktop-only hover trigger — invisible strip at the collapsed sidebar's edge, present
+          only while unpinned (once pinned, the sidebar itself already occupies this space). */}
+      {!pinned && (
+        <div
+          className="fixed inset-y-0 start-0 z-30 hidden w-2 lg:block"
+          onMouseEnter={() => setHovering(true)}
+        />
+      )}
+      <aside
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+        className={`fixed inset-y-0 start-0 z-40 w-64 shrink-0 border-e border-[var(--border)] bg-[var(--surface)] transition-transform print:hidden ${
+          pinned || hovering ? 'lg:translate-x-0 lg:rtl:translate-x-0' : 'lg:-translate-x-full lg:rtl:translate-x-full'
+        } ${!pinned && hovering ? 'lg:shadow-xl' : ''} ${
+          open ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full'
+        }`}
+      >
+        <div className="flex h-14 items-center gap-2 border-b border-[var(--border)] px-4">
+          <img src="/icon-192.png" alt="" className="h-7 w-7 rounded object-contain" />
+          <span className="flex-1 truncate text-sm font-semibold">{t('app.title')}</span>
+          <button
+            type="button"
+            onClick={togglePinned}
+            title={t(pinned ? 'sidebar.unpin' : 'sidebar.pin')}
+            aria-label={t(pinned ? 'sidebar.unpin' : 'sidebar.pin')}
+            className={`hidden shrink-0 rounded-lg p-1.5 text-sm transition lg:block ${
+              pinned
+                ? 'bg-primary-600 text-white'
+                : 'text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/5'
+            }`}
+          >
+            📌
+          </button>
+        </div>
       <nav className="flex flex-col gap-0.5 overflow-y-auto p-2" style={{ height: 'calc(100% - 56px)' }}>
         {visibleItems.map((item) => (
           <NavLink
@@ -310,6 +343,7 @@ export function Sidebar({ open }: { open: boolean }) {
           </NavLink>
         ))}
       </nav>
-    </aside>
+      </aside>
+    </>
   );
 }

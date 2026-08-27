@@ -489,6 +489,11 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       align: 'right',
     },
     {
+      header: t('purchasing.packageSellingPrice'),
+      accessor: (r) => (r.packageSellingPrice != null ? formatAmount(r.packageSellingPrice) : '—'),
+      align: 'right',
+    },
+    {
       header: t('fields.totalAmount'),
       // quantityPackages × packagePurchasePrice — mirrors PurchaseReceiptsService.create()'s
       // totalAmount on the backend, so this column never has to recompute anything itself.
@@ -775,26 +780,22 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
             </div>
           )}
 
-          {!isPrintingPress && (
-            <FormField label={t('purchasing.packageSellingPriceOptional')}>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.packageSellingPrice}
-                onChange={(e) => setForm({ ...form, packageSellingPrice: e.target.value })}
-              />
-            </FormField>
-          )}
-          {!isPrintingPress && (
-            <FormField label={t('purchasing.unitSellingPriceOptional')}>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.unitSellingPrice}
-                onChange={(e) => setForm({ ...form, unitSellingPrice: e.target.value })}
-              />
-            </FormField>
-          )}
+          <FormField label={t('purchasing.packageSellingPriceOptional')}>
+            <Input
+              type="number"
+              step="0.01"
+              value={form.packageSellingPrice}
+              onChange={(e) => setForm({ ...form, packageSellingPrice: e.target.value })}
+            />
+          </FormField>
+          <FormField label={t('purchasing.unitSellingPriceOptional')}>
+            <Input
+              type="number"
+              step="0.01"
+              value={form.unitSellingPrice}
+              onChange={(e) => setForm({ ...form, unitSellingPrice: e.target.value })}
+            />
+          </FormField>
 
           <div className="col-span-2">
             <FormField label={t('purchasing.paidAmountNow')}>

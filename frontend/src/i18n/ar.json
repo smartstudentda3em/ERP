@@ -688,6 +688,7 @@
     "reservedQuantity": "الكمية المحجوزة",
     "consumedQuantity": "الكمية المستهلكة",
     "consumedDateRangeLabel": "فترة احتساب الكمية المستهلكة",
+    "quantityPurchased": "الكمية المشتراة",
     "minStock": "الحد الأدنى",
     "location": "الموقع (رف/سلة)",
     "lastUpdated": "آخر تحديث",

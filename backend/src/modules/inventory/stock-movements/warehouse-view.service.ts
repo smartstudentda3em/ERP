@@ -9,7 +9,12 @@ import { PurchaseReceipt } from './entities/purchase-receipt.entity';
 import { SalesInvoiceLine } from '../../sales/sales-invoices/entities/sales-invoice.entity';
 import { PaginatedResult } from '../../../common/dto/pagination-query.dto';
 import { WarehouseProductsQueryDto } from './dto/warehouse-view.dto';
-import { currentMonthRange, getConsumedQuantitiesByProductId } from './consumed-quantity.util';
+import {
+  currentMonthRange,
+  getConsumedQuantitiesByProductId,
+  getPurchasedQuantitiesByProductId,
+} from './consumed-quantity.util';
+import { Company } from '../../settings/entities/company.entity';
 
 const SORT_COLUMNS: Record<string, string> = {
   code: 'p.sku',
@@ -48,6 +53,7 @@ export class WarehouseViewService {
     @InjectRepository(PurchaseReceipt)
     private readonly purchaseReceiptRepo: Repository<PurchaseReceipt>,
     @InjectRepository(SalesInvoiceLine) private readonly salesInvoiceLineRepo: Repository<SalesInvoiceLine>,
+    @InjectRepository(Company) private readonly companiesRepo: Repository<Company>,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -194,6 +200,14 @@ export class WarehouseViewService {
       dateTo,
     );
 
+    // "الكمية المشتراة" and dropping the package price columns are Air Conditioning-only changes
+    // to this table — Stationery/Printing Press keep every field exactly as before.
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    const isAirConditioning = company?.code === 'AC';
+    const purchasedByProductId = isAirConditioning
+      ? await getPurchasedQuantitiesByProductId(this.dataSource, companyId, productIds)
+      : new Map<string, number>();
+
     const items = entities.map((sl, i) => {
       const p = sl.product;
       const qty = Number(sl.quantityOnHand);
@@ -220,11 +234,16 @@ export class WarehouseViewService {
           : null,
         reservedQuantity: Number(sl.reservedQuantity),
         consumedQuantity: consumedByProductId.get(p.id) ?? 0,
+        quantityPurchased: purchasedByProductId.get(p.id) ?? 0,
         minimumStock: reorderLevel,
         purchasePrice: Number(p.purchasePrice),
         sellingPrice: Number(p.sellingPrice),
-        packagePurchasePrice: p.packagePurchasePrice != null ? Number(p.packagePurchasePrice) : null,
-        packageSellingPrice: p.packageSellingPrice != null ? Number(p.packageSellingPrice) : null,
+        ...(isAirConditioning
+          ? {}
+          : {
+              packagePurchasePrice: p.packagePurchasePrice != null ? Number(p.packagePurchasePrice) : null,
+              packageSellingPrice: p.packageSellingPrice != null ? Number(p.packageSellingPrice) : null,
+            }),
         location: sl.location,
         status,
         updatedAt: sl.updatedAt,

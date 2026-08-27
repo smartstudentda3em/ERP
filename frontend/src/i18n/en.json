@@ -688,6 +688,7 @@
     "reservedQuantity": "Reserved Qty",
     "consumedQuantity": "Consumed Qty",
     "consumedDateRangeLabel": "Consumed Quantity Period",
+    "quantityPurchased": "Quantity Purchased",
     "minStock": "Min Stock",
     "location": "Location",
     "lastUpdated": "Last Updated",

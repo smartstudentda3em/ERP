@@ -46,6 +46,9 @@ interface ProductRow {
   /** Printing Press only — total genuine outflow (sold/written off/transferred out) for this
    * product within the date range selected below, or the current calendar month by default. */
   consumedQuantity: number;
+  /** Company-wide, all-time total of packages actually received for this product — Air
+   * Conditioning only (see WarehouseViewService.getProducts()); 0 for every other company. */
+  quantityPurchased: number;
   minimumStock: number;
   purchasePrice: number;
   sellingPrice: number;
@@ -90,7 +93,7 @@ export function WarehousesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const companyId = useAuthStore((s) => s.user?.companyId);
-  const { isPrintingPress } = useActiveCompany();
+  const { isPrintingPress, isAirConditioning } = useActiveCompany();
   const isManagerRestricted = useIsPressManagerRestricted();
 
   const [warehouseSearch, setWarehouseSearch] = useState('');
@@ -216,6 +219,31 @@ export function WarehousesPage() {
     ),
   };
 
+  // Air Conditioning only — same status badge as statusColumn, but with the minimum-stock
+  // threshold spelled out next to it (e.g. "منخفض - الحد الأدنى: 20"), per the spec. Built as its
+  // own constant rather than mutating statusColumn itself, since Printing Press's/Stationery's
+  // branches below still rely on that shared object exactly as before.
+  const acStatusColumn: Column<ProductRow> = {
+    header: t('common.status'),
+    accessor: (r) => (
+      <Badge color={r.status === 'out' ? 'red' : r.status === 'low' ? 'yellow' : 'green'}>
+        {(r.status === 'out'
+          ? t('warehouse.outOfStock')
+          : r.status === 'low'
+            ? t('warehouse.lowStock')
+            : t('warehouse.inStock')) + ` - ${t('warehouse.minStock')}: ${formatAmount(r.minimumStock)}`}
+      </Badge>
+    ),
+  };
+
+  // Air Conditioning only — total packages ever actually received into the company for this
+  // product, company-wide and all-time (see WarehouseViewService.getProducts()).
+  const quantityPurchasedColumn: Column<ProductRow> = {
+    header: t('warehouse.quantityPurchased'),
+    accessor: (r) => formatAmount(r.quantityPurchased),
+    align: 'right',
+  };
+
   // Manager role, Press branch only: every stat card/filter stays visible, but this single
   // column is dropped from both branches below so the manager must rely on physical counting
   // rather than the system-recorded on-hand quantity.
@@ -276,44 +304,72 @@ export function WarehousesPage() {
           sortKey: 'updatedAt',
         },
       ]
-    : [
-        { header: t('warehouse.productCode'), accessor: (r) => r.sku ?? '—', sortKey: 'code' },
-        { header: t('fields.barcode'), accessor: (r) => r.barcode ?? '—', sortKey: 'barcode' },
-        { header: t('warehouse.productName'), accessor: (r) => r.nameEn, sortKey: 'name' },
-        { header: t('fields.category'), accessor: (r) => r.category?.name ?? '—', sortKey: 'category' },
-        { header: t('fields.packagingType'), accessor: (r) => r.packageType?.name ?? '—', sortKey: 'packageType' },
-        ...(isManagerRestricted ? [] : [availableQuantityColumn]),
-        {
-          header: t('warehouse.reservedQuantity'),
-          accessor: (r) => formatAmount(r.reservedQuantity),
-          align: 'right',
-          sortKey: 'reserved',
-        },
-        { header: t('warehouse.minStock'), accessor: (r) => formatAmount(r.minimumStock), align: 'right', sortKey: 'minStock' },
-        {
-          header: t('fields.packagePurchasePrice'),
-          accessor: (r) => (r.packagePurchasePrice != null ? formatAmount(r.packagePurchasePrice) : '—'),
-          align: 'right',
-          sortKey: 'packagePurchasePrice',
-        },
-        {
-          header: t('fields.packageSellingPrice'),
-          accessor: (r) => (r.packageSellingPrice != null ? formatAmount(r.packageSellingPrice) : '—'),
-          align: 'right',
-          sortKey: 'packageSellingPrice',
-        },
-        {
-          header: t('warehouse.location'),
-          accessor: (r) => r.location ?? t('warehouse.noLocation'),
-          sortKey: 'location',
-        },
-        statusColumn,
-        {
-          header: t('warehouse.lastUpdated'),
-          accessor: (r) => new Date(r.updatedAt).toLocaleDateString(),
-          sortKey: 'updatedAt',
-        },
-      ];
+    : isAirConditioning
+      ? [
+          { header: t('warehouse.productCode'), accessor: (r) => r.sku ?? '—', sortKey: 'code' },
+          { header: t('fields.barcode'), accessor: (r) => r.barcode ?? '—', sortKey: 'barcode' },
+          { header: t('warehouse.productName'), accessor: (r) => r.nameEn, sortKey: 'name' },
+          { header: t('fields.category'), accessor: (r) => r.category?.name ?? '—', sortKey: 'category' },
+          { header: t('fields.packagingType'), accessor: (r) => r.packageType?.name ?? '—', sortKey: 'packageType' },
+          quantityPurchasedColumn,
+          ...(isManagerRestricted ? [] : [availableQuantityColumn]),
+          {
+            header: t('warehouse.reservedQuantity'),
+            accessor: (r) => formatAmount(r.reservedQuantity),
+            align: 'right',
+            sortKey: 'reserved',
+          },
+          { header: t('warehouse.minStock'), accessor: (r) => formatAmount(r.minimumStock), align: 'right', sortKey: 'minStock' },
+          {
+            header: t('warehouse.location'),
+            accessor: (r) => r.location ?? t('warehouse.noLocation'),
+            sortKey: 'location',
+          },
+          acStatusColumn,
+          {
+            header: t('warehouse.lastUpdated'),
+            accessor: (r) => new Date(r.updatedAt).toLocaleDateString(),
+            sortKey: 'updatedAt',
+          },
+        ]
+      : [
+          { header: t('warehouse.productCode'), accessor: (r) => r.sku ?? '—', sortKey: 'code' },
+          { header: t('fields.barcode'), accessor: (r) => r.barcode ?? '—', sortKey: 'barcode' },
+          { header: t('warehouse.productName'), accessor: (r) => r.nameEn, sortKey: 'name' },
+          { header: t('fields.category'), accessor: (r) => r.category?.name ?? '—', sortKey: 'category' },
+          { header: t('fields.packagingType'), accessor: (r) => r.packageType?.name ?? '—', sortKey: 'packageType' },
+          ...(isManagerRestricted ? [] : [availableQuantityColumn]),
+          {
+            header: t('warehouse.reservedQuantity'),
+            accessor: (r) => formatAmount(r.reservedQuantity),
+            align: 'right',
+            sortKey: 'reserved',
+          },
+          { header: t('warehouse.minStock'), accessor: (r) => formatAmount(r.minimumStock), align: 'right', sortKey: 'minStock' },
+          {
+            header: t('fields.packagePurchasePrice'),
+            accessor: (r) => (r.packagePurchasePrice != null ? formatAmount(r.packagePurchasePrice) : '—'),
+            align: 'right',
+            sortKey: 'packagePurchasePrice',
+          },
+          {
+            header: t('fields.packageSellingPrice'),
+            accessor: (r) => (r.packageSellingPrice != null ? formatAmount(r.packageSellingPrice) : '—'),
+            align: 'right',
+            sortKey: 'packageSellingPrice',
+          },
+          {
+            header: t('warehouse.location'),
+            accessor: (r) => r.location ?? t('warehouse.noLocation'),
+            sortKey: 'location',
+          },
+          statusColumn,
+          {
+            header: t('warehouse.lastUpdated'),
+            accessor: (r) => new Date(r.updatedAt).toLocaleDateString(),
+            sortKey: 'updatedAt',
+          },
+        ];
 
   const summary = summaryQuery.data;
 

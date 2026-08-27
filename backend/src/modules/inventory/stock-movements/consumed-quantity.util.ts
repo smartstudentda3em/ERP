@@ -60,6 +60,35 @@ export async function getConsumedQuantitiesByProductId(
   return result;
 }
 
+/** "الكمية المشتراة" (Warehouses table, Air Conditioning only) — total packages ever actually
+ * received into the company for each product, company-wide across every warehouse and all time
+ * (never scoped to the warehouse currently being viewed or to any date range), excluding free-goods
+ * receipts exactly like GuidelinePricesService's own "عدد العبوات المشتراة" column. One grouped SUM
+ * query scoped to just the given product ids, same cost discipline as getConsumedQuantitiesByProductId
+ * above. */
+export async function getPurchasedQuantitiesByProductId(
+  dataSource: DataSource,
+  companyId: string,
+  productIds: string[],
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (productIds.length === 0) return result;
+
+  const rows = await dataSource
+    .createQueryBuilder()
+    .select('pr."productId"', 'productId')
+    .addSelect('COALESCE(SUM(pr."quantityPackages"), 0)', 'total')
+    .from('purchase_receipts', 'pr')
+    .where('pr."companyId" = :companyId', { companyId })
+    .andWhere('pr."productId" IN (:...productIds)', { productIds })
+    .andWhere('pr."isFreeGoods" = false')
+    .groupBy('pr."productId"')
+    .getRawMany();
+
+  for (const r of rows) result.set(r.productId, Number(r.total));
+  return result;
+}
+
 /** 'YYYY-MM-DD' for the first day of the current calendar month, and for today — the "الفترة
  * الحالية" default the Warehouses page falls back to when its own date filter is left empty. */
 export function currentMonthRange(): { dateFrom: string; dateTo: string } {

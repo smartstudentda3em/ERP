@@ -5,9 +5,10 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
+import { useActiveCompany } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
-import { Input } from '../../components/ui/Input';
+import { Input, FormField, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 
 interface Customer {
@@ -16,7 +17,20 @@ interface Customer {
   mobile?: string;
   balanceDue: number;
   salesRepresentativeName?: string | null;
+  branchId?: string | null;
 }
+
+interface Branch {
+  id: string;
+  nameEn: string;
+  nameAr?: string | null;
+}
+
+// Air Conditioning only — same sentinel convention as SalesInvoicesPage/WarehousesPage's own
+// branch filters, needed because Select auto-picks the sole option when exactly one real branch
+// exists (AC currently has just one) — an empty '' value would collapse into that option instead
+// of meaning "all branches".
+const ALL_BRANCHES = 'all';
 
 function money(n: number): string {
   return formatAmount(n);
@@ -26,12 +40,21 @@ export function OutstandingBalancesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const companyId = useAuthStore((s) => s.user?.companyId);
+  const { isAirConditioning } = useActiveCompany();
   const [search, setSearch] = useState('');
+  const [branchFilter, setBranchFilter] = useState(ALL_BRANCHES);
 
   const customersQuery = useQuery({
     queryKey: ['customers', companyId],
     queryFn: () => unwrap<Customer[]>(apiClient.get('/customers', { params: { companyId } })),
     enabled: !!companyId,
+  });
+
+  // Air Conditioning only — options for the branch filter below.
+  const branchesQuery = useQuery({
+    queryKey: ['branches', companyId],
+    queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
+    enabled: isAirConditioning && !!companyId,
   });
 
   const debtors = useMemo(
@@ -42,15 +65,19 @@ export function OutstandingBalancesPage() {
   const totalOutstanding = useMemo(() => debtors.reduce((sum, c) => sum + Number(c.balanceDue ?? 0), 0), [debtors]);
 
   // Multi-keyword, cross-column, order-independent — see DataTable.tsx's own search for the same
-  // pattern.
+  // pattern. The branch filter (Air Conditioning only) narrows independently alongside it.
   const filteredDebtors = useMemo(() => {
+    const byBranch =
+      isAirConditioning && branchFilter !== ALL_BRANCHES
+        ? debtors.filter((c) => c.branchId === branchFilter)
+        : debtors;
     const keywords = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (keywords.length === 0) return debtors;
-    return debtors.filter((c) => {
+    if (keywords.length === 0) return byBranch;
+    return byBranch.filter((c) => {
       const haystack = [c.name, c.mobile, c.salesRepresentativeName].filter(Boolean).join(' ').toLowerCase();
       return keywords.every((kw) => haystack.includes(kw));
     });
-  }, [debtors, search]);
+  }, [debtors, search, isAirConditioning, branchFilter]);
 
   const columns: Column<Customer>[] = [
     { header: t('common.name'), accessor: (r) => r.name },
@@ -88,13 +115,27 @@ export function OutstandingBalancesPage() {
         <div className="mt-1 text-2xl font-semibold text-red-600">{money(totalOutstanding)}</div>
       </Card>
 
-      <div className="mb-3 max-w-sm">
-        <Input
-          type="search"
-          placeholder={t('customers.searchByNameOrMobile') ?? ''}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <div className="max-w-sm flex-1">
+          <Input
+            type="search"
+            placeholder={t('customers.searchByNameOrMobile') ?? ''}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        {isAirConditioning && (
+          <FormField label={t('fields.branch')}>
+            <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              <option value={ALL_BRANCHES}>{t('accounting.allBranches')}</option>
+              {(branchesQuery.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nameAr || b.nameEn}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
       </div>
 
       <DataTable

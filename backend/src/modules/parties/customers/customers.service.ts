@@ -84,6 +84,7 @@ export class CustomersService extends BaseCrudService<Customer> {
       totalPaid: number;
       balanceDue: number;
       salesRepresentativeName: string | null;
+      branchId: string | null;
       paymentStatus: CustomerPaymentStatus;
     })[]
   > {
@@ -116,6 +117,7 @@ export class CustomersService extends BaseCrudService<Customer> {
             .createQueryBuilder()
             .select('r.id', 'id')
             .addSelect('r.name', 'name')
+            .addSelect('r."branchId"', 'branchId')
             .from('sales_representatives', 'r')
             .where('r.id IN (:...assignedRepIds)', { assignedRepIds })
             .getRawMany()
@@ -126,6 +128,7 @@ export class CustomersService extends BaseCrudService<Customer> {
         .createQueryBuilder()
         .select('i."customerId"', 'customerId')
         .addSelect('r.name', 'repName')
+        .addSelect('r."branchId"', 'repBranchId')
         .from('sales_invoices', 'i')
         .innerJoin('sales_representatives', 'r', 'r.id = i."salesRepresentativeId"')
         .where('i."customerId" IN (:...ids)', { ids })
@@ -162,7 +165,9 @@ export class CustomersService extends BaseCrudService<Customer> {
     const totalPurchasesByCustomerId = new Map(invoiceTotals.map((t) => [t.customerId, Number(t.total)]));
     const totalPaidByCustomerId = new Map(paymentTotals.map((t) => [t.customerId, Number(t.total)]));
     const assignedRepNameById = new Map(assignedReps.map((r) => [r.id, r.name]));
+    const assignedRepBranchById = new Map(assignedReps.map((r) => [r.id, r.branchId]));
     const invoiceRepNameByCustomerId = new Map(invoiceReps.map((r) => [r.customerId, r.repName]));
+    const invoiceRepBranchByCustomerId = new Map(invoiceReps.map((r) => [r.customerId, r.repBranchId]));
     const invoiceCreatorNameByCustomerId = new Map(invoiceCreators.map((r) => [r.customerId, r.creatorName]));
     const activeInstallmentCustomerIds = new Set(activeInstallmentPlans.map((p) => p.customerId));
 
@@ -175,6 +180,13 @@ export class CustomersService extends BaseCrudService<Customer> {
         invoiceRepNameByCustomerId.get(c.id) ??
         invoiceCreatorNameByCustomerId.get(c.id) ??
         null;
+      // Same two-level fallback as salesRepresentativeName just above (a plain invoice creator has
+      // no branch of their own, so that third fallback doesn't apply here) — drives the Outstanding
+      // Balances page's Air Conditioning-only branch filter (OutstandingBalancesPage.tsx).
+      const branchId =
+        (c.salesRepresentativeId ? assignedRepBranchById.get(c.salesRepresentativeId) : null) ??
+        invoiceRepBranchByCustomerId.get(c.id) ??
+        null;
       const paymentStatus: CustomerPaymentStatus = activeInstallmentCustomerIds.has(c.id)
         ? 'INSTALLMENT'
         : balanceDue <= 0.005
@@ -186,6 +198,7 @@ export class CustomersService extends BaseCrudService<Customer> {
         totalPaid,
         balanceDue,
         salesRepresentativeName,
+        branchId,
         paymentStatus,
       };
     });

@@ -644,11 +644,13 @@ export class CashMovementsService {
   }
 
   /**
-   * "أرباح المدراء والشركاء" tab on the Expenses screen: every branch-manager commission payout
-   * (sourceType COMMISSION_PAYOUT) and partner dividend payout (sourceType DIVIDEND) recorded as
-   * an EXPENSE, in one combined newest-first list — each row tagged with which of the two it is
-   * (subType) and the recipient's resolved name, since the two source types attribute to different
-   * tables (salesRepresentativeId vs partnerId) with no single FK to join on.
+   * "إجمالي العمولات" tab on the Expenses screen (Printing Press only): every branch-manager
+   * commission payout (sourceType COMMISSION_PAYOUT) recorded as an EXPENSE, newest-first. Partner
+   * dividend payouts (sourceType DIVIDEND) used to appear here too under the tab's old name "أرباح
+   * المدراء والشركاء" — dropped by explicit request so this tab's total exactly matches
+   * getCommissionPayouts()'s total shown under "مدراء الأفرع والمناديب" ← "إجمالي العمولات"; partner
+   * dividends remain visible on their own under "الشركاء". subType/partnerName are kept even though
+   * every row is now MANAGER, since nothing else about this shape needed to change.
    */
   async getManagerPartnerProfitTransactions(companyId: string, dateFrom?: string, dateTo?: string) {
     const qb = this.dataSource
@@ -668,7 +670,7 @@ export class CashMovementsService {
       .leftJoin('partners', 'p', 'p.id = m."partnerId"')
       .where('m."companyId" = :companyId', { companyId })
       .andWhere(`m.type = 'EXPENSE'`)
-      .andWhere(`m."sourceType" IN ('COMMISSION_PAYOUT', 'DIVIDEND')`)
+      .andWhere(`m."sourceType" = 'COMMISSION_PAYOUT'`)
       .orderBy('m."createdAt"', 'DESC');
 
     if (dateFrom) qb.andWhere('m."movementDate" >= :dateFrom', { dateFrom });

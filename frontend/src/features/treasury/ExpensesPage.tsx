@@ -62,8 +62,9 @@ interface CogsTransaction {
   cogs: number;
 }
 
-/** Printing Press only — "أرباح المدراء والشركاء" tab, combining branch-manager commission payouts
- * and partner dividend payouts into one list (see backend's getManagerPartnerProfitTransactions). */
+/** Printing Press only — "إجمالي العمولات" tab: every branch-manager commission payout (see
+ * backend's getManagerPartnerProfitTransactions). subType/PARTNER is dead but harmless — kept
+ * since partner dividend payouts used to share this list before being split out. */
 interface ProfitTransaction {
   id: string;
   date: string;
@@ -281,7 +282,7 @@ export function ExpensesPage() {
     queryFn: () => unwrap<PurchaseReceipt[]>(apiClient.get('/inventory/purchase-receipts', { params: { companyId } })),
     enabled: !!companyId && isPrintingPress,
   });
-  // Printing Press only — "أرباح المدراء والشركاء" tab's combined commission-payout + dividend log.
+  // Printing Press only — "إجمالي العمولات" tab's commission-payout log.
   const profitsQuery = useQuery({
     queryKey: ['treasury-manager-partner-profits', companyId, dateRange.from, dateRange.to],
     queryFn: () =>

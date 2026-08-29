@@ -783,6 +783,7 @@
     "noProductSelected": "No item selected",
     "changeItem": "Change",
     "freeGoods": "Free / In-Kind Goods (Target Discount)",
+    "itemCode": "Item Code",
     "unitSellingPriceOptional": "Unit Selling Price (optional)",
     "packageSellingPriceOptional": "Package Selling Price (optional)",
     "packageSellingPrice": "Selling Price",

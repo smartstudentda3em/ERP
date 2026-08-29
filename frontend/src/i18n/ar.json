@@ -783,6 +783,7 @@
     "noProductSelected": "لم يتم اختيار صنف",
     "changeItem": "تغيير",
     "freeGoods": "بضاعة مجانية / عينية (خصم تارجت)",
+    "itemCode": "رمز الصنف",
     "unitSellingPriceOptional": "سعر بيع الوحدة (اختياري)",
     "packageSellingPriceOptional": "سعر بيع العبوة (اختياري)",
     "packageSellingPrice": "سعر البيع",

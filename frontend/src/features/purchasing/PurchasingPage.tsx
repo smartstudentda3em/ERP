@@ -451,6 +451,11 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('common.date'), accessor: (r) => r.receiptDate },
     { header: t('fields.supplier'), accessor: (r) => r.supplier?.companyName ?? '—' },
+    // Air Conditioning only — inserted between "المورد" and "الصنف" per explicit request; every
+    // other company's table is unaffected.
+    ...(isAirConditioning
+      ? [{ header: t('purchasing.itemCode'), accessor: (r: PurchaseReceipt) => r.product?.sku ?? '—' }]
+      : []),
     {
       header: t('fields.product'),
       // Air Conditioning only — a "بضاعة مجانية" receipt used to spell the full label out as a

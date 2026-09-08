@@ -483,10 +483,16 @@ async function main() {
   const numberingSeriesRepo = AppDataSource.getRepository(NumberingSeries);
   const customerRepo = AppDataSource.getRepository(Customer);
 
-  const seededCompanies: { company: Company; branch: Branch }[] = [];
+  const seededCompanies: { company: Company; branch: Branch | null }[] = [];
 
   for (const def of COMPANY_DEFS) {
     let company = await companyRepo.findOne({ where: { code: def.code } });
+    // Only true the very first time this company is ever seeded — the default "HQ" branch/
+    // warehouse below must be auto-provisioned then, but never silently recreated on a later seed
+    // run just because an admin has since deleted it (e.g. Printing Press's unused "المكتب
+    // الرئيسي" — deleting it kept coming back on every deploy before this flag existed, since
+    // schema:sync + seed re-runs on every backend container start).
+    const isNewCompany = !company;
     if (!company) {
       company = await companyRepo.save(
         companyRepo.create({ code: def.code, nameEn: def.nameEn, nameAr: def.nameAr, baseCurrencyCode: 'USD' }),
@@ -494,7 +500,7 @@ async function main() {
     }
 
     let branch = await branchRepo.findOne({ where: { companyId: company.id, code: 'HQ' } });
-    if (!branch) {
+    if (!branch && isNewCompany) {
       branch = await branchRepo.save(
         branchRepo.create({
           code: 'HQ',
@@ -507,7 +513,7 @@ async function main() {
     }
 
     let warehouse = await warehouseRepo.findOne({ where: { companyId: company.id, code: 'WH-MAIN' } });
-    if (!warehouse) {
+    if (!warehouse && branch) {
       warehouse = await warehouseRepo.save(
         warehouseRepo.create({
           code: 'WH-MAIN',
@@ -644,7 +650,7 @@ async function main() {
     }
 
     seededCompanies.push({ company, branch });
-    console.log(`Company seeded: ${company.code} (${company.nameEn}) / ${branch.code} / ${warehouse.code}`);
+    console.log(`Company seeded: ${company.code} (${company.nameEn}) / ${branch?.code ?? '—'} / ${warehouse?.code ?? '—'}`);
   }
 
   // --- Branch Manager role ("مدير فرع") — single role, unrestricted, shared by every company ---
@@ -837,7 +843,7 @@ async function main() {
       existingSystemAdmin.passwordHash = await argon2.hash(adminPassword);
       if (!existingSystemAdmin.companyId) {
         existingSystemAdmin.companyId = defaultCompany.company.id;
-        existingSystemAdmin.branchId = defaultCompany.branch.id;
+        existingSystemAdmin.branchId = defaultCompany.branch?.id ?? null;
       }
       await userRepo.save(existingSystemAdmin);
       console.log(`Admin user migrated to new identity: ${adminEmail}`);
@@ -849,7 +855,7 @@ async function main() {
         phone: adminPhone,
         passwordHash: await argon2.hash(adminPassword),
         companyId: defaultCompany.company.id,
-        branchId: defaultCompany.branch.id,
+        branchId: defaultCompany.branch?.id ?? null,
         roles: [adminRole],
       });
       await userRepo.save(adminUser);
@@ -891,7 +897,7 @@ async function main() {
       fullName: 'Makroom204',
       passwordHash: await argon2.hash(extraManagerPassword),
       companyId: statCompany.company.id,
-      branchId: statCompany.branch.id,
+      branchId: statCompany.branch?.id ?? null,
       roles: [managerRole],
     });
     await userRepo.save(extraManagerUser);

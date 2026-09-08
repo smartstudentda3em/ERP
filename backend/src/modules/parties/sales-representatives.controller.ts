@@ -1285,6 +1285,18 @@ export class SalesRepresentativesController {
   findAll(@CurrentUser('companyId') companyId: string, @Query('roleName') roleName?: string) {
     return this.service.findAllForCompany(companyId, roleName);
   }
+  /** Powers the Sales Invoice form's "مساعدة مندوب" checkbox dropdown (Printing Press/Air
+   * Conditioning) — needed by whoever creates the invoice, including a مدير فرع/مندوب who
+   * deliberately lacks the full sales-representatives.view permission (that would additionally
+   * unlock the admin-only "مدراء الأفرع والمناديب" list — see BRANCH_MANAGER_PERMISSION_CODES'
+   * own comment in run-seed.ts). Gated on sales.invoice.create instead, and hardcoded to roleName
+   * 'مندوب' so this narrower door can never be used to fetch the unrestricted/مدير-فرع list. Must
+   * stay ahead of the ':id' route below. */
+  @Get('assist-options')
+  @Permissions('sales.invoice.create')
+  findAssistOptions(@CurrentUser('companyId') companyId: string) {
+    return this.service.findAllForCompany(companyId, 'مندوب');
+  }
   @Get('reports/summary')
   @Permissions('sales-representatives.view')
   reportsSummary(

@@ -254,10 +254,12 @@ export function SalesInvoicesPage() {
   });
   const selectedBranchManager = branchManagerRepsQuery.data?.find((r) => r.branchId === branchId);
 
-  // AC/PRESS only — populates the "مساعدة مندوب" dropdown once the checkbox is ticked.
+  // AC/PRESS only — populates the "مساعدة مندوب" dropdown once the checkbox is ticked. Uses the
+  // narrower assist-options endpoint (gated on sales.invoice.create, not sales-representatives.view)
+  // so a مدير فرع/مندوب creating their own invoice can populate this list too, not just an admin.
   const mandoubRepsQuery = useQuery({
-    queryKey: ['sales-representatives', 'مندوب'],
-    queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives', { params: { roleName: 'مندوب' } })),
+    queryKey: ['sales-representatives-assist-options'],
+    queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives/assist-options')),
     enabled: (isAirConditioning || isPrintingPress) && modalOpen,
   });
 

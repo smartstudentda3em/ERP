@@ -692,6 +692,12 @@ async function main() {
     // company uses the normal warehouse-picker invoice form, same as مندوب already does (see that
     // role's own settings.warehouse.view below).
     'settings.warehouse.view',
+    // Without this, GET /settings/branches 403s and the Sales Invoice form's "الفرع" dropdown
+    // silently renders empty — on Printing Press the branch field is shown to every user
+    // (SalesInvoicesPage.tsx never gates it behind isAdmin the way it does for Air Conditioning),
+    // so a Press مدير فرع needs this to submit an invoice at all. Same reasoning as مندوب's own
+    // settings.branch.view below.
+    'settings.branch.view',
     // Unlocks the "مدراء الأفرع والمناديب" nav item/route (router.tsx's anyOf check, Sidebar.tsx's
     // permissionAnyOf) so a مدير فرع can reach their own "لوحة المدير" tab — NOT the plain
     // sales-representatives.view permission, which would additionally flip

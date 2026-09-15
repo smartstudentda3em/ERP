@@ -616,7 +616,11 @@ export class SalesInvoicesService {
         'isBranchManager',
       )
       .addSelect('COALESCE(br."nameAr", br."nameEn")', 'branchName')
-      .addSelect('c.name', 'customerName')
+      // Printing Press: every invoice shares one seeded walk-in Customer row (c.name is always
+      // "عميل نقدي / Walk-in Customer"), so the REAL customer identity only ever lives in the
+      // invoice's own typed customerName — prefer that when set, matching the create() DTO's own
+      // rule (see its customerName field's doc comment) that only Press ever populates it.
+      .addSelect('COALESCE(i."customerName", c.name)', 'customerName')
       .addSelect('l."lineTotal"', 'lineTotal')
       .addSelect('l."totalProfit"', 'totalProfit')
       .addSelect('l."unitCost"', 'unitCost')

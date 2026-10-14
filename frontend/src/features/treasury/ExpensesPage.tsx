@@ -802,8 +802,8 @@ export function ExpensesPage() {
           {/* Air Conditioning has a single real branch, so companyWideTotal and grandTotal always
               show the same figure there — an outright duplicate card, not a genuine sub-total vs.
               whole-company comparison the way it is for a multi-branch company like the Press.
-              Hidden for AC only; every other company keeps both cards. */}
-          {!isAirConditioning && (
+              Hidden for AC and the Printing Press (by explicit request); Stationery keeps both. */}
+          {!isAirConditioning && !isPrintingPress && (
             <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
               <div className="text-xs text-[var(--text-muted)]">{t('treasury.companyWideTotal')}</div>
               <div className="mt-1 text-xl font-semibold">{money(companyWideTotal)}</div>

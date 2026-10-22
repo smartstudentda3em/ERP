@@ -289,7 +289,9 @@
     "assistedBySalesRep": "هل تمت هذه العملية بمساعدة مندوب؟",
     "selectAssistingRep": "اختر المندوب…",
     "branchManagerLabel": "مدير الفرع",
-    "noBranchManagerAssigned": "لا يوجد مدير فرع معيّن لهذا الفرع — يرجى تعيين مدير فرع من شاشة المستخدمين والأدوار أولاً."
+    "noBranchManagerAssigned": "لا يوجد مدير فرع معيّن لهذا الفرع — يرجى تعيين مدير فرع من شاشة المستخدمين والأدوار أولاً.",
+    "totalInvoices": "إجمالي الفواتير",
+    "invoiceCount": "عدد الفواتير: {{count}}"
   },
   "accounting": {
     "allBranches": "جميع الفروع",

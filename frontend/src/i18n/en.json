@@ -289,7 +289,9 @@
     "assistedBySalesRep": "Was this sale assisted by a sales representative?",
     "selectAssistingRep": "Select the sales representative…",
     "branchManagerLabel": "Branch Manager",
-    "noBranchManagerAssigned": "No branch manager is assigned to this branch yet — assign one from Users & Roles first."
+    "noBranchManagerAssigned": "No branch manager is assigned to this branch yet — assign one from Users & Roles first.",
+    "totalInvoices": "Total Invoices",
+    "invoiceCount": "Number of invoices: {{count}}"
   },
   "accounting": {
     "allBranches": "All Branches",

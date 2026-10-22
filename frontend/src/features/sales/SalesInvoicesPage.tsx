@@ -476,6 +476,20 @@ export function SalesInvoicesPage() {
     [invoicesQuery.data, dateRange],
   );
 
+  // "إجمالي الفواتير" card above the table — follows the same date range (and, for AC, branch
+  // filter) as the list itself; a cancelled invoice never counts toward the total.
+  const invoicesTotal = useMemo(
+    () =>
+      filteredInvoices
+        .filter((i) => i.status !== 'CANCELLED')
+        .reduce((sum, i) => sum + Number(i.grandTotal ?? 0), 0),
+    [filteredInvoices],
+  );
+  const invoicesCount = useMemo(
+    () => filteredInvoices.filter((i) => i.status !== 'CANCELLED').length,
+    [filteredInvoices],
+  );
+
   const columns: Column<SalesInvoice>[] = [
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('common.date'), accessor: (r) => r.invoiceDate },
@@ -573,6 +587,11 @@ export function SalesInvoicesPage() {
             </Select>
           </FormField>
         )}
+      </div>
+      <div className="my-4 inline-block min-w-[14rem] rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+        <div className="text-xs text-[var(--text-muted)]">{t('salesInvoice.totalInvoices')}</div>
+        <div className="mt-1 text-2xl font-semibold">{formatAmount(invoicesTotal)}</div>
+        <div className="mt-1 text-xs text-[var(--text-muted)]">{t('salesInvoice.invoiceCount', { count: invoicesCount })}</div>
       </div>
       <DataTable
         columns={columns}

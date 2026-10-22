@@ -102,6 +102,7 @@ export function SalesInvoicesPage() {
   const [branchId, setBranchId] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [invoiceNotes, setInvoiceNotes] = useState('');
   // Air Conditioning only — quick customer entry (type Name/Phone/Address instead of searching an
   // existing customer) plus the sale-type routing this drives: CASH is never added to the
   // Customers list (a shared walk-in placeholder absorbs it), CREDIT resolves/creates a real
@@ -341,6 +342,7 @@ export function SalesInvoicesPage() {
         customerName: isPrintingPress ? customerName || undefined : isAirConditioning ? acCustomerName || undefined : undefined,
         customerPhone: isPrintingPress ? customerPhone || undefined : isAirConditioning ? acCustomerPhone || undefined : undefined,
         customerAddress: isAirConditioning ? acCustomerAddress || undefined : undefined,
+        notes: isPrintingPress ? invoiceNotes.trim() || undefined : undefined,
         quickSaleType: isAirConditioning ? acSaleType : undefined,
         assistingSalesRepresentativeId:
           (isAirConditioning || isPrintingPress) && assistingChecked ? assistingRepId || undefined : undefined,
@@ -364,6 +366,7 @@ export function SalesInvoicesPage() {
       setBranchId('');
       setCustomerName('');
       setCustomerPhone('');
+      setInvoiceNotes('');
       setAcCustomerName('');
       setAcCustomerPhone('');
       setAcCustomerAddress('');
@@ -680,6 +683,16 @@ export function SalesInvoicesPage() {
                       </Select>
                     </FormField>
                   )}
+                  <div className="col-span-2">
+                    <FormField label={t('common.details')}>
+                      <textarea
+                        rows={3}
+                        value={invoiceNotes}
+                        onChange={(e) => setInvoiceNotes(e.target.value)}
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    </FormField>
+                  </div>
                 </div>
               </Card>
 

@@ -14,6 +14,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformResponseInterceptor } from './common/interceptors/transform-response.interceptor';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { AuditContextMiddleware } from './modules/audit-log/audit-context';
+import { PermissionsModule } from './common/permissions/permissions.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -53,6 +54,7 @@ import { SharedDocumentsModule } from './modules/shared-documents/shared-documen
         logging: config.get('env') === 'development',
       }),
     }),
+    PermissionsModule,
     AuthModule,
     UsersModule,
     AuditLogModule,

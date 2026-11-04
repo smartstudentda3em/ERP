@@ -98,6 +98,7 @@ const PERMISSION_MATRIX: Record<string, PermissionAction[]> = {
     PermissionAction.CREATE,
     PermissionAction.EDIT,
     PermissionAction.DELETE,
+    PermissionAction.PRINT,
     PermissionAction.SELL_BELOW_COST,
   ],
   'sales.payment': [PermissionAction.VIEW, PermissionAction.CREATE, PermissionAction.EDIT, PermissionAction.DELETE],
@@ -346,6 +347,7 @@ async function main() {
     'sales.guidelinePrice.edit',
     'sales.guidelinePrice.delete',
     'sales.invoice.view',
+    'sales.invoice.print',
     'sales.invoice.create',
     'sales.invoice.edit',
     'sales.invoice.delete',
@@ -681,6 +683,7 @@ async function main() {
     'sales.quotation.create',
     'inventory.product.view',
     'sales.invoice.view',
+    'sales.invoice.print',
     'sales.invoice.create',
     // Explicitly requested: a مدير فرع can price a line below its purchase cost (clearance,
     // damaged stock, promotional pricing, correcting a mistaken cost entry, etc.) without the
@@ -770,6 +773,7 @@ async function main() {
   // being scoped down to a stripped rep-view rather than the full Products screen.
   const SALES_REP_PERMISSION_CODES = [
     'sales.invoice.view',
+    'sales.invoice.print',
     'sales.invoice.create',
     'inventory.product.view',
     'customers.view',

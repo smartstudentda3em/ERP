@@ -5,6 +5,8 @@ import { Role } from './entities/role.entity';
 import { Permission } from './entities/permission.entity';
 import { Session } from './entities/session.entity';
 import { UserCompany } from './entities/user-company.entity';
+import { UserPermission } from './entities/user-permission.entity';
+import { UserPermissionsController, UserPermissionsService } from './user-permissions.controller';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { RolesService } from './roles.service';
@@ -17,15 +19,15 @@ import { HrModule } from '../hr/hr.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Role, Permission, Session, UserCompany]),
+    TypeOrmModule.forFeature([User, Role, Permission, Session, UserCompany, UserPermission]),
     PartiesModule,
     SettingsModule,
     SalesModule,
     InventoryModule,
     HrModule,
   ],
-  controllers: [UsersController, RolesController],
-  providers: [UsersService, RolesService],
+  controllers: [UsersController, RolesController, UserPermissionsController],
+  providers: [UsersService, RolesService, UserPermissionsService],
   exports: [UsersService, RolesService],
 })
 export class UsersModule {}

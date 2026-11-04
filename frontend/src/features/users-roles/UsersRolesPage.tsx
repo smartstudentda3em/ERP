@@ -10,6 +10,8 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
+import { useAuthStore } from '../../store/auth-store';
+import { UserPermissionsModal } from './UserPermissionsModal';
 import { useAccessibleCompanies } from '../../lib/companies';
 import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 
@@ -77,6 +79,9 @@ export function UsersRolesPage() {
     companyIds: [] as string[],
   });
   const [passwordResetUser, setPasswordResetUser] = useState<User | null>(null);
+  // Founder-only per-user permission editor (the "⋮" button) — see UserPermissionsModal.
+  const isFounder = useAuthStore((s) => s.user?.isFounder ?? false);
+  const [permissionsUser, setPermissionsUser] = useState<User | null>(null);
   const [passwordResetValue, setPasswordResetValue] = useState('');
   const [showPasswordResetValue, setShowPasswordResetValue] = useState(false);
 
@@ -321,6 +326,20 @@ export function UsersRolesPage() {
           <span className="text-xs text-[var(--text-muted)]">{t('userMgmt.systemAccount')}</span>
         ) : (
           <div className="flex justify-center gap-3">
+            {isFounder && (
+              <button
+                type="button"
+                className="rounded px-2 text-lg font-bold leading-none hover:bg-black/5 dark:hover:bg-white/10"
+                title="الصلاحيات"
+                aria-label="الصلاحيات"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPermissionsUser(r);
+                }}
+              >
+                ⋮
+              </button>
+            )}
             <button type="button" className="text-primary-600 hover:underline" onClick={(e) => openEditUser(e, r)}>
               {t('common.edit')}
             </button>
@@ -651,6 +670,12 @@ export function UsersRolesPage() {
           </div>
         </form>
       </Modal>
+
+      <UserPermissionsModal
+        userId={permissionsUser?.id ?? null}
+        userName={permissionsUser?.fullName ?? ''}
+        onClose={() => setPermissionsUser(null)}
+      />
 
       <Modal
         open={!!passwordResetUser}

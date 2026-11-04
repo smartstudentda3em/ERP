@@ -25,6 +25,7 @@ import { Partner } from '../modules/settings/entities/partner.entity';
 import { User } from '../modules/users/entities/user.entity';
 import { Role } from '../modules/users/entities/role.entity';
 import { Permission } from '../modules/users/entities/permission.entity';
+import { UserPermission } from '../modules/users/entities/user-permission.entity';
 import { Session } from '../modules/users/entities/session.entity';
 import { UserCompany } from '../modules/users/entities/user-company.entity';
 
@@ -115,6 +116,7 @@ export const allEntities = [
   User,
   Role,
   Permission,
+  UserPermission,
   Session,
   UserCompany,
   AuditLog,

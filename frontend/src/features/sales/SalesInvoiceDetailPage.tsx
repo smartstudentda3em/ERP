@@ -89,6 +89,8 @@ export function SalesInvoiceDetailPage() {
   // a phone, and if they really do want a paper copy they'd print from the desktop site anyway.
   // Print stays for every other role (Administrator, Manager, desktop browsing in general).
   const isMobileRestrictedRole = isSalesRep || useIsBranchManager();
+  // The founder can switch printing off per user (UserPermissionsModal) — hides print and PDF export.
+  const canPrintInvoice = useAuthStore((s) => s.hasPermission('sales.invoice.print'));
   // Press/Stationery/Air Conditioning must explicitly pick the treasury account this payment
   // actually lands in — same requirement as the standalone سند قبض form (SalesPaymentsPage.tsx),
   // which this modal itself calls into (see payMutation below, POSTs to the same /sales/payments
@@ -271,9 +273,9 @@ export function SalesInvoiceDetailPage() {
   // arrival, via ?autoprint=1 / ?autopdf=1, instead of requiring a second click on this page.
   useEffect(() => {
     if (!inv) return;
-    if (searchParams.get('autoprint') === '1' && !isMobileRestrictedRole) {
+    if (searchParams.get('autoprint') === '1' && !isMobileRestrictedRole && canPrintInvoice) {
       window.print();
-    } else if (searchParams.get('autopdf') === '1') {
+    } else if (searchParams.get('autopdf') === '1' && canPrintInvoice) {
       handleShareInvoice();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -286,12 +288,12 @@ export function SalesInvoiceDetailPage() {
         actions={
           inv ? (
             <div className="flex flex-wrap gap-2 print:hidden">
-              {!isMobileRestrictedRole && (
+              {!isMobileRestrictedRole && canPrintInvoice && (
                 <Button variant="secondary" onClick={() => window.print()}>
                   {t('common.print')}
                 </Button>
               )}
-              {pendingShare ? (
+              {!canPrintInvoice ? null : pendingShare ? (
                 <Button onClick={handleConfirmShare}>{t('actions.confirmShare')}</Button>
               ) : (
                 <Button variant="secondary" onClick={handleShareInvoice} loading={shareLoading}>

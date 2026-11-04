@@ -59,6 +59,7 @@ export const SKIPPED_TABLES = new Set([
   'stock_movements',
   'product_batches',
   'permissions',
+  'user_permissions',
 ]);
 export const isSkippedTable = (table: string) => SKIPPED_TABLES.has(table) || /_lines?$/.test(table);
 

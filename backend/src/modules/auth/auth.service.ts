@@ -15,6 +15,7 @@ import { UserCompany } from '../users/entities/user-company.entity';
 import { Company } from '../settings/entities/company.entity';
 import { Branch } from '../settings/entities/branch.entity';
 import { AccessTokenPayload } from './strategies/jwt.strategy';
+import { PermissionsResolver } from '../../common/permissions/permissions-resolver.service';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000;
@@ -53,6 +54,7 @@ export class AuthService {
     @InjectRepository(Branch) private readonly branchRepo: Repository<Branch>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly permissionsResolver: PermissionsResolver,
   ) {}
 
   private extractPermissions(user: User): string[] {
@@ -85,7 +87,8 @@ export class AuthService {
   }
 
   private async issueTokens(user: User, meta: { ip?: string; userAgent?: string }) {
-    const permissions = this.extractPermissions(user);
+    // The same effective set the guard enforces: roles + the founder's per-user grants/denials.
+    const permissions = await this.permissionsResolver.effective(user.id);
     const isSystemRole = user.roles?.some((role) => role.isSystemRole) ?? false;
     const { allCompanies, companyIds } = await this.extractCompanyIds(user);
 

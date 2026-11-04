@@ -810,6 +810,58 @@ async function main() {
   await roleRepo.save(salesRepRole);
   console.log('Sales Representative (مندوب) role seeded');
 
+  // --- Accountant (محاسب) role ---
+  // Works the money side: reads everything financial and records receipts, supplier payments and
+  // expenses, but can't delete anything, touch settings, users/roles, backups or stock levels.
+  // Created ONCE and then left alone (unlike the roles above, which are re-synced every start): the
+  // owner tunes this role (or any single accountant, via the ⋮ editor on the Users screen) in the UI,
+  // and a re-sync on every boot would silently undo those choices.
+  const ACCOUNTANT_PERMISSION_CODES = [
+    'dashboard.view',
+    'notifications.view',
+    'accounting.reports.view',
+    // sales side — see invoices, collect and correct receipts
+    'sales.invoice.view',
+    'sales.invoice.print',
+    'sales.quotation.view',
+    'sales.payment.view',
+    'sales.payment.create',
+    'sales.payment.edit',
+    'sales.paymentList.view',
+    'customers.view',
+    // purchasing side — see receipts/products, pay suppliers
+    'suppliers.view',
+    'suppliers.payment.view',
+    'suppliers.payment.create',
+    'suppliers.payment.edit',
+    'inventory.purchaseReceipt.view',
+    'inventory.product.view',
+    'inventory.stock.view',
+    // treasury & expenses
+    'treasury.cash-box.view',
+    'treasury.cash-box.create',
+    'treasury.expense.view',
+    'treasury.expense.create',
+    'treasury.expense.edit',
+    // read-only context
+    'partners.view',
+    'sales-representatives.view',
+    'hr.employee.view',
+    'hr.payroll.view',
+  ];
+  if (!(await roleRepo.findOne({ where: { name: 'محاسب' } }))) {
+    await roleRepo.save(
+      roleRepo.create({
+        name: 'محاسب',
+        description:
+          'Accountant — financial reports, receipts, supplier payments, treasury and expenses; view-only elsewhere; no deletes, settings, users or backups',
+        isSystemRole: false,
+        permissions: allPermissions.filter((p) => ACCOUNTANT_PERMISSION_CODES.includes(`${p.module}.${p.action}`)),
+      }),
+    );
+    console.log('Accountant (محاسب) role created');
+  }
+
   // --- Admin user ---
   // The Administrator has implicit access to every company via isSystemRole (see
   // AuthService.extractCompanyIds()) — no UserCompany ACL rows are needed for this account. Its

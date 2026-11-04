@@ -97,8 +97,7 @@ export function FactoryResetTab() {
         <div className="mt-4">
           <Button
             type="submit"
-            variant="secondary"
-            className="border-red-600 bg-red-600 text-white hover:bg-red-700"
+            variant="danger"
             disabled={!canConfirm || resetMutation.isPending}
           >
             {resetMutation.isPending ? t('factoryReset.confirming') : t('factoryReset.confirmButton')}

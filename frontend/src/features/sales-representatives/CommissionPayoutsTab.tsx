@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
@@ -13,23 +13,14 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 
-interface SalesRepresentative {
-  id: string;
-  name: string;
+// One earned commission per beneficiary — each branch's مدير فرع AND every مندوب with commissionable
+// assisted sales (backend getEarnedCommissions), so the same "صرف الأرباح" flow pays either.
+interface EarnedRow {
+  representativeId: string;
+  representativeName: string | null;
+  beneficiaryType: 'MANAGER' | 'REP';
   branchId: string | null;
-}
-
-interface Branch {
-  id: string;
-  nameEn: string;
-  nameAr?: string | null;
-}
-
-interface BranchCommissionRow {
-  branchId: string;
   branchName: string | null;
-  managerId: string | null;
-  managerName: string | null;
   commissionAmount: number;
 }
 
@@ -40,10 +31,12 @@ interface CommissionPayout {
   account: 'CASH' | 'BANK';
   branchId: string | null;
   salesRepresentativeId: string | null;
+  repName?: string | null;
+  beneficiaryType?: 'MANAGER' | 'REP';
   createdAt: string;
 }
 
-const emptyForm = { branchId: '', amount: '', account: 'CASH' as 'CASH' | 'BANK', movementDate: localToday() };
+const emptyForm = { repId: '', amount: '', account: 'CASH' as 'CASH' | 'BANK', movementDate: localToday() };
 
 function money(n: number): string {
   return formatAmount(n);
@@ -62,12 +55,6 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
   const [error, setError] = useState<string | null>(null);
   const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
 
-  // One branch, no picker — the payout form's branch (which resolves the manager) is filled in
-  // automatically, and again after every reset.
-  useEffect(() => {
-    if (hidePressBranchUi && singleBranchId && !form.branchId) setForm((f) => ({ ...f, branchId: singleBranchId }));
-  }, [hidePressBranchUi, singleBranchId, form.branchId]);
-
   const { dateFrom, dateTo } = useMemo(() => {
     const lastDay = new Date(year, month, 0).getDate();
     return {
@@ -76,24 +63,11 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
     };
   }, [year, month]);
 
-  const repsQuery = useQuery({
-    queryKey: ['sales-representatives'],
-    queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives')),
-  });
-  const reps = repsQuery.data ?? [];
-
-  const branchesQuery = useQuery({
-    queryKey: ['branches', companyId],
-    queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
-    enabled: !!companyId,
-  });
-  const branches = branchesQuery.data ?? [];
-
   const commissionsQuery = useQuery({
-    queryKey: ['sales-representatives-branch-commissions', companyId, dateFrom, dateTo],
+    queryKey: ['sales-representatives-earned-commissions', companyId, dateFrom, dateTo],
     queryFn: () =>
-      unwrap<BranchCommissionRow[]>(
-        apiClient.get('/sales-representatives/reports/branch-commissions', { params: { companyId, dateFrom, dateTo } }),
+      unwrap<EarnedRow[]>(
+        apiClient.get('/sales-representatives/reports/earned-commissions', { params: { companyId, dateFrom, dateTo } }),
       ),
     enabled: !!companyId,
   });
@@ -104,27 +78,46 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
     enabled: !!companyId,
   });
 
-  // One row per branch that actually has a manager assigned — a branch with no manager has
-  // nothing to pay out, so it never appears on this tab (unlike the commission report, which
-  // deliberately shows every branch).
+  // One row per beneficiary: every branch manager and every مندوب with commission earned in the
+  // period, plus anyone paid in the period who has no earned figure left in it.
   const rows = useMemo(() => {
     const payouts = payoutsQuery.data ?? [];
-    const paidByManager = new Map<string, number>();
-    const lastPayoutByManager = new Map<string, CommissionPayout>();
+    const paidByRep = new Map<string, number>();
+    const lastPayoutByRep = new Map<string, CommissionPayout>();
     for (const p of payouts) {
       if (!p.salesRepresentativeId) continue;
-      paidByManager.set(p.salesRepresentativeId, (paidByManager.get(p.salesRepresentativeId) ?? 0) + Number(p.amount));
-      const existing = lastPayoutByManager.get(p.salesRepresentativeId);
-      if (!existing || p.createdAt > existing.createdAt) lastPayoutByManager.set(p.salesRepresentativeId, p);
+      paidByRep.set(p.salesRepresentativeId, (paidByRep.get(p.salesRepresentativeId) ?? 0) + Number(p.amount));
+      const existing = lastPayoutByRep.get(p.salesRepresentativeId);
+      if (!existing || p.createdAt > existing.createdAt) lastPayoutByRep.set(p.salesRepresentativeId, p);
     }
-    return (commissionsQuery.data ?? [])
-      .filter((r) => r.managerId)
-      .map((r) => ({
-        ...r,
-        paidAmount: paidByManager.get(r.managerId!) ?? 0,
-        lastPayout: lastPayoutByManager.get(r.managerId!) ?? null,
-      }));
+    const base = (commissionsQuery.data ?? []).map((r) => ({
+      repId: r.representativeId,
+      name: r.representativeName ?? '—',
+      type: r.beneficiaryType,
+      branchId: r.branchId,
+      branchName: r.branchName,
+      commissionAmount: r.commissionAmount,
+    }));
+    for (const p of payouts) {
+      if (p.salesRepresentativeId && !base.some((b) => b.repId === p.salesRepresentativeId)) {
+        base.push({
+          repId: p.salesRepresentativeId,
+          name: p.repName ?? '—',
+          type: p.beneficiaryType ?? 'REP',
+          branchId: p.branchId,
+          branchName: null,
+          commissionAmount: 0,
+        });
+      }
+    }
+    return base.map((r) => ({
+      ...r,
+      paidAmount: paidByRep.get(r.repId) ?? 0,
+      lastPayout: lastPayoutByRep.get(r.repId) ?? null,
+    }));
   }, [commissionsQuery.data, payoutsQuery.data]);
+
+  const selectedRow = rows.find((r) => r.repId === form.repId);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -138,11 +131,17 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
       if (editingId) {
         return apiClient.patch(`/treasury/commission-payouts/${editingId}`, payload);
       }
-      const rep = reps.find((r) => r.branchId === form.branchId);
-      return apiClient.post('/treasury/commission-payouts', { ...payload, branchId: form.branchId, salesRepresentativeId: rep?.id });
+      // A مندوب has no branch of his own — the payout is booked against the Press's branch, same as
+      // a manager's, so the balance check and the treasury ledger line up.
+      return apiClient.post('/treasury/commission-payouts', {
+        ...payload,
+        salesRepresentativeId: form.repId,
+        branchId: selectedRow?.branchId ?? singleBranchId ?? undefined,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['commission-payouts'] });
+      queryClient.invalidateQueries({ queryKey: ['commission-payouts-total'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
       queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
       setModalOpen(false);
@@ -157,6 +156,7 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
     mutationFn: (id: string) => apiClient.delete(`/treasury/commission-payouts/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['commission-payouts'] });
+      queryClient.invalidateQueries({ queryKey: ['commission-payouts-total'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
     },
     onError: (err: any) => toast.error(err?.response?.data?.message ?? t('common.saveFailed')),
@@ -173,7 +173,7 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
     if (!row.lastPayout) return;
     setEditingId(row.lastPayout.id);
     setForm({
-      branchId: row.branchId,
+      repId: row.repId,
       amount: String(row.lastPayout.amount),
       account: row.lastPayout.account,
       movementDate: row.lastPayout.date,
@@ -184,15 +184,28 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
 
   async function handleDelete(row: (typeof rows)[number]) {
     if (!row.lastPayout) return;
-    const ok = await confirm({ message: t('common.confirmDelete', { name: row.managerName ?? '' }) });
+    const ok = await confirm({ message: t('common.confirmDelete', { name: row.name }) });
     if (ok) deleteMutation.mutate(row.lastPayout.id);
   }
 
-  const selectedManager = reps.find((r) => r.branchId === form.branchId);
-  const selectedManagerName = selectedManager?.name ?? '';
+  // Picking a beneficiary pre-fills what is still owed to him this month.
+  function pickBeneficiary(repId: string) {
+    const row = rows.find((r) => r.repId === repId);
+    const remaining = row ? Math.max(row.commissionAmount - row.paidAmount, 0) : 0;
+    setForm({ ...form, repId, amount: remaining > 0.005 ? remaining.toFixed(2) : form.amount });
+  }
 
   const columns: Column<(typeof rows)[number]>[] = [
-    { header: t('salesRepresentativesReports.branchManager'), accessor: (r) => r.managerName ?? '—' },
+    { header: t('salesRepresentativesReports.commissionBeneficiary'), accessor: (r) => r.name },
+    {
+      header: t('salesRepresentativesReports.totalCommissionsType'),
+      accessor: (r) =>
+        t(
+          r.type === 'MANAGER'
+            ? 'salesRepresentativesReports.totalCommissionsTypeManager'
+            : 'salesRepresentativesReports.totalCommissionsTypeRep',
+        ),
+    },
     ...(hidePressBranchUi
       ? []
       : [{ header: t('salesRepresentativesReports.branch'), accessor: (r: (typeof rows)[number]) => r.branchName ?? '—' } as Column<(typeof rows)[number]>]),
@@ -233,7 +246,7 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
       <DataTable
         columns={columns}
         data={rows}
-        keyField={(r) => r.branchId}
+        keyField={(r) => r.repId}
         isLoading={commissionsQuery.isLoading || payoutsQuery.isLoading}
         searchable={false}
       />
@@ -250,31 +263,18 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
             saveMutation.mutate();
           }}
         >
-          {!hidePressBranchUi && (
-            <FormField label={t('salesRepresentativesReports.branch')}>
-              <Select
-                required
-                disabled={!!editingId}
-                value={form.branchId}
-                onChange={(e) => setForm({ ...form, branchId: e.target.value })}
-              >
-                <option value="" disabled>
-                  {t('common.select')}
+          <FormField label={t('salesRepresentativesReports.commissionBeneficiary')}>
+            <Select required disabled={!!editingId} value={form.repId} onChange={(e) => pickBeneficiary(e.target.value)}>
+              <option value="" disabled>
+                {t('common.select')}
+              </option>
+              {rows.map((r) => (
+                <option key={r.repId} value={r.repId}>
+                  {r.name} — {t(r.type === 'MANAGER' ? 'salesRepresentativesReports.totalCommissionsTypeManager' : 'salesRepresentativesReports.totalCommissionsTypeRep')}
                 </option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.nameAr || b.nameEn}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-          )}
-
-          {form.branchId && (
-            <FormField label={t('salesRepresentativesReports.branchManager')}>
-              <Input disabled value={selectedManagerName || t('salesRepresentativesReports.noManagerForBranch')} />
-            </FormField>
-          )}
+              ))}
+            </Select>
+          </FormField>
 
           <FormField label={t('common.date')}>
             <Input
@@ -308,7 +308,7 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={saveMutation.isPending || (!editingId && !selectedManager)}>
+            <Button type="submit" disabled={saveMutation.isPending || (!editingId && !selectedRow)}>
               {t('salesRepresentativesReports.executePayout')}
             </Button>
           </div>

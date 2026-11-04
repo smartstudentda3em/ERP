@@ -16,7 +16,7 @@ import { TotalCommissionsTab } from './TotalCommissionsTab';
 
 type MainSection = 'managers' | 'reps' | 'totalCommissions';
 type ManagerSubTab = 'list' | 'reports' | 'mine' | 'payouts';
-type RepSubTab = 'list' | 'reports' | 'mine';
+type RepSubTab = 'list' | 'reports' | 'mine' | 'payouts';
 
 interface SalesRepresentative {
   id: string;
@@ -131,6 +131,10 @@ export function SalesRepresentativesPage() {
     { key: 'list', label: t('salesRepresentativesReports.repsTab') },
     { key: 'reports', label: t('salesRepresentativesReports.reportsTab') },
     { key: 'mine', label: t('managerDashboard.tabLabel') },
+    // Printing Press: a مندوب's commission is paid out from the same screen as a manager's.
+    ...(isPrintingPress && !payoutsTabRestricted
+      ? [{ key: 'payouts' as RepSubTab, label: t('salesRepresentativesReports.payoutsTab') }]
+      : []),
   ];
 
   const activeSubTab = mainSection === 'managers' ? managerSubTab : mainSection === 'reps' ? repSubTab : undefined;
@@ -334,7 +338,7 @@ export function SalesRepresentativesPage() {
           controlled={{ selectedRepId: selectedManagerId, year: dashboardYear, quarter: dashboardQuarter, repOptions: activeRepOptions }}
         />
       )}
-      {mainSection === 'managers' && activeSubTab === 'payouts' && !payoutsTabRestricted && (
+      {activeSubTab === 'payouts' && !payoutsTabRestricted && (
         <CommissionPayoutsTab year={payoutsYear} month={payoutsMonth} />
       )}
       {mainSection === 'totalCommissions' && (

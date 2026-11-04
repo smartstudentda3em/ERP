@@ -626,6 +626,7 @@
     "dateTo": "إلى تاريخ",
     "apply": "تطبيق",
     "reset": "إعادة ضبط",
+    "refresh": "تحديث",
     "total": "إجمالي السجلات: {{count}}",
     "actions": {
       "CREATE": "إنشاء",

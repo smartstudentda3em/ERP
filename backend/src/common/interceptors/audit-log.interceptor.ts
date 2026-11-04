@@ -8,7 +8,7 @@ import { routeLabel } from '../../modules/audit-log/audit-labels';
 
 const MUTATING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 // Pure noise (silent token refresh) or recorded by their own dedicated endpoint.
-const SKIPPED_PATHS = [/\/auth\/refresh/, /\/audit-events/];
+const SKIPPED_PATHS = [/\/auth\/refresh/, /\/auth\/switch-company/, /\/audit-events/];
 
 /**
  * Request-level trail. Business-record changes are captured with old/new values by AuditSubscriber;

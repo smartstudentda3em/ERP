@@ -90,14 +90,19 @@ export function AuditLogPage() {
     queryFn: () =>
       unwrap<Page>(
         apiClient.get('/audit-logs', {
-          params: Object.fromEntries(Object.entries({ ...applied, page, limit: 25 }).filter(([, v]) => v !== '')),
+          params: Object.fromEntries(
+            Object.entries({ ...applied, page, limit: 25, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }).filter(([, v]) => v !== ''),
+          ),
         }),
       ),
     placeholderData: (prev) => prev,
+    // A log is only useful if it's current: never serve a cached copy when the page is (re)opened.
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
-  const fmtDate = (iso: string) =>
-    new Date(iso).toLocaleString(i18n.language.startsWith('ar') ? 'ar-EG' : 'en-GB', { timeZone: 'Africa/Cairo' });
+  // The viewer's own clock — the log must read the same as the wall clock at the moment they acted.
+  const fmtDate = (iso: string) => new Date(iso).toLocaleString(i18n.language.startsWith('ar') ? 'ar-EG' : 'en-GB');
 
   const columns: Column<AuditRow>[] = [
     { header: t('auditLog.time'), accessor: (r) => <span className="whitespace-nowrap text-xs">{fmtDate(r.createdAt)}</span> },
@@ -216,7 +221,12 @@ export function AuditLogPage() {
         </form>
       </Card>
 
-      <div className="mb-2 text-xs text-[var(--text-muted)]">{t('auditLog.total', { count: logQuery.data?.total ?? 0 })}</div>
+      <div className="mb-2 flex items-center gap-3 text-xs text-[var(--text-muted)]">
+        <span>{t('auditLog.total', { count: logQuery.data?.total ?? 0 })}</span>
+        <button type="button" className="text-primary-600 hover:underline" onClick={() => logQuery.refetch()} disabled={logQuery.isFetching}>
+          {t('auditLog.refresh')}
+        </button>
+      </div>
       <DataTable
         columns={columns}
         data={logQuery.data?.items ?? []}

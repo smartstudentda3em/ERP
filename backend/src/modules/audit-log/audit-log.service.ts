@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AuditLog } from './entities/audit-log.entity';
-import { MODEL_LABELS } from './audit-labels';
+import { MODEL_LABELS, describeLegacyRow } from './audit-labels';
 
 export interface AuditLogQuery {
   page?: number;
@@ -15,6 +15,8 @@ export interface AuditLogQuery {
   source?: string;
   dateFrom?: string;
   dateTo?: string;
+  /** The viewer's IANA time zone (e.g. Asia/Kuwait) — date filters mean HIS calendar days. */
+  tz?: string;
 }
 
 /** Read-only by design — there is deliberately no update/delete method anywhere in this service. */
@@ -35,9 +37,10 @@ export class AuditLogService {
     if (query.actionType) qb.andWhere('log."actionType" = :actionType', { actionType: query.actionType });
     if (query.targetModel) qb.andWhere('log."targetModel" = :targetModel', { targetModel: query.targetModel });
     if (query.source) qb.andWhere('log.source = :source', { source: query.source });
-    // Dates are the owner's local (Cairo) calendar days, not UTC ones.
-    if (query.dateFrom) qb.andWhere(`(log."createdAt" AT TIME ZONE 'Africa/Cairo')::date >= :dateFrom`, { dateFrom: query.dateFrom });
-    if (query.dateTo) qb.andWhere(`(log."createdAt" AT TIME ZONE 'Africa/Cairo')::date <= :dateTo`, { dateTo: query.dateTo });
+    // Dates are the viewer's own calendar days, not UTC ones (an unknown zone name falls back to Kuwait).
+    const tz = query.tz && /^[A-Za-z_]+(\/[A-Za-z_+\-0-9]+){0,2}$/.test(query.tz) ? query.tz : 'Asia/Kuwait';
+    if (query.dateFrom) qb.andWhere(`(log."createdAt" AT TIME ZONE :tz)::date >= :dateFrom`, { dateFrom: query.dateFrom, tz });
+    if (query.dateTo) qb.andWhere(`(log."createdAt" AT TIME ZONE :tz)::date <= :dateTo`, { dateTo: query.dateTo, tz });
     if (query.search) {
       qb.andWhere(
         `(log.description ILIKE :s OR log."userName" ILIKE :s OR log."userEmail" ILIKE :s OR log."entityId" ILIKE :s OR log.path ILIKE :s)`,
@@ -45,7 +48,8 @@ export class AuditLogService {
       );
     }
 
-    const [items, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [rows, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
+    const items = rows.map((r) => (r.description || r.source === 'CHANGE' ? r : { ...r, ...describeLegacyRow(r) }));
     return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 

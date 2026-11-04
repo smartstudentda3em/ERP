@@ -626,6 +626,7 @@
     "dateTo": "To date",
     "apply": "Apply",
     "reset": "Reset",
+    "refresh": "Refresh",
     "total": "Total records: {{count}}",
     "actions": {
       "CREATE": "Create",

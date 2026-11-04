@@ -141,6 +141,29 @@ export function buildDescription(
   return fields.length ? `${head} (${fields.join('، ')}${(changedFields?.length ?? 0) > 5 ? '…' : ''})` : head;
 }
 
+/** Rows written before the detailed activity log existed carry only method + path (no description,
+ * type "OTHER"). They can't be rewritten (the table is append-only), so they're described on the way
+ * out instead — otherwise "POST /api/sales/invoices" is all the owner would see. */
+export function describeLegacyRow(row: { method: string; path: string; statusCode: number }): {
+  actionType: AuditActionType;
+  description: string;
+  targetLabel: string | null;
+} {
+  const path = row.path.split('?')[0];
+  const label = routeLabel(path);
+  let actionType: AuditActionType = row.method === 'DELETE' ? 'DELETE' : row.method === 'POST' ? 'CREATE' : 'UPDATE';
+  if (/\/auth\/login/.test(path)) actionType = 'LOGIN';
+  else if (/\/auth\/logout/.test(path)) actionType = 'LOGOUT';
+  else if (/\/auth\/switch-company/.test(path)) return { actionType: 'OTHER', description: 'تبديل الشركة النشطة', targetLabel: null };
+  else if (/\/(approve|confirm|post|finalize)(\/|$)/.test(path)) actionType = 'APPROVE';
+  const verb =
+    actionType === 'LOGIN' ? (row.statusCode >= 400 ? 'محاولة تسجيل دخول فاشلة' : 'تسجيل دخول')
+    : actionType === 'LOGOUT' ? 'تسجيل خروج'
+    : VERB[actionType] ?? 'إجراء على';
+  const target = actionType === 'LOGIN' || actionType === 'LOGOUT' ? '' : ` ${label ?? path}`;
+  return { actionType, description: `${verb}${target}`, targetLabel: label };
+}
+
 /** Route-prefix → Arabic label, for request-level rows that have no entity behind them. */
 const ROUTE_LABELS: [RegExp, string][] = [
   [/^\/?api\/auth\/login/, 'تسجيل الدخول'],

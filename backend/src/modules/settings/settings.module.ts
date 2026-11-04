@@ -7,6 +7,8 @@ import { Currency } from './entities/currency.entity';
 import { ExchangeRate } from './entities/exchange-rate.entity';
 import { Tax } from './entities/tax.entity';
 import { FiscalYear } from './entities/fiscal-year.entity';
+import { MonthClosing } from './entities/month-closing.entity';
+import { User } from '../users/entities/user.entity';
 import { NumberingSeries } from './entities/numbering-series.entity';
 import { ProductCategory } from './entities/product-category.entity';
 import { Brand } from './entities/brand.entity';
@@ -32,6 +34,7 @@ import { PartnersController, PartnersService } from './partners.controller';
 import { CurrenciesController, CurrenciesService } from './currencies.controller';
 import { TaxesController, TaxesService } from './taxes.controller';
 import { FiscalYearsController, FiscalYearsService } from './fiscal-years.controller';
+import { MonthClosingsBootstrap, MonthClosingsController, MonthClosingsService } from './month-closings.controller';
 import { NumberingSeriesController, NumberingSeriesService } from './numbering-series.controller';
 import {
   ProductCategoriesController,
@@ -52,6 +55,8 @@ import {
       ExchangeRate,
       Tax,
       FiscalYear,
+      MonthClosing,
+      User,
       NumberingSeries,
       ProductCategory,
       Brand,
@@ -76,6 +81,7 @@ import {
     CurrenciesController,
     TaxesController,
     FiscalYearsController,
+    MonthClosingsController,
     NumberingSeriesController,
     ProductCategoriesController,
     BrandsController,
@@ -91,6 +97,8 @@ import {
     CurrenciesService,
     TaxesService,
     FiscalYearsService,
+    MonthClosingsService,
+    MonthClosingsBootstrap,
     NumberingSeriesService,
     ProductCategoriesService,
     BrandsService,

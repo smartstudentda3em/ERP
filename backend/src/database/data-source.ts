@@ -12,6 +12,7 @@ import { Currency } from '../modules/settings/entities/currency.entity';
 import { ExchangeRate } from '../modules/settings/entities/exchange-rate.entity';
 import { Tax } from '../modules/settings/entities/tax.entity';
 import { FiscalYear } from '../modules/settings/entities/fiscal-year.entity';
+import { MonthClosing } from '../modules/settings/entities/month-closing.entity';
 import { NumberingSeries } from '../modules/settings/entities/numbering-series.entity';
 import { ProductCategory } from '../modules/settings/entities/product-category.entity';
 import { Brand } from '../modules/settings/entities/brand.entity';
@@ -103,6 +104,7 @@ export const allEntities = [
   ExchangeRate,
   Tax,
   FiscalYear,
+  MonthClosing,
   NumberingSeries,
   ProductCategory,
   Brand,

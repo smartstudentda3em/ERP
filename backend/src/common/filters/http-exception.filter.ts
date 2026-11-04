@@ -17,6 +17,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
+    // Raised by the database trigger that enforces a closed month (see MonthClosingsBootstrap) —
+    // surfaced as a clear, translated 400 instead of a raw 500.
+    const closedMonth = exception instanceof Error ? /MONTH_CLOSED:(\d{4}-\d{2})/.exec(exception.message) : null;
+    if (closedMonth) {
+      response.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        statusCode: HttpStatus.BAD_REQUEST,
+        path: request.url,
+        timestamp: new Date().toISOString(),
+        message: `شهر ${closedMonth[1]} مقفول — لا يمكن إضافة أو تعديل أو حذف أي عملية بتاريخ داخل هذا الشهر. اطلب من الأدمنستريتور فتح الشهر أولاً.`,
+      });
+      return;
+    }
+
     const status =
       exception instanceof HttpException
         ? exception.getStatus()

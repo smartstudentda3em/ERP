@@ -11,6 +11,7 @@ import { NumberingSeriesTab } from './NumberingSeriesTab';
 import { PartnersTab } from './PartnersTab';
 import { ShippingExpenseTypesTab } from './ShippingExpenseTypesTab';
 import { FactoryResetTab } from './FactoryResetTab';
+import { MonthClosingTab } from './MonthClosingTab';
 import { BackupsTab } from './BackupsTab';
 
 interface Branch {
@@ -31,6 +32,7 @@ type Tab =
   | 'numbering-series'
   | 'partners'
   | 'factory-reset'
+  | 'month-closing'
   | 'backups';
 
 export function SettingsPage() {
@@ -47,6 +49,8 @@ export function SettingsPage() {
   const canViewPartners = useAuthStore((s) => s.hasPermission('settings.partner.view'));
   const canViewBackups = useAuthStore((s) => s.hasPermission('admin.backup.view'));
   const { isPrintingPress } = useActiveCompany();
+  // Month-end closing: Printing Press only, Administrator only (the backend re-checks both).
+  const canCloseMonths = isSuperAdmin && isPrintingPress;
   const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   const [tab, setTab] = useState<Tab>('companies');
 
@@ -75,6 +79,7 @@ export function SettingsPage() {
     ...(!isPrintingPress ? [{ key: 'shipping-expense-types' as Tab, label: t('settingsTabs.shippingExpenseTypes') }] : []),
     { key: 'numbering-series', label: t('settingsTabs.numberingSeries') },
     ...(canViewPartners ? [{ key: 'partners' as Tab, label: t('settingsTabs.partners') }] : []),
+    ...(canCloseMonths ? [{ key: 'month-closing' as Tab, label: t('settingsTabs.monthClosing') }] : []),
     ...(canFactoryReset ? [{ key: 'factory-reset' as Tab, label: t('settingsTabs.factoryReset') }] : []),
     ...(canViewBackups ? [{ key: 'backups' as Tab, label: t('settingsTabs.backups') }] : []),
   ];
@@ -209,6 +214,7 @@ export function SettingsPage() {
 
       {tab === 'partners' && canViewPartners && <PartnersTab />}
 
+      {tab === 'month-closing' && canCloseMonths && <MonthClosingTab />}
       {tab === 'factory-reset' && canFactoryReset && <FactoryResetTab />}
 
       {tab === 'backups' && canViewBackups && <BackupsTab />}

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityTarget, ObjectLiteral, Repository } from 'typeorm';
 import { NumberingSeries } from '../settings/entities/numbering-series.entity';
@@ -154,6 +154,12 @@ export class SystemService {
 
     if (resetCode !== RESET_CODE) {
       throw new UnauthorizedException('Incorrect reset code');
+    }
+
+    // A closed month is a promise that nothing in it changes — wiping everything would break it.
+    const closed = await this.dataSource.query(`SELECT 1 FROM month_closings WHERE "isClosed" LIMIT 1`);
+    if (closed.length) {
+      throw new BadRequestException('لا يمكن تصفير البيانات وفيه شهور مقفولة — افتح الشهور المقفولة أولاً من الإعدادات.');
     }
 
     return this.dataSource.transaction(async (manager) => {

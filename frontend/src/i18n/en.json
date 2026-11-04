@@ -596,7 +596,23 @@
     "shippingExpenseTypes": "Shipping Expense Types",
     "partners": "Partners",
     "factoryReset": "Factory Reset",
+    "monthClosing": "Month Closing",
     "backups": "Backups"
+  },
+  "monthClosing": {
+    "title": "Month Closing",
+    "description": "Once a month is closed, nothing dated inside it (invoices, receipts, purchases, treasury, expenses, payroll, stock counts) can be added, edited or deleted. Only the Administrator can close and reopen, and every close/reopen is recorded with name and time.",
+    "year": "Year",
+    "month": "Month",
+    "status": "Status",
+    "open": "Open",
+    "closed": "Closed",
+    "closedBy": "Last closed",
+    "reopenedBy": "Last reopened",
+    "close": "Close month",
+    "reopen": "Reopen month",
+    "confirmClose": "Close {{name}}? After closing, nothing dated in this month can be changed until it is reopened.",
+    "confirmReopen": "Reopen {{name}}? Your name and the time will be recorded."
   },
   "companySelect": {
     "title": "Select a company",

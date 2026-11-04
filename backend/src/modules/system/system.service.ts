@@ -10,11 +10,12 @@ import { User } from '../users/entities/user.entity';
 import { SupplierPayment } from '../parties/suppliers/entities/supplier-payment.entity';
 
 // Inventory — Product/ProductCategory/Brand/Unit/PackageType/Warehouse are catalog & branch
-// master data and stay; only the stock actually held (StockLevel) and every movement/adjustment/
-// audit/transfer/receipt that produced it are cleared, which is what "reset warehouse balances
-// to 0" means in practice — the warehouse row itself is untouched.
+// master data and stay, and so does StockLevel (the quantity held per product per warehouse) — by
+// explicit request the reset must NOT zero warehouse balances. Every movement/adjustment/audit/
+// transfer/receipt that produced those balances is still cleared, so the surviving balances no
+// longer have a history behind them. StockLevel only has FKs to companies/products/warehouses
+// (all preserved) and nothing points at it, so TRUNCATE ... CASCADE can't sweep it in.
 import { ProductBatch } from '../inventory/products/entities/product-batch.entity';
-import { StockLevel } from '../inventory/stock-movements/entities/stock-level.entity';
 import { StockMovement } from '../inventory/stock-movements/entities/stock-movement.entity';
 import { StockAdjustment, StockAdjustmentLine } from '../inventory/stock-movements/entities/stock-adjustment.entity';
 import { StockAudit, StockAuditLine } from '../inventory/stock-movements/entities/stock-audit.entity';
@@ -76,7 +77,6 @@ import { AuditLog } from '../audit-log/entities/audit-log.entity';
 const TRANSACTIONAL_ENTITIES: EntityTarget<ObjectLiteral>[] = [
   SupplierPayment,
   ProductBatch,
-  StockLevel,
   StockMovement,
   StockAdjustment,
   StockAdjustmentLine,

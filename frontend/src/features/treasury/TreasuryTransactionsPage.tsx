@@ -88,6 +88,8 @@ export function TreasuryTransactionsPage() {
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
+  // "الكل / الكاش / البنك" — which treasury account's movements the table shows.
+  const [accountTab, setAccountTab] = useState<'ALL' | 'CASH' | 'BANK'>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({
     movementDate: localToday(),
@@ -199,13 +201,27 @@ export function TreasuryTransactionsPage() {
   // row (see CashMovementsService.getLedger) — entries[0] (newest first) is that total as of right
   // now, so it's reused directly here rather than re-deriving it from summaryQuery's cashBalance
   // alone, which used to silently ignore every BANK-settled movement.
+  // One account's tab: only its own movements, with the running balance recomputed over just that
+  // account (the server's runningBalance mixes cash and bank). Oldest-first accumulation, then newest-first again.
+  const accountEntries = useMemo(() => {
+    if (accountTab === 'ALL') return entries;
+    let balance = 0;
+    return [...entries]
+      .reverse()
+      .filter((e) => e.paymentAccount === accountTab)
+      .map((e) => {
+        balance += Number(e.debit ?? 0) - Number(e.credit ?? 0);
+        return { ...e, runningBalance: balance };
+      })
+      .reverse();
+  }, [entries, accountTab]);
   const currentBalance = entries.length ? entries[0].runningBalance : 0;
   const filteredEntries = useMemo(
     () =>
-      entries.filter(
+      accountEntries.filter(
         (e) => inDateRange(e.date, dateRange) && (branchFilter === ALL_BRANCHES || e.branchId === branchFilter),
       ),
-    [entries, dateRange, branchFilter],
+    [accountEntries, dateRange, branchFilter],
   );
 
   // Entries arrive newest-first (buildCashLedger/getLedger both reverse() after accumulating the
@@ -373,6 +389,22 @@ export function TreasuryTransactionsPage() {
           <div className="text-xs text-[var(--text-muted)]">{t('treasury.totalBalance')}</div>
           <div className="mt-1 text-2xl font-semibold">{money(currentBalance)}</div>
         </Card>
+      )}
+
+      {showAccountSplit && (
+        <div className="mb-3 flex flex-wrap gap-2 text-sm print:hidden">
+          {(['ALL', 'CASH', 'BANK'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={`rounded-lg px-4 py-1.5 ${accountTab === tab ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
+              onClick={() => setAccountTab(tab)}
+            >
+              {t(`treasury.accountTabs.${tab}`)}
+              {tab !== 'ALL' && summaryQuery.data ? ` — ${money(tab === 'CASH' ? summaryQuery.data.cashBalance : summaryQuery.data.bankBalance)}` : ''}
+            </button>
+          ))}
+        </div>
       )}
 
       {/* On-screen, interactive, paginated — unrelated to print/PDF, which always need the full

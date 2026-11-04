@@ -927,6 +927,11 @@
     "movementType": "Movement Type",
     "party": "Customer / Supplier",
     "paymentAccount": "Account",
+    "accountTabs": {
+      "ALL": "All",
+      "CASH": "Cash",
+      "BANK": "Bank"
+    },
     "paymentAccounts": {
       "CASH": "Cash Treasury (Cash)",
       "BANK": "Bank",

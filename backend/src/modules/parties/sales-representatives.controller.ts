@@ -422,7 +422,11 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
   private async isMandoubReportContext(companyId: string, representativeId?: string, roleName?: string): Promise<boolean> {
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
     if (!MANAGED_SALES_COMPANY_CODES.includes(company?.code ?? '')) return false;
-    if (representativeId) return this.salesRepAccess.isSalesAgentRep(representativeId);
+    if (representativeId) {
+      return company?.code === PRINTING_PRESS_COMPANY_CODE
+        ? this.salesRepAccess.isPressMandoubRep(representativeId)
+        : this.salesRepAccess.isSalesAgentRep(representativeId);
+    }
     return roleName === 'مندوب';
   }
 
@@ -993,7 +997,9 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
     // whose creator's own userId matches this رep's.
     const company = await this.companiesRepo.findOne({ where: { id: companyId } });
     const isPress = company?.code === PRINTING_PRESS_COMPANY_CODE;
-    const isMandoubRep = await this.salesRepAccess.isSalesAgentRep(rep.id);
+    const isMandoubRep = isPress
+      ? await this.salesRepAccess.isPressMandoubRep(rep.id)
+      : await this.salesRepAccess.isSalesAgentRep(rep.id);
     // AC only: a مندوب earns a fixed amount per item sold on invoices they assisted with (see
     // SalesInvoice.assistingSalesRepresentativeId / RepFixedItemCommission), never a percentage of
     // sales they don't themselves own. A مدير فرع (even on AC) keeps the percentage model below

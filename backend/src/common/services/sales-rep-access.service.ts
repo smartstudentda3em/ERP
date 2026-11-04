@@ -66,6 +66,19 @@ export class SalesRepAccessService {
     return user?.roles?.some((r) => r.name === SALES_REP_ROLE_NAME) ?? false;
   }
 
+  /** Printing Press only: whether a rep acts as an "assisting مندوب" (never owns an invoice — credited
+   * only through SalesInvoice.assistingSalesRepresentativeId). A Press مندوب is usually just a name +
+   * commission rate with NO login account, which isSalesAgentRep() above (it needs a مندوب-role user)
+   * would wrongly treat as an invoice owner — so his dashboard looked up the branch's sales instead of
+   * his assisted ones and came back empty. A rep tied to a login is a مندوب only if that login is. */
+  async isPressMandoubRep(salesRepresentativeId: string | null | undefined): Promise<boolean> {
+    if (!salesRepresentativeId) return false;
+    const rep = await this.repRepo.findOne({ where: { id: salesRepresentativeId } });
+    if (!rep) return false;
+    if (!rep.userId) return true;
+    return this.isSalesAgentRep(salesRepresentativeId);
+  }
+
   /** For quotations/payments: a single salesRepresentativeId field. */
   async resolveSalesRepresentativeId(
     userId: string,

@@ -156,7 +156,10 @@ export class EmployeesService {
     // see sales-representatives.controller.ts's buildManagerDashboardForRep() for the identical
     // split, which this mirrors so the two screens can never disagree.
     const company = await this.companyRepo.findOne({ where: { id: companyId } });
-    const isMandoubRep = await this.salesRepAccess.isSalesAgentRep(rep.id);
+    const isMandoubRep =
+      company?.code === PRINTING_PRESS_COMPANY_CODE
+        ? await this.salesRepAccess.isPressMandoubRep(rep.id)
+        : await this.salesRepAccess.isSalesAgentRep(rep.id);
     if (company?.code === AIR_CONDITIONING_COMPANY_CODE && isMandoubRep) {
       return this.getMonthlyFixedCommissions(rep.id, companyId, periodStart, periodEnd);
     }

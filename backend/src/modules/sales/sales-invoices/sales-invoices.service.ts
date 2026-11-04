@@ -588,6 +588,10 @@ export class SalesInvoicesService {
     const effectiveBranchId = await this.salesRepAccess.resolveBranchId(userId, branchId, companyId);
     const isSalesRep = await this.salesRepAccess.isCallerSalesRep(userId);
     const canSeeCosts = await this.salesRepAccess.isSystemAdmin(userId);
+    // Press: an invoice is owned by the branch's مدير فرع (see create()), but the مندوب who actually
+    // did the sale is the one tagged as assisting — that's the name the report should show.
+    const company = await this.companyRepo.findOne({ where: { id: companyId } });
+    const showAssistingRep = company?.code === 'PRESS';
     let ownRepId: string | null = null;
     if (isSalesRep) {
       const ownRep = await this.salesRepRepo.findOne({ where: { userId, companyId } });
@@ -606,7 +610,7 @@ export class SalesInvoicesService {
       .addSelect('l."baseQuantity"', 'baseQuantity')
       .addSelect('p."unitsPerPackage"', 'unitsPerPackage')
       .addSelect('pt."nameEn"', 'packageTypeName')
-      .addSelect('r.name', 'salesRepresentativeName')
+      .addSelect(showAssistingRep ? 'COALESCE(ar.name, r.name)' : 'r.name', 'salesRepresentativeName')
       // True when the invoice's rep/owner is linked to a "مدير فرع" account — lets the report
       // badge that person as a branch manager instead of a plain sales rep.
       .addSelect(
@@ -614,7 +618,7 @@ export class SalesInvoicesService {
           SELECT 1 FROM user_roles ur
           INNER JOIN roles rl ON rl.id = ur."roleId"
           WHERE ur."userId" = r."userId" AND rl.name = 'مدير فرع'
-        )`,
+        )${showAssistingRep ? ' AND ar.id IS NULL' : ''}`,
         'isBranchManager',
       )
       .addSelect('COALESCE(br."nameAr", br."nameEn")', 'branchName')
@@ -633,6 +637,7 @@ export class SalesInvoicesService {
       .innerJoin('products', 'p', 'p.id = l."productId"')
       .leftJoin('package_types', 'pt', 'pt.id = p."packageTypeId"')
       .leftJoin('sales_representatives', 'r', 'r.id = i."salesRepresentativeId"')
+      .leftJoin('sales_representatives', 'ar', 'ar.id = i."assistingSalesRepresentativeId"')
       .leftJoin('branches', 'br', 'br.id = i."branchId"')
       .leftJoin('customers', 'c', 'c.id = i."customerId"')
       .where('i."companyId" = :companyId', { companyId })

@@ -1354,7 +1354,14 @@ export class CashMovementsService {
         const { dateFrom, dateTo } = this.quarterDateRange(p.year, p.quarter);
         const report = await this.getProfitReport(companyId, dateFrom, dateTo, branchId);
         const materialCostRatio = report.revenue > 0 ? (report.consumedMaterials / report.revenue) * 100 : 0;
-        return { year: p.year, quarter: p.quarter, netProfit: round2(report.netProfit), materialCostRatio: round2(materialCostRatio) };
+        return {
+          year: p.year,
+          quarter: p.quarter,
+          revenue: round2(report.revenue),
+          consumedMaterials: round2(report.consumedMaterials),
+          netProfit: round2(report.netProfit),
+          materialCostRatio: round2(materialCostRatio),
+        };
       }),
     );
     return { periods: results, earliestYear };

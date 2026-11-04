@@ -44,14 +44,18 @@ type Quarter = 1 | 2 | 3 | 4;
 interface PerformanceTrendPeriod {
   year: number;
   quarter: number;
+  revenue: number;
+  consumedMaterials: number;
   netProfit: number;
   materialCostRatio: number;
 }
 
-// Navy → blue shades for the net-profit bars (oldest to newest comparison year), kept distinct
-// from the orange material-cost-ratio line so the two axes never get visually confused.
-const YEAR_COLORS = ['#1e3a8a', '#3b82f6', '#93c5fd'];
-const RATIO_LINE_COLOR = '#f97316';
+// One colour per bar (revenue / consumed materials / net profit), with the profit-margin line in a
+// fourth, clearly different hue so the two axes (amounts vs. %) never get visually confused.
+const REVENUE_COLOR = '#2563eb';
+const MATERIALS_COLOR = '#f59e0b';
+const PROFIT_COLOR = '#16a34a';
+const MARGIN_LINE_COLOR = '#7c3aed';
 const chartTooltipStyle = {
   borderRadius: 10,
   border: '1px solid var(--border)',
@@ -186,29 +190,23 @@ export function ReportsPage() {
   const trendPeriods = performanceTrendQuery.data?.periods ?? [];
   const findTrendPeriod = (y: number, q: number) => trendPeriods.find((p) => p.year === y && p.quarter === q);
 
-  // Never draws a comparison year that predates the company's actual first activity — mirrors the
-  // exact same guard on the sales-representatives quarterly comparison chart.
-  const performanceEarliestYear = performanceTrendQuery.data?.earliestYear ?? year;
-  const performanceComparisonYears = [year - 2, year - 1, year].filter((y) => y >= performanceEarliestYear);
-
-  // Bars: net profit per comparison year. Line: the selected year's own material-cost ratio trend.
-  // Always all 4 quarters (Q1–Q4) regardless of which quarter is currently selected, so the X-axis
-  // reads as one continuous, complete year — a quarter with no data yet (e.g. Q4 while browsing Q2)
-  // simply shows 0 rather than being omitted.
+  // Three bars per quarter of the selected year — revenue, consumed materials, net profit — plus a
+  // line for the net-profit margin (net profit ÷ revenue). Always all 4 quarters (Q1–Q4) regardless
+  // of which quarter is currently selected, so the X-axis reads as one continuous, complete year — a
+  // quarter with no data yet (e.g. Q4 while browsing Q2) simply shows 0 rather than being omitted.
   const performanceChartRows = useMemo(() => {
     if (tab !== 'performance') return [];
     return [1, 2, 3, 4].map((q) => {
       const row: Record<string, number | string> = { quarterLabel: t('salesRepresentativesReports.quarterShort', { quarter: q }) };
-      for (const y of performanceComparisonYears) {
-        const period = findTrendPeriod(y, q);
-        row[`netProfit_${y}`] = period ? Number(period.netProfit.toFixed(2)) : 0;
-      }
-      const currentYearPeriod = findTrendPeriod(year, q);
-      row.ratio = currentYearPeriod ? Number(currentYearPeriod.materialCostRatio.toFixed(2)) : 0;
+      const period = findTrendPeriod(year, q);
+      row.revenue = period?.revenue ?? 0;
+      row.materials = period?.consumedMaterials ?? 0;
+      row.netProfit = period?.netProfit ?? 0;
+      row.margin = period && period.revenue > 0 ? Number(((period.netProfit / period.revenue) * 100).toFixed(2)) : 0;
       return row;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trendPeriods, tab, year, performanceEarliestYear]);
+  }, [trendPeriods, tab, year]);
 
   const materialCostRatio = (profitQuery.data?.revenue ?? 0) > 0
     ? ((profitQuery.data?.consumedMaterials ?? 0) / (profitQuery.data?.revenue ?? 1)) * 100
@@ -551,7 +549,7 @@ export function ReportsPage() {
                         tickMargin={6}
                         width={56}
                         tickFormatter={(v: number) => formatAmount(v)}
-                        label={{ value: t('accounting.netProfit'), angle: -90, position: 'insideLeft', offset: 8, style: { fontSize: 13, textAnchor: 'middle' } }}
+                        label={{ value: t('accounting.chartAmountAxisLabel'), angle: -90, position: 'insideLeft', offset: 8, style: { fontSize: 13, textAnchor: 'middle' } }}
                       />
                       <YAxis
                         yAxisId="ratio"
@@ -559,27 +557,27 @@ export function ReportsPage() {
                         tick={{ fontSize: 12 }}
                         tickMargin={6}
                         width={48}
-                        domain={[0, 100]}
+                        domain={[(min: number) => Math.min(0, Math.floor(min)), (max: number) => Math.max(100, Math.ceil(max))]}
                         tickFormatter={(v: number) => `${v}%`}
-                        label={{ value: t('accounting.materialCostRatioAxisLabel'), angle: 90, position: 'insideRight', offset: 8, style: { fontSize: 13, textAnchor: 'middle' } }}
+                        label={{ value: t('accounting.profitMarginAxisLabel'), angle: 90, position: 'insideRight', offset: 8, style: { fontSize: 13, textAnchor: 'middle' } }}
                       />
                       <Tooltip
                         contentStyle={chartTooltipStyle}
                         formatter={(value: number, name: string, item: { dataKey?: string | number }) =>
-                          item?.dataKey === 'ratio'
+                          item?.dataKey === 'margin'
                             ? [`${formatAmount(value)}%`, name]
                             : [`${formatAmount(value)} ${t('accounting.currencyUnit')}`, name]
                         }
                       />
-                      {performanceComparisonYears.map((y, i) => (
-                        <Bar key={y} yAxisId="profit" dataKey={`netProfit_${y}`} name={String(y)} fill={YEAR_COLORS[i]} radius={[6, 6, 0, 0]} maxBarSize={40} />
-                      ))}
+                      <Bar yAxisId="profit" dataKey="revenue" name={t('accounting.revenue')} fill={REVENUE_COLOR} radius={[6, 6, 0, 0]} maxBarSize={36} />
+                      <Bar yAxisId="profit" dataKey="materials" name={t('accounting.chartMaterials')} fill={MATERIALS_COLOR} radius={[6, 6, 0, 0]} maxBarSize={36} />
+                      <Bar yAxisId="profit" dataKey="netProfit" name={t('accounting.netProfit')} fill={PROFIT_COLOR} radius={[6, 6, 0, 0]} maxBarSize={36} />
                       <Line
                         yAxisId="ratio"
                         type="monotone"
-                        dataKey="ratio"
-                        name={t('accounting.materialCostRatioAxisLabel')}
-                        stroke={RATIO_LINE_COLOR}
+                        dataKey="margin"
+                        name={t('accounting.profitMarginAxisLabel')}
+                        stroke={MARGIN_LINE_COLOR}
                         strokeWidth={2}
                         dot={{ r: 3 }}
                       />

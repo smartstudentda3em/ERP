@@ -366,8 +366,11 @@
     "performanceHealthTooltipAcceptable": "من 40% إلى 50%: مقبول (استهلاك خامات في الحدود الطبيعية)",
     "performanceHealthTooltipAlert": "أكثر من 50%: تنبيه خطر (ارتفاع في نسبة الخامات أو هدر يحتاج مراجعة)",
     "materialCostRatioAxisLabel": "نسبة استهلاك الخامات %",
-    "performanceChartTitle": "مقارنة صافي الربح بنسبة استهلاك الخامات",
-    "performanceChartSubtitle": "مقارنة أرباع {{year}} مع نفس الربع من الأعوام السابقة",
+    "performanceChartTitle": "أداء المطبعة الربع سنوي",
+    "performanceChartSubtitle": "الإيرادات والخامات المستهلكة وصافي الربح لكل ربع من {{year}}، مع نسبة الربح",
+    "chartMaterials": "الخامات المستهلكة",
+    "chartAmountAxisLabel": "المبلغ",
+    "profitMarginAxisLabel": "نسبة الربح %",
     "currencyUnit": "د.ك"
   },
   "stock": {

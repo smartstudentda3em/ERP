@@ -12,6 +12,8 @@ export interface AuthUser {
    * hiding/locking sensitive controls (Factory Reset, sales-rep assignment). The actual security
    * boundary for anything sensitive is always re-checked server-side, never trusted from here. */
   isSystemRole: boolean;
+  /** The system's founder/owner — the only account that sees the activity log (a UI hint; the API re-checks). */
+  isFounder?: boolean;
   /** True for a true Administrator — implicit access to every company; companyIds is irrelevant for them. */
   allCompanies: boolean;
   /** The companies this user may access/switch into (ignored when allCompanies is true). */

@@ -1,16 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Breadcrumbs } from './Breadcrumbs';
 import { ScrollToTopButton } from './ScrollToTopButton';
 import { useSidebarStore } from '../../store/sidebar-store';
+import { reportPrintEvent } from '../../lib/audit-events';
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Content only reserves the sidebar's width while it's pinned — unpinned, the sidebar floats
   // over the content on hover instead of pushing it (see Sidebar.tsx).
   const pinned = useSidebarStore((s) => s.pinned);
+
+  // Every browser print (button or Ctrl+P) is reported to the activity log.
+  useEffect(() => {
+    const onBeforePrint = () => reportPrintEvent('PRINT');
+    window.addEventListener('beforeprint', onBeforePrint);
+    return () => window.removeEventListener('beforeprint', onBeforePrint);
+  }, []);
 
   return (
     <div className="min-h-screen">

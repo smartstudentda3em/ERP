@@ -1,17 +1,24 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
-import { Repository } from 'typeorm';
-import { AuditLog } from '../../modules/audit-log/entities/audit-log.entity';
+import { AuditActionType, AuditLog } from '../../modules/audit-log/entities/audit-log.entity';
+import { AuditContext, auditStorage } from '../../modules/audit-log/audit-context';
+import { AuditRecorder } from '../../modules/audit-log/audit-recorder.service';
+import { routeLabel } from '../../modules/audit-log/audit-labels';
 
 const MUTATING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
+// Pure noise (silent token refresh) or recorded by their own dedicated endpoint.
+const SKIPPED_PATHS = [/\/auth\/refresh/, /\/audit-events/];
 
+/**
+ * Request-level trail. Business-record changes are captured with old/new values by AuditSubscriber;
+ * this adds a row only when that didn't happen — login/logout, a refused or failed attempt (e.g. a
+ * write into a closed month), or an action that never touched the ORM — so every mutating call
+ * leaves some trace.
+ */
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
-  constructor(
-    @InjectRepository(AuditLog) private readonly auditLogRepo: Repository<AuditLog>,
-  ) {}
+  constructor(private readonly recorder: AuditRecorder) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest();
@@ -20,32 +27,87 @@ export class AuditLogInterceptor implements NestInterceptor {
     if (!MUTATING_METHODS.includes(request.method)) {
       return next.handle();
     }
+    const ctx = auditStorage.getStore();
 
     return next.handle().pipe(
       tap({
-        next: () => this.write(request, 200, start),
-        error: (err) => this.write(request, err?.status || 500, start),
+        next: (body) => void this.write(request, ctx, 200, start, body),
+        error: (err) => void this.write(request, ctx, err?.status || 500, start, null),
       }),
     );
   }
 
-  private write(request: any, statusCode: number, start: number) {
-    const user = request.user;
-    const auditEntry = this.auditLogRepo.create({
-      companyId: user?.companyId ?? null,
-      userId: user?.userId ?? null,
-      userEmail: user?.email ?? null,
-      method: request.method,
-      path: request.originalUrl || request.url,
-      module: this.extractModule(request.url),
-      action: request.method,
-      requestBody: this.sanitize(request.body),
-      statusCode,
-      ipAddress: request.ip,
-      userAgent: request.headers?.['user-agent'],
-      durationMs: Date.now() - start,
-    });
-    this.auditLogRepo.save(auditEntry).catch(() => undefined);
+  private inferAction(method: string, path: string): AuditActionType {
+    if (/\/auth\/login/.test(path)) return 'LOGIN';
+    if (/\/auth\/logout/.test(path)) return 'LOGOUT';
+    if (/\/(approve|confirm|post|finalize)(\/|\?|$)/.test(path)) return 'APPROVE';
+    if (method === 'DELETE') return 'DELETE';
+    if (method === 'POST') return 'CREATE';
+    return 'UPDATE';
+  }
+
+  private async write(request: any, ctx: AuditContext | undefined, statusCode: number, start: number, body: any) {
+    try {
+      const path: string = request.originalUrl || request.url || '';
+      if (SKIPPED_PATHS.some((re) => re.test(path))) return;
+      const failed = statusCode >= 400;
+      const actionType = this.inferAction(request.method, path);
+      const alwaysLog = actionType === 'LOGIN' || actionType === 'LOGOUT';
+      if (!failed && !alwaysLog && ctx && ctx.changeCount > 0) return; // the CHANGE rows already tell the story
+
+      // A successful login has no request.user yet — the response carries who just signed in.
+      const loggedIn = actionType === 'LOGIN' && !failed ? (body?.data?.user ?? body?.user) : null;
+      const actor = await this.recorder.snapshot(
+        ctx,
+        loggedIn ? { id: loggedIn.id, fullName: loggedIn.fullName, email: loggedIn.email, companyId: loggedIn.companyId } : undefined,
+      );
+
+      const label = routeLabel(path);
+      const verb =
+        actionType === 'LOGIN' ? (failed ? 'محاولة تسجيل دخول فاشلة' : 'تسجيل دخول')
+        : actionType === 'LOGOUT' ? 'تسجيل خروج'
+        : actionType === 'DELETE' ? 'حذف'
+        : actionType === 'APPROVE' ? 'اعتماد'
+        : actionType === 'CREATE' ? 'إنشاء'
+        : 'تعديل';
+      const target = actionType === 'LOGIN' || actionType === 'LOGOUT' ? '' : ` ${label ?? path.split('?')[0]}`;
+      const phone = actionType === 'LOGIN' && failed ? ` (الهاتف ${request.body?.phone ?? '—'})` : '';
+      const description = `${verb}${target}${phone}${failed && actionType !== 'LOGIN' ? ` — فشلت العملية (${statusCode})` : ''}`;
+
+      const row: Partial<AuditLog> = {
+        companyId: actor.companyId ?? null,
+        userId: actor.userId,
+        userEmail: actor.userEmail,
+        userName: actor.userName,
+        userRole: actor.userRole,
+        departmentName: await this.recorder.companyName(actor.companyId),
+        method: request.method,
+        path: path.slice(0, 300),
+        module: this.extractModule(path),
+        action: actionType,
+        actionType,
+        source: 'REQUEST',
+        targetModel: null,
+        targetLabel: label,
+        entityId: this.extractRecordId(request),
+        oldValues: null,
+        newValues: null,
+        description,
+        requestBody: this.sanitize(request.body),
+        statusCode,
+        ipAddress: actor.ipAddress,
+        userAgent: actor.userAgent,
+        durationMs: Date.now() - start,
+      };
+      await this.recorder.insert([row]);
+    } catch {
+      // never let auditing affect the request
+    }
+  }
+
+  private extractRecordId(request: any): string | null {
+    const id = request.params?.id;
+    return typeof id === 'string' ? id.slice(0, 64) : null;
   }
 
   private extractModule(url: string): string {

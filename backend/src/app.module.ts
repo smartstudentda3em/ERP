@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -13,6 +13,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformResponseInterceptor } from './common/interceptors/transform-response.interceptor';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
+import { AuditContextMiddleware } from './modules/audit-log/audit-context';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -80,4 +81,9 @@ import { SharedDocumentsModule } from './modules/shared-documents/shared-documen
     { provide: APP_INTERCEPTOR, useClass: TransformResponseInterceptor },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  // Makes the current request available to the ORM-level audit subscriber (who made this change?).
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuditContextMiddleware).forRoutes('*');
+  }
+}

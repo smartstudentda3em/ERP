@@ -6,6 +6,8 @@
  * A4 pages as it actually needs and stamps a real "Page X of Y" + date footer on each one.
  */
 
+import { reportPrintEvent } from './audit-events';
+
 const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
 /** Reserved strip at the bottom of every page for the "Page X of Y" + date footer. */
@@ -133,6 +135,7 @@ export async function exportElementToPdf(
 ): Promise<void> {
   const pdf = await buildPdf(element, orientation);
   pdf.save(filename);
+  reportPrintEvent('EXPORT');
 }
 
 /**

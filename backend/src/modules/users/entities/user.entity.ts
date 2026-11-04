@@ -50,6 +50,11 @@ export class User extends BaseEntity {
   })
   twoFactorEnabled: boolean;
 
+  /** The system's founder/owner — the only account allowed to read the activity log (FounderGuard).
+   * Hidden from every query by default and never settable through the API (see AuditLogBootstrap). */
+  @Column({ type: "boolean", default: false, select: false })
+  isFounder: boolean;
+
   @Column({ nullable: true })
   lastLoginAt: Date;
 

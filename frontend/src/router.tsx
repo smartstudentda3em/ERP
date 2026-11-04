@@ -4,6 +4,8 @@ import { ContentErrorBoundary } from './components/ContentErrorBoundary';
 import { AppLayout } from './components/layout/AppLayout';
 import { RequireAuth } from './components/auth/RequireAuth';
 import { RequirePermission } from './components/auth/RequirePermission';
+import { RequireFounder } from './components/auth/RequireFounder';
+import { AuditLogPage } from './features/audit-log/AuditLogPage';
 import { DefaultRedirect } from './components/auth/DefaultRedirect';
 import { RequireNotPrintingPress } from './components/auth/RequireNotPrintingPress';
 import { RequireNotSalesRep } from './components/auth/RequireNotSalesRep';
@@ -357,6 +359,11 @@ export const router = createBrowserRouter([
               {
                 path: '/users-roles',
                 element: <RequirePermission code="users.view"><UsersRolesPage /></RequirePermission>,
+              },
+              {
+                // Founder-only activity trail — see RequireFounder / the API's FounderGuard.
+                path: '/audit-log',
+                element: <RequireFounder><AuditLogPage /></RequireFounder>,
               },
               {
                 // Not settings.warehouse.view — that code is shared with the Inventory > Warehouses

@@ -31,6 +31,8 @@ export interface LoginResult {
     branchId: string | null;
     permissions: string[];
     isSystemRole: boolean;
+    /** The founder/owner — the only account that sees the activity log (UI hint; FounderGuard re-checks). */
+    isFounder: boolean;
     allCompanies: boolean;
     companyIds: string[];
     /** Every role name this user holds (e.g. ['Manager'], ['مدير فرع']) — permission codes alone
@@ -142,7 +144,15 @@ export class AuthService {
     });
     await this.sessionRepo.save(session);
 
-    return { accessToken, refreshToken, permissions, isSystemRole, allCompanies, companyIds };
+    const founderRow = await this.userRepo
+      .createQueryBuilder('u')
+      .select('u.id')
+      .addSelect('u.isFounder')
+      .where('u.id = :id', { id: user.id })
+      .getOne();
+    const isFounder = founderRow?.isFounder ?? false;
+
+    return { accessToken, refreshToken, permissions, isSystemRole, isFounder, allCompanies, companyIds };
   }
 
   private parseExpiryMs(expr: string): number {
@@ -156,7 +166,7 @@ export class AuthService {
 
   private toLoginResult(
     user: User,
-    tokens: { accessToken: string; refreshToken: string; permissions: string[]; isSystemRole: boolean; allCompanies: boolean; companyIds: string[] },
+    tokens: { accessToken: string; refreshToken: string; permissions: string[]; isSystemRole: boolean; isFounder: boolean; allCompanies: boolean; companyIds: string[] },
   ): LoginResult {
     return {
       accessToken: tokens.accessToken,
@@ -170,6 +180,7 @@ export class AuthService {
         branchId: user.branchId,
         permissions: tokens.permissions,
         isSystemRole: tokens.isSystemRole,
+        isFounder: tokens.isFounder,
         allCompanies: tokens.allCompanies,
         companyIds: tokens.companyIds,
         roleNames: user.roles?.map((role) => role.name) ?? [],

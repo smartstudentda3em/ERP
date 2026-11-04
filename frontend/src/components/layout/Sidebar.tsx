@@ -38,6 +38,8 @@ interface NavItem {
    * must never unlock the Customers/Outstanding Balances/Warehouse Management screens themselves,
    * which the role's spec explicitly excludes. */
   hideForSalesRep?: boolean;
+  /** Shown ONLY to the system's founder/owner — see RequireFounder for the matching route guard. */
+  requireFounder?: boolean;
 }
 
 // Order below follows the required sequence exactly: لوحة التحكم، المشتريات، المنتجات، المخازن،
@@ -165,6 +167,7 @@ const items: NavItem[] = [
   { to: '/partners', label: 'nav.partners', icon: '🤝', permission: 'partners.view' },
   { to: '/accounting/reports', label: 'nav.reports', icon: '📉', permission: 'accounting.reports.view' },
   { to: '/users-roles', label: 'nav.usersRoles', icon: '🔐', permission: 'users.view' },
+  { to: '/audit-log', label: 'nav.auditLog', icon: '🛡️', requireFounder: true },
   // Not settings.warehouse.view — see RequirePermission usage on the /settings route for why.
   { to: '/settings', label: 'nav.settings', icon: '⚙️', permission: 'settings.company.view' },
 ];
@@ -260,8 +263,10 @@ export function Sidebar({ open }: { open: boolean }) {
   const isBranchManagerSelf = useIsBranchManager();
   const isSalesRep = useIsSalesRep();
   const { isPrintingPress, isAirConditioning, isStationery } = useActiveCompany();
+  const isFounder = useAuthStore((s) => s.user?.isFounder ?? false);
   const filteredItems = items.filter(
     (item) =>
+      !(item.requireFounder && !isFounder) &&
       (!item.permission || hasPermission(item.permission)) &&
       (!item.permissionAnyOf || item.permissionAnyOf.some((c) => hasPermission(c))) &&
       !(item.hideForSalesRep && isSalesRep) &&

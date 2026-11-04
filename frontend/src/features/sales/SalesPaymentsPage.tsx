@@ -71,7 +71,7 @@ export function SalesPaymentsPage() {
   // SalesPaymentsService.create()) — they never choose an account, same as the Sales Invoice form
   // already hides its own paymentAccount selector for this role.
   const isSalesRep = useIsSalesRep();
-  const requiresPaymentAccount = (isPrintingPress || isStationery || isAirConditioning) && !isSalesRep;
+  const requiresPaymentAccount = (isPrintingPress || isStationery || isAirConditioning) && (!isSalesRep || isPrintingPress);
   const toast = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();

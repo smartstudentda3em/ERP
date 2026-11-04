@@ -120,7 +120,7 @@ export function TreasuryTransactionsPage() {
   const repTreasuryQuery = useQuery({
     queryKey: ['rep-treasury-balances', companyId],
     queryFn: () => unwrap<RepTreasuryBalance[]>(apiClient.get('/treasury/rep-treasury-balances')),
-    enabled: !!companyId && showAccountSplit,
+    enabled: !!companyId && showAccountSplit && !isPrintingPress,
   });
   const repTreasuryTotal = (repTreasuryQuery.data ?? []).reduce((sum, r) => sum + r.balance, 0);
   const repsWithBalance = (repTreasuryQuery.data ?? []).filter((r) => r.balance > 0.005);
@@ -223,7 +223,13 @@ export function TreasuryTransactionsPage() {
 
   const columns: Column<CashLedgerEntry>[] = [
     { header: t('common.date'), accessor: (r) => r.date },
-    { header: t('treasury.movementType'), accessor: (r) => t(`treasury.movementTypes.${r.movementType}`) },
+    {
+      header: t('treasury.movementType'),
+      accessor: (r) =>
+        t(
+          `treasury.movementTypes.${isPrintingPress && r.movementType === 'CAPITAL_INJECTION' ? 'CAPITAL_INJECTION_PRESS' : r.movementType}`,
+        ),
+    },
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('treasury.party'), accessor: (r) => r.partyName ?? '—' },
     { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.paymentAccount}`) },
@@ -327,7 +333,7 @@ export function TreasuryTransactionsPage() {
         // card short of everyone else's — lg:grid-cols-3 keeps that row evenly filled instead of
         // leaving a blank fourth slot.
         <div
-          className={`mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 print:hidden ${isAirConditioning ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}
+          className={`mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 print:hidden ${isAirConditioning || isPrintingPress ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}
         >
           <Card>
             <div className="text-xs text-[var(--text-muted)]">{t('treasury.bankBalance')}</div>
@@ -346,7 +352,7 @@ export function TreasuryTransactionsPage() {
               Stationery: the card renames to plural "خزينة المناديب" and becomes clickable, opening
               the per-rep breakdown screen (RepTreasuriesPage). Printing Press keeps today's exact
               static card, unchanged. */}
-          {!isAirConditioning && (
+          {!isAirConditioning && !isPrintingPress && (
             <Card
               onClick={isStationery ? () => navigate('/treasury/rep-treasuries') : undefined}
               className={isStationery ? 'cursor-pointer transition hover:shadow-md' : undefined}
@@ -503,7 +509,7 @@ export function TreasuryTransactionsPage() {
               >
                 <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
                 <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
-                <option value="REP_TREASURY">{t('treasury.paymentAccounts.REP_TREASURY')}</option>
+                {!isPrintingPress && <option value="REP_TREASURY">{t('treasury.paymentAccounts.REP_TREASURY')}</option>}
               </Select>
             </FormField>
             <FormField label={t('treasury.toAccount')}>

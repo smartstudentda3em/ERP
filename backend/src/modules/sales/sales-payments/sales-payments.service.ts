@@ -64,14 +64,16 @@ export class SalesPaymentsService {
     // company's real CASH/BANK — same rule SalesInvoicesService applies to an invoice's upfront
     // payment (see SalesRepAccessService.isSalesAgentRep) — and, like that flow, they never choose
     // an account at all, so the usual paymentAccount requirement never applies to them.
-    const isRepTreasurySale = await this.salesRepAccess.isSalesAgentRep(salesRepresentativeId);
+    // The Printing Press has no per-مندوب treasury pocket — its مناديب pick Cash/Bank like everyone else.
+    const company = await this.companyRepo.findOne({ where: { id: companyId } });
+    const isRepTreasurySale =
+      company?.code !== 'PRESS' && (await this.salesRepAccess.isSalesAgentRep(salesRepresentativeId));
 
     // Press/Stationery/Air Conditioning must explicitly pick the treasury account
     // (dto.paymentAccount) — assertPaymentAccountProvided throws if it's missing for one of these.
     // Any other company has no such field — its receipt only records `method` (cash in hand, bank
     // transfer, cheque, card, online) — so the treasury account is derived from that instead: CASH
     // stays CASH, anything else settles into BANK.
-    const company = await this.companyRepo.findOne({ where: { id: companyId } });
     if (!isRepTreasurySale) assertPaymentAccountProvided(company?.code, dto.paymentAccount);
     const resolvedAccount = isRepTreasurySale
       ? CashMovementAccount.REP_TREASURY
@@ -191,8 +193,9 @@ export class SalesPaymentsService {
         dto.salesRepresentativeId,
         companyId,
       );
-      const isRepTreasurySale = await this.salesRepAccess.isSalesAgentRep(salesRepresentativeId);
       const company = await this.companyRepo.findOne({ where: { id: companyId } });
+      const isRepTreasurySale =
+        company?.code !== 'PRESS' && (await this.salesRepAccess.isSalesAgentRep(salesRepresentativeId));
       if (!isRepTreasurySale) assertPaymentAccountProvided(company?.code, dto.paymentAccount);
       const resolvedAccount = isRepTreasurySale
         ? CashMovementAccount.REP_TREASURY

@@ -94,7 +94,7 @@ export function SalesInvoiceDetailPage() {
   // which this modal itself calls into (see payMutation below, POSTs to the same /sales/payments
   // endpoint whose assertPaymentAccountProvided enforces this). A مندوب's own follow-up collection
   // routes into their REP_TREASURY pocket instead and never chooses an account.
-  const requiresPaymentAccount = (isPrintingPress || isStationery || isAirConditioning) && !isSalesRep;
+  const requiresPaymentAccount = (isPrintingPress || isStationery || isAirConditioning) && (!isSalesRep || isPrintingPress);
   const [payOpen, setPayOpen] = useState(false);
   const [amount, setAmount] = useState('0');
   // Starts unset (not defaulted to CASH) so whoever records the payment must explicitly say where

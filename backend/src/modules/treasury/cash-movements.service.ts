@@ -1430,9 +1430,22 @@ export class CashMovementsService {
     return this.getManualTransactionsBySourceType(companyId, 'DIVIDEND', dateFrom, dateTo, partnerId);
   }
 
+  /** Advance-repayment log for the Press Partners screen ("سداد التسليف") — optionally scoped to one partner. */
+  async getAdvanceRepayments(companyId: string, dateFrom?: string, dateTo?: string, partnerId?: string) {
+    return this.getManualTransactionsBySourceType(companyId, 'ADVANCE_REPAYMENT', dateFrom, dateTo, partnerId);
+  }
+
+  async deleteAdvanceRepayment(companyId: string, id: string): Promise<void> {
+    const row = await this.repo.findOne({
+      where: { id, companyId, sourceType: CashMovementSourceType.ADVANCE_REPAYMENT },
+    });
+    if (!row) throw new NotFoundException('Advance repayment not found');
+    await this.repo.remove(row);
+  }
+
   private async getManualTransactionsBySourceType(
     companyId: string,
-    sourceType: 'CAPITAL_INJECTION' | 'DIVIDEND',
+    sourceType: 'CAPITAL_INJECTION' | 'DIVIDEND' | 'ADVANCE_REPAYMENT',
     dateFrom?: string,
     dateTo?: string,
     partnerId?: string,

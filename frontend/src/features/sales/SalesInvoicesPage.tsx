@@ -222,7 +222,7 @@ export function SalesInvoicesPage() {
   // their own خزينة المندوب pocket server-side (see SalesInvoicesService.isSalesAgentRep).
   const isSalesRep = useIsSalesRep();
   const requiresPaymentAccount =
-    !isSalesRep && (isPrintingPress || currentCompany?.code === 'STAT' || currentCompany?.code === 'AC');
+    (!isSalesRep || isPrintingPress) && (isPrintingPress || currentCompany?.code === 'STAT' || currentCompany?.code === 'AC');
   const walkInCustomer = customersQuery.data?.find((c) => c.code === 'WALKIN');
 
   // Printing Press: the invoice form shows a Branch field instead of Warehouse; the linked

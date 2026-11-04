@@ -6,6 +6,7 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { CashMovementsService } from './cash-movements.service';
 import {
+  CreateAdvanceRepaymentDto,
   CreateCapitalInjectionDto,
   CreateCommissionPayoutDto,
   CreateDividendDto,
@@ -153,10 +154,88 @@ export class PartnersTreasuryController {
     return this.cashMovementsService.deleteCapitalInjection(companyId, id);
   }
 
+  /** A partner's outstanding advance ("تسليف"): everything they've put in (CAPITAL_INJECTION) minus
+   * everything already paid back to them (ADVANCE_REPAYMENT). */
+  private async getPartnerAdvanceBalance(companyId: string, partnerId: string): Promise<number> {
+    const rows: { sourceType: string; total: string }[] = await this.dataSource
+      .createQueryBuilder()
+      .select('m."sourceType"', 'sourceType')
+      .addSelect('COALESCE(SUM(m.amount), 0)', 'total')
+      .from('cash_movements', 'm')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere('m."partnerId" = :partnerId', { partnerId })
+      .andWhere('m."sourceType" IN (:...types)', {
+        types: [CashMovementSourceType.CAPITAL_INJECTION, CashMovementSourceType.ADVANCE_REPAYMENT],
+      })
+      .groupBy('m."sourceType"')
+      .getRawMany();
+    const sum = (t: CashMovementSourceType) => Number(rows.find((r) => r.sourceType === t)?.total ?? 0);
+    return sum(CashMovementSourceType.CAPITAL_INJECTION) - sum(CashMovementSourceType.ADVANCE_REPAYMENT);
+  }
+
   /**
-   * Each active partner's running balance — the sum of THIS partner's own capital injections only
-   * (never dividends: a payout received is not a contribution paid in, so it must never inflate
-   * this number). `total` is derived by summing these same per-partner balances, so the top
+   * Printing Press only — "سداد تسليف": pays a partner back (part of) what they advanced, out of the
+   * chosen Cash/Bank account. Reduces that partner's advance balance; never a P&L expense.
+   */
+  @Post('advance-repayments')
+  @Permissions('partners.create')
+  async createAdvanceRepayment(@Body() dto: CreateAdvanceRepaymentDto, @CurrentUser() user: AuthenticatedUser) {
+    const companyId = user.companyId!;
+    const company = await this.companiesRepo.findOne({ where: { id: companyId } });
+    if (company?.code !== PRINTING_PRESS_COMPANY_CODE) {
+      throw new BadRequestException('Advance repayments are only available for the Printing Press');
+    }
+    if (dto.account !== CashMovementAccount.CASH && dto.account !== CashMovementAccount.BANK) {
+      throw new BadRequestException('يجب اختيار الخزينة النقدي أو البنك للسداد');
+    }
+    const partner = await this.partnerRepo.findOne({ where: { id: dto.partnerId, companyId, isActive: true } });
+    if (!partner) throw new BadRequestException('Selected partner was not found or is not active');
+
+    const owed = await this.getPartnerAdvanceBalance(companyId, dto.partnerId);
+    if (dto.amount > owed) {
+      throw new BadRequestException(
+        `لا يمكن سداد ${dto.amount.toFixed(2)} للشريك ${partner.name} — المديونية المتبقية له ${Math.max(owed, 0).toFixed(2)} فقط.`,
+      );
+    }
+    const branchId = partner.branchId ?? null;
+    await this.cashMovementsService.assertSufficientBalance(companyId, dto.account, dto.amount, branchId);
+    return this.cashMovementsService.record({
+      companyId,
+      branchId,
+      movementDate: dto.movementDate,
+      type: CashMovementType.EXPENSE,
+      account: dto.account,
+      amount: dto.amount,
+      sourceType: CashMovementSourceType.ADVANCE_REPAYMENT,
+      category: 'Advance Repayment',
+      partnerId: dto.partnerId,
+      description: dto.description,
+      createdById: user.userId,
+    });
+  }
+
+  @Get('advance-repayments')
+  @Permissions('partners.view')
+  getAdvanceRepayments(
+    @CurrentUser('companyId') companyId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('partnerId') partnerId?: string,
+  ) {
+    return this.cashMovementsService.getAdvanceRepayments(companyId, dateFrom, dateTo, partnerId);
+  }
+
+  @Delete('advance-repayments/:id')
+  @Permissions('partners.delete')
+  deleteAdvanceRepayment(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('companyId') companyId: string) {
+    return this.cashMovementsService.deleteAdvanceRepayment(companyId, id);
+  }
+
+  /**
+   * Each active partner's running balance — the sum of THIS partner's own capital injections
+   * ("تسليف") minus whatever has since been paid back to them (ADVANCE_REPAYMENT; Printing Press
+   * only ever creates those) — never dividends: a payout received is not a contribution paid in, so
+   * it must never inflate or shrink this number). `total` is derived by summing these same per-partner balances, so the top
    * "Total Contribution Balance" card and this table can never disagree with each other or with
    * the Contribution History log below them — all three read the exact same filtered rows.
    */
@@ -180,11 +259,26 @@ export class PartnersTreasuryController {
       .andWhere('m."partnerId" IS NOT NULL')
       .andWhere('m."sourceType" = :sourceType', { sourceType: CashMovementSourceType.CAPITAL_INJECTION })
       .groupBy('m."partnerId"');
+    const repaymentsQb = this.dataSource
+      .createQueryBuilder()
+      .select('m."partnerId"', 'partnerId')
+      .addSelect('COALESCE(SUM(m.amount), 0)', 'total')
+      .from('cash_movements', 'm')
+      .where('m."companyId" = :companyId', { companyId })
+      .andWhere('m."partnerId" IS NOT NULL')
+      .andWhere('m."sourceType" = :sourceType', { sourceType: CashMovementSourceType.ADVANCE_REPAYMENT })
+      .groupBy('m."partnerId"');
     // Printing Press only — the Dashboard's Branch filter narrows "إجمالي المساهمات" to
     // contributions recorded against one branch (see createCapitalInjection's Press single-row path).
-    if (branchId) rowsQb.andWhere('m."branchId" = :branchId', { branchId });
-    const rows = await rowsQb.getRawMany();
-    const balanceByPartnerId = new Map(rows.map((r) => [r.partnerId, Number(r.total)]));
+    if (branchId) {
+      rowsQb.andWhere('m."branchId" = :branchId', { branchId });
+      repaymentsQb.andWhere('m."branchId" = :branchId', { branchId });
+    }
+    const [rows, repaymentRows] = await Promise.all([rowsQb.getRawMany(), repaymentsQb.getRawMany()]);
+    const repaidByPartnerId = new Map(repaymentRows.map((r) => [r.partnerId, Number(r.total)]));
+    const balanceByPartnerId = new Map(
+      rows.map((r) => [r.partnerId, Number(r.total) - (repaidByPartnerId.get(r.partnerId) ?? 0)]),
+    );
     const balances = partners.map((p) => ({
       partnerId: p.id,
       name: p.name,

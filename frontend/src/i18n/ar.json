@@ -895,7 +895,9 @@
       "INSTALLMENT_PAYMENT": "تحصيل قسط",
       "PAYROLL": "رواتب الموظفين",
       "SHIPMENT_PAYMENT": "دفعة شحنة",
-      "COMMISSION_PAYOUT": "صرف عمولة"
+      "COMMISSION_PAYOUT": "صرف عمولة",
+      "CAPITAL_INJECTION_PRESS": "تسليف",
+      "ADVANCE_REPAYMENT": "سداد تسليف"
     },
     "bankBalance": "رصيد البنك",
     "cashBalance": "الخزينة النقدي (الكاش)",
@@ -1102,6 +1104,17 @@
     "printReport": "طباعة التقرير",
     "exportPdf": "تصدير PDF",
     "reportTitle": "تقرير الشركاء والمساهمات",
+    "contributionsPress": "التسليف",
+    "totalContributionPress": "إجمالي مديونية الشركاء",
+    "addContributionPress": "+ تسليف",
+    "contributionHistoryPress": "سجل التسليف",
+    "perPartnerBalancesPress": "مديونية كل شريك",
+    "repayAdvance": "سداد تسليف",
+    "repaymentHistory": "سجل سداد التسليف",
+    "repaidAmount": "المبلغ المسدد",
+    "repaidFromAccount": "السداد من حساب",
+    "currentDebt": "المديونية الحالية",
+    "repayExceedsDebt": "المبلغ أكبر من المديونية المتبقية لهذا الشريك (الحد الأقصى: {{max}})",
     "pdfExportError": "تعذر تصدير التقرير كملف PDF، يرجى المحاولة مرة أخرى."
   },
   "salesReport": {

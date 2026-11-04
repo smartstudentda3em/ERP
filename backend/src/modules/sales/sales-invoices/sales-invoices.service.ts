@@ -289,7 +289,9 @@ export class SalesInvoicesService {
 
     const warnOnSellBelowCost = company?.warnOnSellBelowCost ?? true;
     const canSellBelowCost = userPermissions.includes('sales.invoice.sellBelowCost');
-    const isRepTreasurySale = await this.salesRepAccess.isSalesAgentRep(salesRepresentativeIdFinal);
+    // The Printing Press has no per-مندوب treasury pocket — its مناديب pick Cash/Bank like everyone else.
+    const isRepTreasurySale =
+      company?.code !== 'PRESS' && (await this.salesRepAccess.isSalesAgentRep(salesRepresentativeIdFinal));
     if (!isRepTreasurySale) {
       assertPaymentAccountProvided(company?.code, dto.paymentAccount);
     }

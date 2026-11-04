@@ -107,6 +107,11 @@ export enum CashMovementSourceType {
    * CashMovement.salesRepresentativeId, the same way DIVIDEND is attributed to a partner via
    * partnerId; see PartnersTreasuryController's commission-payouts routes. */
   COMMISSION_PAYOUT = 'COMMISSION_PAYOUT',
+  /** Printing Press only — money paid BACK to a partner against what they advanced ("تسليف", logged
+   * as a CAPITAL_INJECTION): an EXPENSE from CASH/BANK attributed to that partner via partnerId. It
+   * only reduces that partner's advance balance — never an operating expense, so every P&L report
+   * (which only ever looks at MANUAL/PAYROLL/COMMISSION_PAYOUT) ignores it. */
+  ADVANCE_REPAYMENT = 'ADVANCE_REPAYMENT',
 }
 
 /** How much of a shipment's cost a given payment represents. */

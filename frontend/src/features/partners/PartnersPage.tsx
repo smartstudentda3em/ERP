@@ -170,7 +170,7 @@ export function PartnersPage() {
   });
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'contributions', label: t('partners.contributions') },
+    { key: 'contributions', label: t(isPrintingPress ? 'partners.contributionsPress' : 'partners.contributions') },
     { key: 'assets', label: t('partners.assets') },
     { key: 'dividends', label: t('partners.dividends') },
   ];
@@ -301,6 +301,89 @@ export function PartnersPage() {
     onSuccess: () => invalidateContributionRelatedQueries(),
     onError: (err: any) => toast.error(err?.response?.data?.message ?? String(err?.message ?? err)),
   });
+
+  // --- Printing Press only: "سداد تسليف" — paying a partner back against what they advanced ---------
+  const [repayModalOpen, setRepayModalOpen] = useState(false);
+  const emptyRepayForm = {
+    movementDate: localToday(),
+    partnerId: '',
+    amount: '0',
+    account: 'CASH' as 'CASH' | 'BANK',
+    description: '',
+  };
+  const [repayForm, setRepayForm] = useState(emptyRepayForm);
+  const repayAmount = Number(repayForm.amount) || 0;
+  const repayDebt = (partnersBalancesQuery.data?.balances ?? []).find((b) => b.partnerId === repayForm.partnerId)?.balance ?? 0;
+
+  const repaymentsQuery = useQuery({
+    queryKey: ['advance-repayments', companyId, contribPartnerFilter],
+    queryFn: () =>
+      unwrap<Transaction[]>(
+        apiClient.get('/treasury/advance-repayments', {
+          params: { partnerId: contribPartnerFilter || undefined },
+        }),
+      ),
+    enabled: !!companyId && isPrintingPress && tab === 'contributions',
+  });
+
+  function invalidateRepaymentRelatedQueries() {
+    queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
+    queryClient.invalidateQueries({ queryKey: ['advance-repayments'] });
+    queryClient.invalidateQueries({ queryKey: ['partners-balances'] });
+    queryClient.invalidateQueries({ queryKey: ['treasury-cash-ledger'] });
+  }
+
+  const repayMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post('/treasury/advance-repayments', {
+        movementDate: repayForm.movementDate,
+        partnerId: repayForm.partnerId,
+        amount: repayAmount,
+        account: repayForm.account,
+        description: repayForm.description || undefined,
+      }),
+    onSuccess: () => {
+      invalidateRepaymentRelatedQueries();
+      setRepayModalOpen(false);
+      setRepayForm(emptyRepayForm);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? String(err?.message ?? err)),
+  });
+
+  const deleteRepaymentMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/treasury/advance-repayments/${id}`),
+    onSuccess: () => invalidateRepaymentRelatedQueries(),
+    onError: (err: any) => toast.error(err?.response?.data?.message ?? String(err?.message ?? err)),
+  });
+
+  async function handleDeleteRepayment(r: Transaction) {
+    const ok = await confirm({ message: t('common.confirmDelete', { name: r.documentNumber }) });
+    if (ok) deleteRepaymentMutation.mutate(r.id);
+  }
+
+  const repaymentColumns: Column<Transaction>[] = [
+    { header: t('common.date'), accessor: (r) => r.date },
+    { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
+    { header: t('fields.partnerName'), accessor: (r) => r.partnerName },
+    { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
+    { header: t('partners.repaidFromAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.account ?? 'CASH'}`) },
+    { header: t('table.description'), accessor: (r) => r.description ?? '—' },
+    { header: t('suppliers.createdBy'), accessor: (r) => r.createdByName },
+    {
+      header: t('common.actions'),
+      accessor: (r) => (
+        <button
+          type="button"
+          className="text-red-600 hover:underline"
+          disabled={deleteRepaymentMutation.isPending}
+          onClick={() => handleDeleteRepayment(r)}
+        >
+          {t('common.delete')}
+        </button>
+      ),
+      align: 'center',
+    },
+  ];
 
   function openEditContribution(r: Transaction) {
     setEditingContributionId(r.id);
@@ -676,14 +759,21 @@ export function PartnersPage() {
           <Card className="mb-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs text-[var(--text-muted)]">{t('partners.totalContribution')}</div>
+                <div className="text-xs text-[var(--text-muted)]">{t(isPrintingPress ? 'partners.totalContributionPress' : 'partners.totalContribution')}</div>
                 <div className="mt-1 text-2xl font-semibold">{money(partnersBalancesQuery.data?.total ?? 0)}</div>
               </div>
-              <Button onClick={() => setContribModalOpen(true)}>{t('partners.addContribution')}</Button>
+              <div className="flex flex-wrap gap-2">
+                {isPrintingPress && (
+                  <Button variant="secondary" onClick={() => setRepayModalOpen(true)}>
+                    {t('partners.repayAdvance')}
+                  </Button>
+                )}
+                <Button onClick={() => setContribModalOpen(true)}>{t(isPrintingPress ? 'partners.addContributionPress' : 'partners.addContribution')}</Button>
+              </div>
             </div>
           </Card>
 
-          <h3 className="mb-2 font-semibold">{t('partners.perPartnerBalances')}</h3>
+          <h3 className="mb-2 font-semibold">{t(isPrintingPress ? 'partners.perPartnerBalancesPress' : 'partners.perPartnerBalances')}</h3>
           <DataTable
             columns={partnerBalanceColumns}
             data={partnersBalancesQuery.data?.balances ?? []}
@@ -693,7 +783,7 @@ export function PartnersPage() {
           />
 
           <div className="mb-3 mt-6 flex flex-wrap items-end justify-between gap-3">
-            <h3 className="font-semibold">{t('partners.contributionHistory')}</h3>
+            <h3 className="font-semibold">{t(isPrintingPress ? 'partners.contributionHistoryPress' : 'partners.contributionHistory')}</h3>
             <FormField label={t('partners.filterByPartner')}>
               <Select value={contribPartnerFilter} onChange={(e) => setContribPartnerFilter(e.target.value)}>
                 <option value="">{t('common.all')}</option>
@@ -712,6 +802,19 @@ export function PartnersPage() {
             isLoading={contributionsQuery.isLoading}
             searchable={false}
           />
+
+          {isPrintingPress && (
+            <>
+              <h3 className="mb-3 mt-6 font-semibold">{t('partners.repaymentHistory')}</h3>
+              <DataTable
+                columns={repaymentColumns}
+                data={repaymentsQuery.data ?? []}
+                keyField={(r) => r.id}
+                isLoading={repaymentsQuery.isLoading}
+                searchable={false}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -855,12 +958,12 @@ export function PartnersPage() {
           <div style={{ fontSize: 13, fontWeight: 700, margin: '4px 0' }}>{t('partners.reportTitle')}</div>
           <div style={{ fontSize: 11, color: '#4b5563' }}>{t('imports.printDate')}: {localToday()}</div>
           <div className="partners-report-print-total-card">
-            {t('partners.totalContribution')}: {money(partnersBalancesQuery.data?.total ?? 0)}
+            {t(isPrintingPress ? 'partners.totalContributionPress' : 'partners.totalContribution')}: {money(partnersBalancesQuery.data?.total ?? 0)}
           </div>
         </div>
 
         <div className="partners-report-print-section">
-          <div className="partners-report-print-section-title">{t('partners.perPartnerBalances')}</div>
+          <div className="partners-report-print-section-title">{t(isPrintingPress ? 'partners.perPartnerBalancesPress' : 'partners.perPartnerBalances')}</div>
           <table className="app-table">
             <thead>
               <tr>
@@ -927,7 +1030,93 @@ export function PartnersPage() {
         </div>
       </div>
 
-      <Modal open={contribModalOpen} onClose={() => setContribModalOpen(false)} title={t('partners.addContribution')}>
+      <Modal
+        open={repayModalOpen}
+        onClose={() => setRepayModalOpen(false)}
+        title={t('partners.repayAdvance')}
+      >
+        <form
+          className="grid grid-cols-2 gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (repayMutation.isPending) return;
+            repayMutation.mutate();
+          }}
+        >
+          <div className="col-span-2">
+            <FormField label={t('fields.partnerName')}>
+              <Select
+                required
+                value={repayForm.partnerId}
+                onChange={(e) => setRepayForm({ ...repayForm, partnerId: e.target.value })}
+              >
+                <option value="">{t('actions.selectPartner')}</option>
+                {(partnersBalancesQuery.data?.balances ?? [])
+                  .filter((b) => b.balance > 0.005)
+                  .map((b) => (
+                    <option key={b.partnerId} value={b.partnerId}>
+                      {b.name} — {t('partners.currentDebt')}: {money(b.balance)}
+                    </option>
+                  ))}
+              </Select>
+            </FormField>
+          </div>
+          <FormField label={t('common.date')}>
+            <Input
+              type="date"
+              required
+              value={repayForm.movementDate}
+              onChange={(e) => setRepayForm({ ...repayForm, movementDate: e.target.value })}
+            />
+          </FormField>
+          <FormField label={t('partners.repaidAmount')}>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              value={repayForm.amount}
+              onChange={(e) => setRepayForm({ ...repayForm, amount: e.target.value })}
+            />
+          </FormField>
+          <FormField label={t('partners.repaidFromAccount')}>
+            <Select
+              required
+              value={repayForm.account}
+              onChange={(e) => setRepayForm({ ...repayForm, account: e.target.value as 'CASH' | 'BANK' })}
+            >
+              <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+              <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+            </Select>
+          </FormField>
+          {repayForm.partnerId && repayAmount > repayDebt && (
+            <p className="col-span-2 text-xs text-red-600">
+              {t('partners.repayExceedsDebt', { max: money(repayDebt) })}
+            </p>
+          )}
+          <div className="col-span-2">
+            <FormField label={t('table.description')}>
+              <Input
+                value={repayForm.description}
+                onChange={(e) => setRepayForm({ ...repayForm, description: e.target.value })}
+              />
+            </FormField>
+          </div>
+          <div className="col-span-2 mt-2 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setRepayModalOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="submit"
+              disabled={repayAmount <= 0 || !repayForm.partnerId || repayAmount > repayDebt || repayMutation.isPending}
+            >
+              {t('common.save')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={contribModalOpen} onClose={() => setContribModalOpen(false)} title={t(isPrintingPress ? 'partners.addContributionPress' : 'partners.addContribution')}>
         <form
           className="grid grid-cols-2 gap-3"
           onSubmit={(e) => {

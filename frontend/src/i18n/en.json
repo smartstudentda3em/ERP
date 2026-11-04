@@ -895,7 +895,9 @@
       "INSTALLMENT_PAYMENT": "Installment Collection",
       "PAYROLL": "Employee Salaries",
       "SHIPMENT_PAYMENT": "Shipment Payment",
-      "COMMISSION_PAYOUT": "Commission Payout"
+      "COMMISSION_PAYOUT": "Commission Payout",
+      "CAPITAL_INJECTION_PRESS": "Advance",
+      "ADVANCE_REPAYMENT": "Advance Repayment"
     },
     "bankBalance": "Bank Balance",
     "cashBalance": "Cash Treasury (Cash)",
@@ -1102,6 +1104,17 @@
     "printReport": "Print Report",
     "exportPdf": "Export PDF",
     "reportTitle": "Partners & Contributions Report",
+    "contributionsPress": "Advances",
+    "totalContributionPress": "Total Partner Debt",
+    "addContributionPress": "+ Advance",
+    "contributionHistoryPress": "Advances History",
+    "perPartnerBalancesPress": "Debt per Partner",
+    "repayAdvance": "Repay Advance",
+    "repaymentHistory": "Advance Repayments History",
+    "repaidAmount": "Amount Repaid",
+    "repaidFromAccount": "Repaid from Account",
+    "currentDebt": "Current debt",
+    "repayExceedsDebt": "The amount exceeds this partner's remaining debt (max: {{max}})",
     "pdfExportError": "Failed to export the report as PDF. Please try again."
   },
   "salesReport": {

@@ -44,6 +44,16 @@ export class UpdateCommissionPayoutDto {
   @IsOptional() @IsString() description?: string;
 }
 
+export class CreateAdvanceRepaymentDto {
+  @IsDateString() movementDate: string;
+  @IsNumber() @Min(0.01) amount: number;
+  /** The partner being paid back — capped server-side at what they've advanced and not yet been repaid. */
+  @IsUUID() partnerId: string;
+  /** Which real treasury account the repayment is paid out of — mandatory, balance-checked. */
+  @IsEnum(CashMovementAccount) account: CashMovementAccount;
+  @IsOptional() @IsString() description?: string;
+}
+
 export class CreateDividendDto {
   @IsUUID() companyId: string;
   @IsDateString() movementDate: string;

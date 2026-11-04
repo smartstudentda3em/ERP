@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany, useIsSalesRep, useIsBranchManager } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep, useIsBranchManager, usePressBranch } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -83,6 +83,7 @@ export function SalesInvoiceDetailPage() {
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi } = usePressBranch();
   const isSalesRep = useIsSalesRep();
   // The mobile app (مندوب/مدير فرع) never gets a "طباعة" button — there's no printer attached to
   // a phone, and if they really do want a paper copy they'd print from the desktop site anyway.
@@ -449,7 +450,7 @@ export function SalesInvoiceDetailPage() {
               </Select>
             </FormField>
           )}
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Input disabled value={invoiceBranchName} />
             </FormField>

@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
+import { usePressBranch } from '../../lib/use-active-company';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input, FormField, Select } from '../../components/ui/Input';
@@ -59,6 +60,13 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
+
+  // One branch, no picker — the payout form's branch (which resolves the manager) is filled in
+  // automatically, and again after every reset.
+  useEffect(() => {
+    if (hidePressBranchUi && singleBranchId && !form.branchId) setForm((f) => ({ ...f, branchId: singleBranchId }));
+  }, [hidePressBranchUi, singleBranchId, form.branchId]);
 
   const { dateFrom, dateTo } = useMemo(() => {
     const lastDay = new Date(year, month, 0).getDate();
@@ -185,7 +193,9 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
 
   const columns: Column<(typeof rows)[number]>[] = [
     { header: t('salesRepresentativesReports.branchManager'), accessor: (r) => r.managerName ?? '—' },
-    { header: t('salesRepresentativesReports.branch'), accessor: (r) => r.branchName ?? '—' },
+    ...(hidePressBranchUi
+      ? []
+      : [{ header: t('salesRepresentativesReports.branch'), accessor: (r: (typeof rows)[number]) => r.branchName ?? '—' } as Column<(typeof rows)[number]>]),
     { header: t('salesRepresentativesReports.totalProfit'), accessor: (r) => money(r.commissionAmount), align: 'right' },
     { header: t('salesRepresentativesReports.paidProfit'), accessor: (r) => money(r.paidAmount), align: 'right' },
     {
@@ -240,23 +250,25 @@ export function CommissionPayoutsTab({ year, month }: { year: number; month: num
             saveMutation.mutate();
           }}
         >
-          <FormField label={t('salesRepresentativesReports.branch')}>
-            <Select
-              required
-              disabled={!!editingId}
-              value={form.branchId}
-              onChange={(e) => setForm({ ...form, branchId: e.target.value })}
-            >
-              <option value="" disabled>
-                {t('common.select')}
-              </option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.nameAr || b.nameEn}
+          {!hidePressBranchUi && (
+            <FormField label={t('salesRepresentativesReports.branch')}>
+              <Select
+                required
+                disabled={!!editingId}
+                value={form.branchId}
+                onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+              >
+                <option value="" disabled>
+                  {t('common.select')}
                 </option>
-              ))}
-            </Select>
-          </FormField>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nameAr || b.nameEn}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
 
           {form.branchId && (
             <FormField label={t('salesRepresentativesReports.branchManager')}>

@@ -1,11 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -82,6 +82,7 @@ export function TreasuryTransactionsPage() {
   // Conditioning, and Stationery only — every other company keeps the single combined-balance
   // card unchanged.
   const { isPrintingPress, isAirConditioning, isStationery } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   const showAccountSplit = isPrintingPress || isAirConditioning || isStationery;
   const navigate = useNavigate();
   const printRef = useRef<HTMLDivElement>(null);
@@ -133,6 +134,12 @@ export function TreasuryTransactionsPage() {
   // Every company now has at least one seeded branch (Air Conditioning and Stationery included —
   // they just each have exactly one, unlike Press), so the "الفرع" filter below is fetched and
   // shown for all three, matching showAccountSplit's own company set.
+  useEffect(() => {
+    if (hidePressBranchUi && singleBranchId && !transferForm.branchId) {
+      setTransferForm((f) => ({ ...f, branchId: singleBranchId }));
+    }
+  }, [hidePressBranchUi, singleBranchId, transferForm.branchId]);
+
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
@@ -300,7 +307,7 @@ export function TreasuryTransactionsPage() {
 
       <div className="mb-3 flex flex-wrap items-end gap-3 print:hidden">
         <DateRangeFilter value={dateRange} onChange={setDateRange} />
-        {showAccountSplit && (
+        {showAccountSplit && !hidePressBranchUi && (
           <FormField label={t('dashboard.branchFilter')}>
             <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
               <option value={ALL_BRANCHES}>{t('accounting.allBranches')}</option>
@@ -551,7 +558,7 @@ export function TreasuryTransactionsPage() {
                 onChange={(e) => setTransferForm((f) => ({ ...f, movementDate: e.target.value }))}
               />
             </FormField>
-            {isPrintingPress && (
+            {isPrintingPress && !hidePressBranchUi && (
               <FormField label={t('fields.branch')}>
                 <Select
                   required

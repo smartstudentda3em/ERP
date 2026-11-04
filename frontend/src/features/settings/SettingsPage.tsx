@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SimpleMasterList } from './SimpleMasterList';
 import { CategoriesTab } from './CategoriesTab';
@@ -47,6 +47,7 @@ export function SettingsPage() {
   const canViewPartners = useAuthStore((s) => s.hasPermission('settings.partner.view'));
   const canViewBackups = useAuthStore((s) => s.hasPermission('admin.backup.view'));
   const { isPrintingPress } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   const [tab, setTab] = useState<Tab>('companies');
 
   // Printing Press only: lets each warehouse be permanently linked to its owning branch (see
@@ -65,7 +66,7 @@ export function SettingsPage() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'companies', label: t('settingsTabs.companies') },
-    { key: 'branches', label: t('settingsTabs.branches') },
+    ...(hidePressBranchUi ? [] : [{ key: 'branches' as Tab, label: t('settingsTabs.branches') }]),
     { key: 'warehouses', label: t('settingsTabs.warehouses') },
     { key: 'currencies', label: t('settingsTabs.currencies') },
     { key: 'taxes', label: t('settingsTabs.taxes') },
@@ -125,11 +126,11 @@ export function SettingsPage() {
       {tab === 'warehouses' && (
         <SimpleMasterList
           endpoint="/settings/warehouses"
-          extraPayload={{ companyId }}
+          extraPayload={hidePressBranchUi && singleBranchId ? { companyId, branchId: singleBranchId } : { companyId }}
           invalidateKeyPrefixes={['warehouses']}
           fields={[
             { name: 'nameAr', label: t('common.name'), required: true },
-            ...(isPrintingPress
+            ...(isPrintingPress && !hidePressBranchUi
               ? [
                   {
                     name: 'branchId',
@@ -144,7 +145,7 @@ export function SettingsPage() {
           ]}
           columns={[
             { header: t('common.name'), accessor: (r) => r.nameAr || r.nameEn },
-            ...(isPrintingPress
+            ...(isPrintingPress && !hidePressBranchUi
               ? [{ header: t('fields.branch'), accessor: (r: any) => branchNameById(r.branchId) }]
               : []),
           ]}

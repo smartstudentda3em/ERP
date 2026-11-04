@@ -1,4 +1,4 @@
-import { MouseEvent, useMemo, useState } from 'react';
+import { MouseEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,7 +14,7 @@ import { Badge } from '../../components/ui/Badge';
 import { FormField, Input, Select } from '../../components/ui/Input';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
-import { useActiveCompany, useIsPressManagerRestricted } from '../../lib/use-active-company';
+import { useActiveCompany, useIsPressManagerRestricted, usePressBranch } from '../../lib/use-active-company';
 import {
   monthKeyOf as auditMonthKey,
   monthNameOf as auditMonthName,
@@ -106,6 +106,7 @@ export function StockAuditPage() {
   // shows/filters/composes an audit's period branches on this flag; see confirmNewAudit() below
   // for how the same auditDate column ends up "YYYY-MM-01" vs "YYYY-01-01" either way.
   const { isPrintingPress } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   const [entryOpen, setEntryOpen] = useState(false);
   const [warehouseId, setWarehouseId] = useState('');
   const [auditDate, setAuditDate] = useState('');
@@ -144,6 +145,12 @@ export function StockAuditPage() {
 
   // Fetched unconditionally (not just entryOpen/newAuditModalOpen) — the list view's own branch
   // filter dropdown below needs this too.
+  useEffect(() => {
+    if (hidePressBranchUi && singleBranchId && !newAuditForm.branchId) {
+      setNewAuditForm((f) => ({ ...f, branchId: singleBranchId }));
+    }
+  }, [hidePressBranchUi, singleBranchId, newAuditForm.branchId]);
+
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
@@ -336,7 +343,14 @@ export function StockAuditPage() {
           header: t('stockAudit.auditYear'),
           accessor: (r) => t('stockAudit.auditYearLabel', { year: auditYearKey(r.auditDate) }),
         },
-    { header: t('fields.branch'), accessor: (r) => r.warehouse?.branch?.nameAr || r.warehouse?.branch?.nameEn || '—' },
+    ...(hidePressBranchUi
+      ? []
+      : [
+          {
+            header: t('fields.branch'),
+            accessor: (r: AuditRow) => r.warehouse?.branch?.nameAr || r.warehouse?.branch?.nameEn || '—',
+          } as Column<AuditRow>,
+        ]),
     { header: t('fields.warehouse'), accessor: (r) => r.warehouse?.nameAr || r.warehouse?.nameEn || '—' },
     { header: t('common.date'), accessor: (r) => r.auditDate },
     { header: t('stockAudit.countedBy'), accessor: (r) => r.createdByName ?? '—' },
@@ -552,16 +566,18 @@ export function StockAuditPage() {
             ))}
           </Select>
         </FormField>
-        <FormField label={t('fields.branch')}>
-          <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-            <option value="">{t('stockAudit.allBranches')}</option>
-            {(branchesQuery.data ?? []).map((b) => (
-              <option key={b.id} value={b.id}>
-                {branchLabel(b)}
-              </option>
-            ))}
-          </Select>
-        </FormField>
+        {!hidePressBranchUi && (
+          <FormField label={t('fields.branch')}>
+            <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              <option value="">{t('stockAudit.allBranches')}</option>
+              {(branchesQuery.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {branchLabel(b)}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
         <div className="flex items-end">
           <div className="flex w-full items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm">
             <span className="text-[var(--text-muted)]">{t('stockAudit.totalConsumedMaterials')}</span>
@@ -601,22 +617,24 @@ export function StockAuditPage() {
               onChange={(e) => setNewAuditForm({ ...newAuditForm, year: Number(e.target.value) || now.getFullYear() })}
             />
           </FormField>
-          <div className="col-span-2">
-            <FormField label={t('fields.branch')}>
-              <Select
-                required
-                value={newAuditForm.branchId}
-                onChange={(e) => setNewAuditForm({ ...newAuditForm, branchId: e.target.value })}
-              >
-                <option value="">{t('actions.selectBranch')}</option>
-                {(branchesQuery.data ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {branchLabel(b)}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-          </div>
+          {!hidePressBranchUi && (
+            <div className="col-span-2">
+              <FormField label={t('fields.branch')}>
+                <Select
+                  required
+                  value={newAuditForm.branchId}
+                  onChange={(e) => setNewAuditForm({ ...newAuditForm, branchId: e.target.value })}
+                >
+                  <option value="">{t('actions.selectBranch')}</option>
+                  {(branchesQuery.data ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {branchLabel(b)}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+          )}
           {newAuditForm.branchId && !matchedWarehouseId && (
             <p className="col-span-2 text-sm text-red-600">{t('stockAudit.noWarehouseForBranch')}</p>
           )}

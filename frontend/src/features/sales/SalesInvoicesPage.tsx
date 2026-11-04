@@ -18,7 +18,7 @@ import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 import { SalesLineEditor, SalesLineForm, emptyLine, linesToPayload, computeGrandTotal } from './SalesLineEditor';
 import { useSalesRepLock } from './useSalesRepLock';
-import { useActiveCompany, useIsSalesRep } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep, usePressBranch } from '../../lib/use-active-company';
 import { computeInstallmentTerms } from '../../lib/installment-calculator';
 
 type AcSaleType = 'CASH' | 'CREDIT' | 'INSTALLMENT';
@@ -91,6 +91,7 @@ export function SalesInvoicesPage() {
   // /settings/companies — a role like "مدير فرع" or "مندوب" has neither that permission nor any
   // reason to, so the gated endpoint 403'd silently and left isPrintingPress always false for them.
   const { company: currentCompany, isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   // "مدير فرع" holds sales.invoice.view/create but never .edit/.delete (see run-seed.ts's
   // BRANCH_MANAGER_PRESS_PERMISSION_CODES) — the server already 403s those calls, this just keeps
   // the buttons from ever appearing for a role that can't use them, instead of failing on click.
@@ -269,6 +270,13 @@ export function SalesInvoicesPage() {
     if (!branchId) return '';
     return (warehousesQuery.data ?? []).find((w) => w.branchId === branchId)?.id ?? '';
   }, [isPrintingPress, branchId, warehouseId, warehousesQuery.data]);
+
+  // Printing Press has one branch and no picker for it — seed the form's branch automatically (and
+  // again after every form reset) so the "branch required" checks and the branch-derived warehouse
+  // still resolve exactly as if it had been chosen.
+  useEffect(() => {
+    if (hidePressBranchUi && singleBranchId && !branchId) setBranchId(singleBranchId);
+  }, [hidePressBranchUi, singleBranchId, branchId]);
 
   useEffect(() => {
     if (isPrintingPress && walkInCustomer && !customerId) setCustomerId(walkInCustomer.id);
@@ -523,9 +531,11 @@ export function SalesInvoicesPage() {
       accessor: (r) => formatAmount(Number(r.grandTotal) - Number(r.amountPaid)),
       align: 'right',
     },
-    isPrintingPress
-      ? { header: t('fields.branch'), accessor: (r: SalesInvoice) => r.branch?.nameAr || r.branch?.nameEn || '—' }
-      : { header: t('fields.invoiceOwner'), accessor: (r: SalesInvoice) => r.createdByName ?? '—' },
+    ...(isPrintingPress
+      ? hidePressBranchUi
+        ? []
+        : [{ header: t('fields.branch'), accessor: (r: SalesInvoice) => r.branch?.nameAr || r.branch?.nameEn || '—' }]
+      : [{ header: t('fields.invoiceOwner'), accessor: (r: SalesInvoice) => r.createdByName ?? '—' }]),
     ...(canEditInvoice || canDeleteInvoice
       ? [
           {
@@ -638,6 +648,7 @@ export function SalesInvoicesPage() {
                   <FormField label={t('fields.phone')}>
                     <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
                   </FormField>
+                  {!hidePressBranchUi && (
                   <FormField label={t('fields.branch')}>
                     <Select required value={branchId} onChange={(e) => setBranchId(e.target.value)}>
                       <option value="">{t('actions.selectBranch')}</option>
@@ -661,6 +672,23 @@ export function SalesInvoicesPage() {
                       </p>
                     )}
                   </FormField>
+                  )}
+                  {/* Single-branch Press: no picker, but an admin/Manager still sees which مدير فرع the
+                      invoice will be credited to, and a missing branch→warehouse link still warns. */}
+                  {hidePressBranchUi && (
+                    <div className="col-span-2">
+                      {branchId && !resolvedWarehouseId && (
+                        <p className="text-xs text-red-600">{t('stockAudit.noWarehouseForBranch')}</p>
+                      )}
+                      {isAdmin && branchId && (
+                        <p className="text-xs text-[var(--text-muted)]">
+                          {selectedBranchManager
+                            ? `${t('salesInvoice.branchManagerLabel')}: ${selectedBranchManager.name}`
+                            : t('salesInvoice.noBranchManagerAssigned')}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <FormField label={t('common.date')}>
                     <Input type="date" required value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
                   </FormField>

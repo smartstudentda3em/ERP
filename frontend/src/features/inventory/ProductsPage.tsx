@@ -17,7 +17,7 @@ import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/Dat
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany, useIsPressManagerRestricted, useIsSalesRep } from '../../lib/use-active-company';
+import { useActiveCompany, useIsPressManagerRestricted, useIsSalesRep, usePressBranch } from '../../lib/use-active-company';
 import { LetterheadCompany } from '../sales/DocumentLetterhead';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
@@ -229,6 +229,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
 ) {
   const { t } = useTranslation();
   const { isPrintingPress, isAirConditioning } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi } = usePressBranch();
   const isManagerRestricted = useIsPressManagerRestricted();
   const isSalesRep = useIsSalesRep();
   const queryClient = useQueryClient();
@@ -793,7 +794,7 @@ export const ProductsTab = forwardRef<ProductsTabHandle, ProductsTabProps>(funct
           />
         </div>
 
-        {isPrintingPress && (
+        {isPrintingPress && !hidePressBranchUi && (
           <div className="max-w-xs">
             <FormField label={t('products.filterByBranch')}>
               <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>

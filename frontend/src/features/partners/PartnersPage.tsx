@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
@@ -15,7 +15,7 @@ import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdf } from '../../lib/pdf-export';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 
 interface Company {
   id: string;
@@ -135,6 +135,7 @@ export function PartnersPage() {
   });
   const company = companiesQuery.data?.find((c) => c.id === companyId) ?? companiesQuery.data?.[0];
   const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   // PRESS/STAT/AC (every company that exists today) all require the "جهة الإيداع" selector on
   // capital injections, matching PAYMENT_ACCOUNT_REQUIRED_COMPANY_CODES on the backend — only the
   // branch attribution stays isPrintingPress-only below, since branches are a Press-specific
@@ -320,7 +321,7 @@ export function PartnersPage() {
 
   const partnerBalanceColumns: Column<PartnerBalance>[] = [
     { header: t('fields.partnerName'), accessor: (r) => r.name },
-    ...(isPrintingPress
+    ...(isPrintingPress && !hidePressBranchUi
       ? [{ header: t('fields.branch'), accessor: (r: PartnerBalance) => branchName(r.branchId) } as Column<PartnerBalance>]
       : []),
     { header: t('fields.sharePercentage'), accessor: (r) => `${formatAmount(r.sharePercentage)}%`, align: 'right' },
@@ -377,6 +378,16 @@ export function PartnersPage() {
     account: 'CASH' as 'CASH' | 'BANK',
   });
   const [dividendPartnerFilter, setDividendPartnerFilter] = useState('');
+
+  // Printing Press has one branch and no picker for it — seed every form's branch automatically
+  // (again after each reset) so the existing "branch required" checks and partnersForBranch() filter
+  // resolve exactly as if it had been chosen.
+  useEffect(() => {
+    if (!hidePressBranchUi || !singleBranchId) return;
+    if (!contribForm.branchId) setContribForm((f) => ({ ...f, branchId: singleBranchId }));
+    if (!editContribForm.branchId) setEditContribForm((f) => ({ ...f, branchId: singleBranchId }));
+    if (!dividendForm.branchId) setDividendForm((f) => ({ ...f, branchId: singleBranchId }));
+  }, [hidePressBranchUi, singleBranchId, contribForm.branchId, editContribForm.branchId, dividendForm.branchId]);
 
   const { dateFrom, dateTo } = useMemo(() => quarterDateRange(year, quarter), [year, quarter]);
 
@@ -646,7 +657,7 @@ export function PartnersPage() {
         </div>
         {/* The Dividends tab gets its own copy of this filter, grouped together with the
             year/quarter/صرف الأرباح controls in one row instead — see below. */}
-        {isPrintingPress && tab !== 'dividends' && (
+        {isPrintingPress && !hidePressBranchUi && tab !== 'dividends' && (
           <FormField label={t('dashboard.branchFilter')}>
             <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
               <option value="">{t('accounting.allBranches')}</option>
@@ -753,7 +764,7 @@ export function PartnersPage() {
               </FormField>
             </div>
             <div className="flex flex-wrap items-end gap-4">
-              {isPrintingPress && (
+              {isPrintingPress && !hidePressBranchUi && (
                 <FormField label={t('dashboard.branchFilter')}>
                   <Select className="w-48" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
                     <option value="">{t('accounting.allBranches')}</option>
@@ -854,7 +865,7 @@ export function PartnersPage() {
             <thead>
               <tr>
                 <th>{t('fields.partnerName')}</th>
-                {isPrintingPress && <th>{t('fields.branch')}</th>}
+                {isPrintingPress && !hidePressBranchUi && <th>{t('fields.branch')}</th>}
                 <th>{t('fields.sharePercentage')}</th>
                 <th>{t('treasury.amount')}</th>
               </tr>
@@ -863,7 +874,7 @@ export function PartnersPage() {
               {(partnersBalancesQuery.data?.balances ?? []).map((r) => (
                 <tr key={r.partnerId}>
                   <td>{r.name}</td>
-                  {isPrintingPress && <td>{branchName(r.branchId)}</td>}
+                  {isPrintingPress && !hidePressBranchUi && <td>{branchName(r.branchId)}</td>}
                   <td>{formatAmount(r.sharePercentage)}%</td>
                   <td>{money(r.balance)}</td>
                 </tr>
@@ -975,7 +986,7 @@ export function PartnersPage() {
               </Select>
             </FormField>
           )}
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Select
                 required
@@ -1076,7 +1087,7 @@ export function PartnersPage() {
               </Select>
             </FormField>
           )}
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Select
                 required
@@ -1195,7 +1206,7 @@ export function PartnersPage() {
             </Select>
           </FormField>
 
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Select
                 required

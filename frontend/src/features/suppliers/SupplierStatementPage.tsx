@@ -1,11 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount, formatQuantity } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -97,6 +97,7 @@ export function SupplierStatementPage() {
   const isPendingOnly = searchParams.get('scope') === 'pending';
   const { t } = useTranslation();
   const { isPrintingPress } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   const toast = useToast();
   const queryClient = useQueryClient();
   const companyId = useAuthStore((s) => s.user?.companyId);
@@ -141,6 +142,10 @@ export function SupplierStatementPage() {
   // Press-only — the general "دفع المتبقي" modal below needs a branch to attribute the payment
   // to, same required-select pattern as SalesPaymentsPage's own general (not-tied-to-invoice)
   // payment form, since there is no "active branch" concept to derive it from automatically.
+  useEffect(() => {
+    if (hidePressBranchUi && singleBranchId && !payBranchId) setPayBranchId(singleBranchId);
+  }, [hidePressBranchUi, singleBranchId, payBranchId]);
+
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
@@ -428,7 +433,7 @@ export function SupplierStatementPage() {
               <option value="BANK_TRANSFER">{t('paymentMethod.BANK_TRANSFER')}</option>
             </Select>
           </FormField>
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')} required>
               <Select required value={payBranchId} onChange={(e) => setPayBranchId(e.target.value)}>
                 <option value="">—</option>

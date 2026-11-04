@@ -17,7 +17,7 @@ import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdf } from '../../lib/pdf-export';
 import { useSalesRepLock } from './useSalesRepLock';
-import { useActiveCompany, useIsSalesRep } from '../../lib/use-active-company';
+import { useActiveCompany, useIsSalesRep, usePressBranch } from '../../lib/use-active-company';
 
 interface Company {
   id: string;
@@ -63,6 +63,7 @@ interface SalesRepresentative {
 export function SalesPaymentsPage() {
   const { t } = useTranslation();
   const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   // Stationery/AC keep the normal customer+method fields (they're not Press) but must also pick a
   // بنك/كاش deposit account, same requirement as Press — see SalesPaymentsService.create()'s
   // assertPaymentAccountProvided. Branch stays Press-only, unrelated to this request.
@@ -140,6 +141,10 @@ export function SalesPaymentsPage() {
     queryFn: () => unwrap<SalesRepresentative[]>(apiClient.get('/sales-representatives')),
     enabled: modalOpen,
   });
+
+  useEffect(() => {
+    if (hidePressBranchUi && singleBranchId && !branchId) setBranchId(singleBranchId);
+  }, [hidePressBranchUi, singleBranchId, branchId]);
 
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
@@ -441,7 +446,7 @@ export function SalesPaymentsPage() {
               </Select>
             </FormField>
           )}
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')} required>
               <Select required value={branchId} onChange={(e) => setBranchId(e.target.value)}>
                 <option value="">—</option>

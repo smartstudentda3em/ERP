@@ -55,6 +55,33 @@ export function useActiveCompany() {
 }
 
 /**
+ * The Printing Press runs as a single-branch business: its screens never show a branch picker,
+ * filter, or column, and every operation is tagged with its one branch automatically. Branches are
+ * still a real column on shared tables (Air Conditioning/Stationery keep using them untouched) and a
+ * مدير فرع is still tied to that branch for commissions/permissions — only the Press UI stops
+ * exposing the choice. If a second Press branch is ever created the UI falls back to showing the
+ * pickers again rather than silently routing everything to the first branch.
+ *
+ * `hideBranchUi` — true for the Press while it has at most one branch (including while loading).
+ * `singleBranchId` — that one branch's id once known, '' otherwise; forms seed their branch state
+ * from it so the existing "branch required" checks pass without the user touching anything.
+ */
+export function usePressBranch() {
+  const { isPrintingPress } = useActiveCompany();
+  const companyId = useAuthStore((s) => s.user?.companyId);
+  const branchesQuery = useQuery({
+    queryKey: ['branches', companyId],
+    queryFn: () => unwrap<{ id: string }[]>(apiClient.get('/settings/branches', { params: { companyId } })),
+    enabled: isPrintingPress && !!companyId,
+  });
+  const branches = branchesQuery.data ?? [];
+  return {
+    hideBranchUi: isPrintingPress && branches.length <= 1,
+    singleBranchId: isPrintingPress && branches.length === 1 ? branches[0].id : '',
+  };
+}
+
+/**
  * True only for a user holding the role literally named "Manager" (a broader, non-Press-exclusive
  * role — not "مدير فرع", a separate, already-narrower Press-only role with its own restrictions)
  * while their active company is the Printing Press. Gates a handful of UI restrictions specific to

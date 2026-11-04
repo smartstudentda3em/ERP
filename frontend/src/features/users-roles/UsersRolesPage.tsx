@@ -1,4 +1,4 @@
-import { MouseEvent, useState } from 'react';
+import { MouseEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
@@ -11,7 +11,7 @@ import { Badge } from '../../components/ui/Badge';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { useAccessibleCompanies } from '../../lib/companies';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 
 const PROTECTED_ADMIN_EMAIL = 'aymanmakroum83@gmail.com';
 
@@ -122,6 +122,7 @@ export function UsersRolesPage() {
   // since a مندوب can just as easily belong to Stationery/AC, where a single default branch already
   // exists. مدير فرع, by contrast, always requires a branch regardless of company.
   const { isPrintingPress, company: activeCompany } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   const createIsRep = rolesQuery.data?.find((r) => r.id === form.roleId)?.name === SALES_REP_ROLE_NAME;
   const editIsRep = rolesQuery.data?.find((r) => r.id === editForm.roleId)?.name === SALES_REP_ROLE_NAME;
   const isBranchManagerSelected = modalOpen ? createIsBranchManager : editIsBranchManager;
@@ -137,6 +138,15 @@ export function UsersRolesPage() {
       !!branchManagerCompanyId &&
       (createIsBranchManager || editIsBranchManager || (isPrintingPress && (createIsRep || editIsRep))),
   });
+  // Printing Press has one branch and no picker for it — a مدير فرع user's required branch is filled
+  // in automatically (their permissions/commissions stay tied to it exactly as before). A مندوب's
+  // optional branch is simply no longer offered there.
+  useEffect(() => {
+    if (!hidePressBranchUi || !singleBranchId) return;
+    if (createIsBranchManager && !form.branchId) setForm((f) => ({ ...f, branchId: singleBranchId }));
+    if (editIsBranchManager && !editForm.branchId) setEditForm((f) => ({ ...f, branchId: singleBranchId }));
+  }, [hidePressBranchUi, singleBranchId, createIsBranchManager, editIsBranchManager, form.branchId, editForm.branchId]);
+
   const createSelectedBranchName =
     (branchesQuery.data ?? []).find((b) => b.id === form.branchId)?.nameAr ??
     (branchesQuery.data ?? []).find((b) => b.id === form.branchId)?.nameEn ??
@@ -418,7 +428,7 @@ export function UsersRolesPage() {
               ))}
             </Select>
           </FormField>
-          {createIsBranchManager && (
+          {createIsBranchManager && !hidePressBranchUi && (
             <div className="col-span-2">
               <FormField label={t('userMgmt.branchManagerBranchLabel')}>
                 <Select
@@ -441,7 +451,7 @@ export function UsersRolesPage() {
               )}
             </div>
           )}
-          {createIsRep && isPrintingPress && (
+          {createIsRep && isPrintingPress && !hidePressBranchUi && (
             <div className="col-span-2">
               <FormField label={t('userMgmt.repBranchLabel')}>
                 <Select value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}>
@@ -556,7 +566,7 @@ export function UsersRolesPage() {
               ))}
             </Select>
           </FormField>
-          {editIsBranchManager && (
+          {editIsBranchManager && !hidePressBranchUi && (
             <div className="col-span-2">
               <FormField label={t('userMgmt.branchManagerBranchLabel')}>
                 <Select
@@ -579,7 +589,7 @@ export function UsersRolesPage() {
               )}
             </div>
           )}
-          {editIsRep && isPrintingPress && (
+          {editIsRep && isPrintingPress && !hidePressBranchUi && (
             <div className="col-span-2">
               <FormField label={t('userMgmt.repBranchLabel')}>
                 <Select

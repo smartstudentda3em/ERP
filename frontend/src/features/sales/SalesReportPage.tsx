@@ -15,7 +15,7 @@ import { useToast } from '../../components/ui/Toast';
 import { localToday } from '../../lib/date-utils';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdf } from '../../lib/pdf-export';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 import { useSalesRepLock } from './useSalesRepLock';
 
 interface Company {
@@ -86,6 +86,7 @@ function quarterDateRange(year: number, quarter: Quarter): { dateFrom: string; d
 export function SalesReportPage() {
   const { t } = useTranslation();
   const { isPrintingPress, isAirConditioning } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi } = usePressBranch();
   const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const printRef = useRef<HTMLDivElement>(null);
@@ -188,7 +189,7 @@ export function SalesReportPage() {
       ),
       align: 'right',
     },
-    isPrintingPress
+    isPrintingPress && !hidePressBranchUi
       ? { header: t('fields.branch'), accessor: (r: SalesLine) => r.branchName ?? '—' }
       : isAirConditioning
         ? {
@@ -311,16 +312,18 @@ export function SalesReportPage() {
             <option value={0}>{t('partners.fullYear')}</option>
           </Select>
         </FormField>
-        <FormField label={t('salesReport.branch')}>
-          <Select disabled={!!lockedBranchId} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-            <option value={ALL_BRANCHES}>{t('salesReport.allBranches')}</option>
-            {(branchesQuery.data ?? []).map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.nameAr || b.nameEn}
-              </option>
-            ))}
-          </Select>
-        </FormField>
+        {!hidePressBranchUi && (
+          <FormField label={t('salesReport.branch')}>
+            <Select disabled={!!lockedBranchId} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              <option value={ALL_BRANCHES}>{t('salesReport.allBranches')}</option>
+              {(branchesQuery.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nameAr || b.nameEn}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
         <FormField label={t('common.search')}>
           <Input
             type="search"

@@ -17,7 +17,7 @@ import { localToday } from '../../lib/date-utils';
 import { formatAmount, formatQuantity } from '../../lib/number-format';
 import { buildPdfFileName } from '../../lib/pdf-filename';
 import { exportElementToPdf } from '../../lib/pdf-export';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 
 interface Company {
   id: string;
@@ -131,6 +131,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
 ) {
   const { t } = useTranslation();
   const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   // Stationery/AC must also explicitly pick a بنك/كاش account for the paid-now amount, same as
   // Press — see PurchaseReceiptsService's paymentAccount requirement whenever paidAmount > 0.
   const requiresPaymentAccount = isPrintingPress || isStationery || isAirConditioning;
@@ -185,6 +186,10 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
   });
 
   // Printing Press only: lets the Branch field filter/auto-select the linked Warehouse below.
+  useEffect(() => {
+    if (hidePressBranchUi && singleBranchId && !form.branchId) setForm((f) => ({ ...f, branchId: singleBranchId }));
+  }, [hidePressBranchUi, singleBranchId, form.branchId]);
+
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
@@ -699,7 +704,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               onChange={(e) => setForm({ ...form, receiptDate: e.target.value })}
             />
           </FormField>
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Select
                 required
@@ -995,7 +1000,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               <option value="BANK_TRANSFER">{t('paymentMethod.BANK_TRANSFER')}</option>
             </Select>
           </FormField>
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Input disabled value={payReceiptBranchName} />
             </FormField>

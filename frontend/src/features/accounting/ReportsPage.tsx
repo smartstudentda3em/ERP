@@ -15,7 +15,7 @@ import {
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -118,6 +118,7 @@ export function ReportsPage() {
   const companyId = useAuthStore((s) => s.user?.companyId);
   const isSystemRole = useAuthStore((s) => s.user?.isSystemRole ?? false);
   const { isPrintingPress, isAirConditioning, isStationery } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi } = usePressBranch();
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('profit');
@@ -380,7 +381,7 @@ export function ReportsPage() {
               </Select>
             </FormField>
           )}
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
                 <option value="">{t('accounting.allBranches')}</option>

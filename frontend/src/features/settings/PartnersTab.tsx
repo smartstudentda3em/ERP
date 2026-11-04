@@ -10,7 +10,7 @@ import { Modal } from '../../components/ui/Modal';
 import { FormField, Input, Select } from '../../components/ui/Input';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 
 interface Partner {
   id: string;
@@ -35,6 +35,7 @@ export function PartnersTab() {
   const toast = useToast();
   const companyId = useAuthStore((s) => s.user?.companyId);
   const { isPrintingPress } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi } = usePressBranch();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -197,7 +198,7 @@ export function PartnersTab() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
                 <option value="">{t('accounting.allBranches')}</option>
@@ -235,7 +236,7 @@ export function PartnersTab() {
               <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </FormField>
           </div>
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <div className="col-span-2">
               <FormField label={t('fields.branch')}>
                 <Select

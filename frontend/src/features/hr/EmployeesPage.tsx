@@ -1,5 +1,6 @@
 import { MouseEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { usePressBranch } from '../../lib/use-active-company';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
@@ -54,6 +55,7 @@ export function EmployeesPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
+  const { hideBranchUi: hidePressBranchUi } = usePressBranch();
   const [viewingId, setViewingId] = useState<string | null>(null);
 
   const branchesQuery = useQuery({
@@ -153,7 +155,9 @@ export function EmployeesPage() {
       width: '22%',
     },
     { header: t('hr.jobTitle'), accessor: (r) => r.jobTitle, width: '18%' },
-    { header: t('fields.branch'), accessor: (r) => r.branch?.nameAr || r.branch?.nameEn || '—', width: '18%' },
+    ...(hidePressBranchUi
+      ? []
+      : [{ header: t('fields.branch'), accessor: (r: Employee) => r.branch?.nameAr || r.branch?.nameEn || '—', width: '18%' } as Column<Employee>]),
     { header: t('hr.baseSalary'), accessor: (r) => formatAmount(r.baseSalary), align: 'right', width: '15%' },
     {
       header: t('common.status'),
@@ -223,16 +227,18 @@ export function EmployeesPage() {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <div className="w-56">
-                <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-                  <option value="">{t('hr.allBranches')}</option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.nameAr || b.nameEn}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+              {!hidePressBranchUi && (
+                <div className="w-56">
+                  <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+                    <option value="">{t('hr.allBranches')}</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.nameAr || b.nameEn}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
             </div>
 
             <DataTable
@@ -296,23 +302,25 @@ export function EmployeesPage() {
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </FormField>
-          <FormField label={t('fields.branch')}>
-            <Select
-              required
-              disabled={isSynced}
-              value={form.branchId}
-              onChange={(e) => setForm({ ...form, branchId: e.target.value })}
-            >
-              <option value="" disabled>
-                {t('common.select')}
-              </option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.nameAr || b.nameEn}
+          {!hidePressBranchUi && (
+            <FormField label={t('fields.branch')}>
+              <Select
+                required
+                disabled={isSynced}
+                value={form.branchId}
+                onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+              >
+                <option value="" disabled>
+                  {t('common.select')}
                 </option>
-              ))}
-            </Select>
-          </FormField>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nameAr || b.nameEn}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
           <FormField label={t('hr.baseSalary')}>
             <Input
               type="number"

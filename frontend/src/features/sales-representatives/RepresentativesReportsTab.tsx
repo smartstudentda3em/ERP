@@ -20,7 +20,7 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter';
 import { Badge, statusColor } from '../../components/ui/Badge';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 
 interface RepReportRow {
   representativeId: string;
@@ -147,6 +147,7 @@ export function RepresentativesReportsTab({
 }: RepresentativesReportsTabProps) {
   const { t } = useTranslation();
   const { isPrintingPress, isStationery } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi } = usePressBranch();
   // Press's "مدير الفرع" phrasing is also exactly right whenever this tab is showing branch
   // managers for any other company — reused rather than adding a near-duplicate i18n key.
   const representativeAxisLabel = t(
@@ -375,7 +376,9 @@ export function RepresentativesReportsTab({
   ];
 
   const commissionColumns: Column<BranchCommissionRow>[] = [
-    { header: t('salesRepresentativesReports.branch'), accessor: (r) => r.branchName ?? '—' },
+    ...(hidePressBranchUi
+      ? []
+      : [{ header: t('salesRepresentativesReports.branch'), accessor: (r: BranchCommissionRow) => r.branchName ?? '—' } as Column<BranchCommissionRow>]),
     { header: t('salesRepresentativesReports.branchManager'), accessor: (r) => r.managerName ?? '—' },
     { header: t('salesRepresentativesReports.branchTotalSales'), accessor: (r) => money(r.totalSales), align: 'right' },
     {

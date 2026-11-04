@@ -1,4 +1,4 @@
-import { MouseEvent, useMemo, useState } from 'react';
+import { MouseEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
@@ -11,7 +11,7 @@ import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 
 interface SalesRepresentative {
   id: string;
@@ -83,6 +83,7 @@ interface RepresentativesListTabProps {
 export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTabProps = {}) {
   const { t } = useTranslation();
   const { isPrintingPress, isAirConditioning } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const toast = useToast();
@@ -133,6 +134,15 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
     queryFn: () => unwrap<User[]>(apiClient.get('/users')),
     enabled: modalOpen,
   });
+
+  // Printing Press has one branch and no picker for it — a branch manager's required branch is
+  // filled in automatically (and again after every form reset), so their commission/permission
+  // ties to that branch exactly as before.
+  useEffect(() => {
+    if (hidePressBranchUi && singleBranchId && !branchOptionalForRep && !form.branchId) {
+      setForm((f) => ({ ...f, branchId: singleBranchId }));
+    }
+  }, [hidePressBranchUi, singleBranchId, branchOptionalForRep, form.branchId]);
 
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
@@ -347,7 +357,7 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
 
   const columns: Column<SalesRepresentative>[] = [
     { header: t('common.name'), accessor: (r) => r.name },
-    ...(isPrintingPress
+    ...(isPrintingPress && !hidePressBranchUi
       ? [{ header: t('salesRepresentativesReports.branch'), accessor: (r: SalesRepresentative) => repBranchLabel(r) || '—' } as Column<SalesRepresentative>]
       : []),
     { header: t('fields.phone'), accessor: (r) => r.phone ?? '—' },
@@ -454,7 +464,7 @@ export function RepresentativesListTab({ roleNameFilter }: RepresentativesListTa
           <FormField label={t('fields.email')}>
             <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </FormField>
-          {!branchOptionalForRep && (
+          {!branchOptionalForRep && !hidePressBranchUi && (
             <FormField label={t('salesRepresentativesReports.branch')} required>
               <Select required value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}>
                 <option value="">{t('salesRepresentativesReports.selectBranchRequired')}</option>

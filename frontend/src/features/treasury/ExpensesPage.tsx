@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, unwrap } from '../../lib/api-client';
 import { formatAmount } from '../../lib/number-format';
 import { useAuthStore } from '../../store/auth-store';
-import { useActiveCompany } from '../../lib/use-active-company';
+import { useActiveCompany, usePressBranch } from '../../lib/use-active-company';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -156,6 +156,7 @@ function money(n: number): string {
 export function ExpensesPage() {
   const { t } = useTranslation();
   const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   // Stationery/AC may also settle an expense into البنك, not just الخزينة (كاش) — same requirement
   // as Press. Branch selection stays Press-only, unrelated to this request.
   const requiresPaymentAccount = isPrintingPress || isStationery || isAirConditioning;
@@ -204,6 +205,14 @@ export function ExpensesPage() {
   // Every company — powers both the branch filter above the table and (Printing Press only, for
   // now the only tenant where a manually-recorded expense picks its own branch) the add/edit form's
   // Branch field.
+  // Printing Press has one branch and no picker for it — seed both forms' branch automatically (and
+  // again after every reset) so the "branch required" checks resolve as if it had been chosen.
+  useEffect(() => {
+    if (!hidePressBranchUi || !singleBranchId) return;
+    if (!form.branchId) setForm((f) => ({ ...f, branchId: singleBranchId }));
+    if (!expenseForm.branchId) setExpenseForm((f) => ({ ...f, branchId: singleBranchId }));
+  }, [hidePressBranchUi, singleBranchId, form.branchId, expenseForm.branchId]);
+
   const branchesQuery = useQuery({
     queryKey: ['branches', companyId],
     queryFn: () => unwrap<Branch[]>(apiClient.get('/settings/branches', { params: { companyId } })),
@@ -786,16 +795,18 @@ export function ExpensesPage() {
           <h1 className="text-xl font-semibold">{t('nav.expenses')}</h1>
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <DateRangeFilter value={dateRange} onChange={setDateRange} />
-            <FormField label={t('treasury.filterByBranch')}>
-              <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-                <option value="">{t('accounting.allBranches')}</option>
-                {(branchesQuery.data ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.nameAr || b.nameEn}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
+            {!hidePressBranchUi && (
+              <FormField label={t('treasury.filterByBranch')}>
+                <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+                  <option value="">{t('accounting.allBranches')}</option>
+                  {(branchesQuery.data ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.nameAr || b.nameEn}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -1120,7 +1131,7 @@ export function ExpensesPage() {
               return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
             })()}
           </FormField>
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Select required value={form.branchId} onChange={(e) => setForm({ ...form, branchId: e.target.value })}>
                 <option value="">{t('actions.selectBranch')}</option>
@@ -1324,7 +1335,7 @@ export function ExpensesPage() {
               return <p className="mt-1 text-xs text-red-600">{t('purchasing.insufficientBalanceWarning')}</p>;
             })()}
           </FormField>
-          {isPrintingPress && (
+          {isPrintingPress && !hidePressBranchUi && (
             <FormField label={t('fields.branch')}>
               <Select
                 required

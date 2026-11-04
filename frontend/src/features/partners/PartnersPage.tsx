@@ -408,14 +408,14 @@ export function PartnersPage() {
       ? [{ header: t('fields.branch'), accessor: (r: PartnerBalance) => branchName(r.branchId) } as Column<PartnerBalance>]
       : []),
     { header: t('fields.sharePercentage'), accessor: (r) => `${formatAmount(r.sharePercentage)}%`, align: 'right' },
-    { header: t('treasury.amount'), accessor: (r) => money(r.balance), align: 'right' },
+    { header: t(isPrintingPress ? 'partners.advanceAmountPress' : 'treasury.amount'), accessor: (r) => money(r.balance), align: 'right' },
   ];
 
   const contributionColumns: Column<Transaction>[] = [
     { header: t('common.date'), accessor: (r) => r.date },
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('fields.partnerName'), accessor: (r) => r.partnerName },
-    { header: t('treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
+    { header: t(isPrintingPress ? 'partners.advanceAmountPress' : 'treasury.amount'), accessor: (r) => money(r.amount), align: 'right' },
     ...(requiresPaymentAccount
       ? [
           {
@@ -970,7 +970,7 @@ export function PartnersPage() {
                 <th>{t('fields.partnerName')}</th>
                 {isPrintingPress && !hidePressBranchUi && <th>{t('fields.branch')}</th>}
                 <th>{t('fields.sharePercentage')}</th>
-                <th>{t('treasury.amount')}</th>
+                <th>{t(isPrintingPress ? 'partners.advanceAmountPress' : 'treasury.amount')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1153,7 +1153,7 @@ export function PartnersPage() {
               onChange={(e) => setContribForm({ ...contribForm, movementDate: e.target.value })}
             />
           </FormField>
-          <FormField label={t('treasury.amount')}>
+          <FormField label={t(isPrintingPress ? 'partners.advanceAmountPress' : 'treasury.amount')}>
             <Input
               type="number"
               step="0.01"
@@ -1254,7 +1254,7 @@ export function PartnersPage() {
               onChange={(e) => setEditContribForm({ ...editContribForm, movementDate: e.target.value })}
             />
           </FormField>
-          <FormField label={t('treasury.amount')}>
+          <FormField label={t(isPrintingPress ? 'partners.advanceAmountPress' : 'treasury.amount')}>
             <Input
               type="number"
               step="0.01"

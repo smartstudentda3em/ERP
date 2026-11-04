@@ -1105,6 +1105,7 @@
     "exportPdf": "Export PDF",
     "reportTitle": "Partners & Contributions Report",
     "contributionsPress": "Advances",
+    "advanceAmountPress": "Advance",
     "totalContributionPress": "Total Partner Debt",
     "addContributionPress": "+ Advance",
     "contributionHistoryPress": "Advances History",

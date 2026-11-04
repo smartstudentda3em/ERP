@@ -306,6 +306,18 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
   const paidAmount = form.paidAmount ? Number(form.paidAmount) : 0;
   const outstandingToSupplier = totalAmount !== null ? totalAmount - paidAmount : null;
 
+  // A paid amount can never exceed the receipt total (the field's max + the backend both enforce
+  // it), so when the price/quantity drops below what was already typed — e.g. a price of 0 — pull the
+  // paid amount down with it instead of leaving a silently-invalid field that blocks the save.
+  function withPaidCappedToTotal(next: Partial<typeof emptyForm>) {
+    const merged = { ...form, ...next };
+    const total =
+      merged.quantityPackages && merged.packagePurchasePrice
+        ? Number(merged.quantityPackages) * Number(merged.packagePurchasePrice)
+        : null;
+    return total !== null && Number(merged.paidAmount) > total ? { ...merged, paidAmount: String(total) } : merged;
+  }
+
   function resetForm() {
     setEditingId(null);
     setSelectedProductId(null);
@@ -745,7 +757,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               step="1"
               min="1"
               value={form.quantityPackages}
-              onChange={(e) => setForm({ ...form, quantityPackages: e.target.value })}
+              onChange={(e) => setForm(withPaidCappedToTotal({ quantityPackages: e.target.value }))}
             />
           </FormField>
           <FormField label={t('fields.totalUnits')}>
@@ -759,7 +771,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
               step="0.01"
               disabled={form.isFreeGoods}
               value={form.packagePurchasePrice}
-              onChange={(e) => setForm({ ...form, packagePurchasePrice: e.target.value })}
+              onChange={(e) => setForm(withPaidCappedToTotal({ packagePurchasePrice: e.target.value }))}
             />
           </FormField>
           <FormField label={t('fields.unitCost')}>

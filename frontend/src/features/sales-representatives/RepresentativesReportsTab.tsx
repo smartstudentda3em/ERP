@@ -73,11 +73,14 @@ interface ManagerProfitabilityRow {
   profitMargin: number;
 }
 
+// One earned commission per beneficiary: each branch's مدير فرع plus every مندوب with commissionable
+// assisted sales (backend getEarnedCommissions).
 interface BranchCommissionRow {
-  branchId: string;
+  representativeId: string;
+  representativeName: string | null;
+  beneficiaryType: 'MANAGER' | 'REP';
+  branchId: string | null;
   branchName: string | null;
-  managerId: string | null;
-  managerName: string | null;
   totalSales: number;
   commissionRate: number;
   commissionAmount: number;
@@ -263,14 +266,15 @@ export function RepresentativesReportsTab({
     enabled: !!companyId && showManagersComparison,
   });
 
-  // Printing Press only — commission is attributed to whichever manager the branch itself is
-  // assigned to (see backend getBranchManagersCommission), never to whoever actually created each
-  // invoice, so this table stays independent of the "representativeId" filter above.
+  // Printing Press only — a مدير فرع is credited with his branch's sales (see backend
+  // getBranchManagersCommission) and a مندوب with the invoices he assisted on, never with whoever
+  // actually created each invoice, so this table stays independent of the "representativeId" filter
+  // above.
   const commissionQuery = useQuery({
-    queryKey: ['sales-representatives-branch-commissions', companyId, dateFrom, dateTo],
+    queryKey: ['sales-representatives-earned-commissions', companyId, dateFrom, dateTo],
     queryFn: () =>
       unwrap<BranchCommissionRow[]>(
-        apiClient.get('/sales-representatives/reports/branch-commissions', {
+        apiClient.get('/sales-representatives/reports/earned-commissions', {
           params: { companyId, dateFrom, dateTo },
         }),
       ),
@@ -379,8 +383,13 @@ export function RepresentativesReportsTab({
     ...(hidePressBranchUi
       ? []
       : [{ header: t('salesRepresentativesReports.branch'), accessor: (r: BranchCommissionRow) => r.branchName ?? '—' } as Column<BranchCommissionRow>]),
-    { header: t('salesRepresentativesReports.branchManager'), accessor: (r) => r.managerName ?? '—' },
-    { header: t('salesRepresentativesReports.branchTotalSales'), accessor: (r) => money(r.totalSales), align: 'right' },
+    { header: t('salesRepresentativesReports.commissionBeneficiary'), accessor: (r) => r.representativeName ?? '—' },
+    {
+      header: t('salesRepresentativesReports.totalCommissionsType'),
+      accessor: (r) =>
+        t(r.beneficiaryType === 'MANAGER' ? 'salesRepresentativesReports.totalCommissionsTypeManager' : 'salesRepresentativesReports.totalCommissionsTypeRep'),
+    },
+    { header: t('salesRepresentativesReports.commissionableSales'), accessor: (r) => money(r.totalSales), align: 'right' },
     {
       header: t('fields.commissionRate'),
       accessor: (r) => `${formatAmount(r.commissionRate)}%`,
@@ -737,7 +746,7 @@ export function RepresentativesReportsTab({
           <DataTable
             columns={commissionColumns}
             data={commissionRows}
-            keyField={(r) => r.branchId}
+            keyField={(r) => r.representativeId}
             isLoading={commissionQuery.isLoading}
             searchable={false}
           />

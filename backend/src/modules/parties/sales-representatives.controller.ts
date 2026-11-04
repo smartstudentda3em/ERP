@@ -59,6 +59,18 @@ const MANAGED_SALES_COMPANY_CODES = [AIR_CONDITIONING_COMPANY_CODE, PRINTING_PRE
  * the Employees screen without a later rep update overwriting it back (see EmployeesService.update). */
 const SALES_REP_JOB_TITLE = 'مندوب مبيعات';
 
+/** One beneficiary's earned commission for a period — see SalesRepresentativesService.getEarnedCommissions(). */
+export interface EarnedCommissionRow {
+  representativeId: string;
+  representativeName: string | null;
+  beneficiaryType: 'MANAGER' | 'REP';
+  branchId: string | null;
+  branchName: string | null;
+  totalSales: number;
+  commissionRate: number;
+  commissionAmount: number;
+}
+
 @Injectable()
 export class SalesRepresentativesService extends CompanyScopedCrudService<SalesRepresentative> {
   constructor(
@@ -916,6 +928,79 @@ export class SalesRepresentativesService extends CompanyScopedCrudService<SalesR
       .sort((a, b) => b.commissionAmount - a.commissionAmount);
   }
 
+  /**
+   * Printing Press — every commission EARNED in the period, per beneficiary: each branch's مدير فرع
+   * (getBranchManagersCommission above) plus every مندوب, whose commission comes from the invoice
+   * lines they were tagged on as the assisting rep (SalesInvoice.assistingSalesRepresentativeId) at
+   * their own rate/exceptions — the same maths as their dashboard (buildManagerDashboardForRep), so
+   * the two can never disagree. Only مناديب with at least one commissionable assisted line appear.
+   */
+  async getEarnedCommissions(companyId: string, dateFrom: string, dateTo: string) {
+    const managerRows: EarnedCommissionRow[] = (await this.getBranchManagersCommission(companyId, dateFrom, dateTo))
+      .filter((r) => r.managerId)
+      .map((r) => ({
+        representativeId: r.managerId as string,
+        representativeName: r.managerName,
+        beneficiaryType: 'MANAGER',
+        branchId: r.branchId,
+        branchName: r.branchName,
+        totalSales: r.totalSales,
+        commissionRate: r.commissionRate,
+        commissionAmount: r.commissionAmount,
+      }));
+
+    const lineRows = await this.dataSource
+      .createQueryBuilder()
+      .select('i."assistingSalesRepresentativeId"', 'repId')
+      .addSelect('l."lineTotal"', 'lineTotal')
+      .addSelect('l."productId"', 'productId')
+      .addSelect('p."categoryId"', 'categoryId')
+      .from('sales_invoice_lines', 'l')
+      .innerJoin('sales_invoices', 'i', 'i.id = l."invoiceId"')
+      .innerJoin('products', 'p', 'p.id = l."productId"')
+      .where('i."companyId" = :companyId', { companyId })
+      .andWhere('i."assistingSalesRepresentativeId" IS NOT NULL')
+      .andWhere('i."invoiceDate" >= :dateFrom AND i."invoiceDate" <= :dateTo', { dateFrom, dateTo })
+      .getRawMany();
+    const reps = await this.repo.find({ where: { companyId } as any, relations: ['branch'] });
+    const exceptionRows = await this.commissionExceptionsRepo.find({ where: { companyId } });
+    const exceptionsByRepId = buildExceptionsByRepId(exceptionRows);
+
+    const linesByRepId = new Map<string, typeof lineRows>();
+    for (const line of lineRows) {
+      if (!linesByRepId.has(line.repId)) linesByRepId.set(line.repId, []);
+      linesByRepId.get(line.repId)!.push(line);
+    }
+    const mandoubRows: EarnedCommissionRow[] = [];
+    for (const [repId, lines] of linesByRepId) {
+      const rep = reps.find((r) => r.id === repId);
+      if (!rep || !(await this.salesRepAccess.isPressMandoubRep(repId))) continue;
+      const generalRate = Number(rep.commissionRate ?? 0);
+      const exceptions = exceptionsByRepId.get(repId);
+      let totalSales = 0;
+      let commissionAmount = 0;
+      for (const line of lines) {
+        const rate = resolveLineCommissionRate(line, exceptions, generalRate);
+        if (rate <= 0) continue;
+        const lineTotal = Number(line.lineTotal);
+        totalSales += lineTotal;
+        commissionAmount += (lineTotal * rate) / 100;
+      }
+      if (totalSales <= 0 && commissionAmount <= 0) continue;
+      mandoubRows.push({
+        representativeId: rep.id,
+        representativeName: rep.name,
+        beneficiaryType: 'REP',
+        branchId: rep.branchId,
+        branchName: rep.branch ? rep.branch.nameAr || rep.branch.nameEn : null,
+        totalSales,
+        commissionRate: generalRate,
+        commissionAmount,
+      });
+    }
+    return [...managerRows, ...mandoubRows].sort((a, b) => b.commissionAmount - a.commissionAmount);
+  }
+
   /** Looks up this employee's payroll figures for one specific (year, month) — null when no
    * payroll run covers that month yet (the manager dashboard shows an empty state for it). */
   private async getPayrollMonthSnapshot(employeeId: string, companyId: string, year: number, month: number) {
@@ -1341,6 +1426,15 @@ export class SalesRepresentativesController {
     @Query('dateTo') dateTo: string,
   ) {
     return this.service.getBranchManagersCommission(companyId, dateFrom, dateTo);
+  }
+  @Get('reports/earned-commissions')
+  @Permissions('sales-representatives.view')
+  reportsEarnedCommissions(
+    @CurrentUser('companyId') companyId: string,
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+  ) {
+    return this.service.getEarnedCommissions(companyId, dateFrom, dateTo);
   }
   @Get('reports/invoices')
   @Permissions('sales-representatives.view')

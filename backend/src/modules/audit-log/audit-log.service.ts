@@ -3,6 +3,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AuditLog } from './entities/audit-log.entity';
 import { MODEL_LABELS, describeLegacyRow } from './audit-labels';
+import { AuditPresenter } from './audit-presenter.service';
 
 export interface AuditLogQuery {
   page?: number;
@@ -25,6 +26,7 @@ export class AuditLogService {
   constructor(
     @InjectRepository(AuditLog) private readonly repo: Repository<AuditLog>,
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly presenter: AuditPresenter,
   ) {}
 
   async findAll(query: AuditLogQuery) {
@@ -50,7 +52,8 @@ export class AuditLogService {
 
     const [rows, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
     const items = rows.map((r) => (r.description || r.source === 'CHANGE' ? r : { ...r, ...describeLegacyRow(r) }));
-    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
+    // Readable before/after (names instead of ids, Arabic words instead of codes) — see AuditPresenter.
+    return { items: await this.presenter.attachDetails(items), total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   /** Values for the filter dropdowns — only what actually appears in the log. */

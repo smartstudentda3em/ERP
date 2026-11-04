@@ -115,6 +115,21 @@ export const FIELD_LABELS: Record<string, string> = {
   customerId: 'العميل',
   isClosed: 'مقفول',
   sharePercentage: 'نسبة الشريك',
+  mobile: 'الموبايل',
+  address: 'العنوان',
+  companyName: 'اسم الشركة',
+  code: 'الكود',
+  salary: 'الراتب',
+  documentNumber: 'رقم المستند',
+  type: 'النوع',
+  category: 'التصنيف',
+  account: 'الحساب',
+  paymentAccount: 'طريقة الدفع',
+  quantityOnHand: 'الكمية',
+  purchasePrice: 'سعر الشراء',
+  sellingPrice: 'سعر البيع',
+  year: 'السنة',
+  month: 'الشهر',
 };
 
 const VERB: Record<string, string> = {

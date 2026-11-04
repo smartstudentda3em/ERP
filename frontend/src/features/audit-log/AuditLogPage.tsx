@@ -25,6 +25,8 @@ interface AuditRow {
   entityId: string | null;
   oldValues: Record<string, unknown> | null;
   newValues: Record<string, unknown> | null;
+  /** Readable before/after prepared by the server: Arabic labels, names instead of ids. */
+  details?: { label: string; old: string; new: string }[];
   description: string | null;
   requestBody: Record<string, unknown> | null;
   statusCode: number;
@@ -60,13 +62,6 @@ const ACTION_COLORS: Record<string, 'green' | 'blue' | 'red' | 'yellow' | 'gray'
 };
 
 const emptyFilters = { search: '', userId: '', companyId: '', actionType: '', targetModel: '', dateFrom: '', dateTo: '' };
-
-const fmtValue = (v: unknown): string => {
-  if (v === null || v === undefined || v === '') return '—';
-  if (typeof v === 'boolean') return v ? 'نعم' : 'لا';
-  if (typeof v === 'object') return JSON.stringify(v);
-  return String(v);
-};
 
 /**
  * "سجل الإجراءات" — the activity trail. Founder-only: the sidebar link is hidden for everyone else
@@ -136,11 +131,6 @@ export function AuditLogPage() {
     },
     { header: t('auditLog.description'), accessor: (r) => r.description ?? '—' },
   ];
-
-  const changedKeys = (r: AuditRow) =>
-    Array.from(new Set([...Object.keys(r.oldValues ?? {}), ...Object.keys(r.newValues ?? {})])).filter(
-      (k) => !['id', 'createdAt', 'updatedAt', 'deletedAt'].includes(k),
-    );
 
   return (
     <div>
@@ -267,52 +257,44 @@ export function AuditLogPage() {
                 <span className="text-[var(--text-muted)]">{t('auditLog.target')}: </span>
                 {selected.targetLabel ?? '—'}
               </div>
-              <div className="col-span-2">
-                <span className="text-[var(--text-muted)]">{t('auditLog.recordId')}: </span>
-                <span className="font-mono text-xs">{selected.entityId ?? '—'}</span>
-              </div>
               <div>
                 <span className="text-[var(--text-muted)]">{t('auditLog.ip')}: </span>
                 <span dir="ltr">{selected.ipAddress ?? '—'}</span>
               </div>
-              <div>
-                <span className="text-[var(--text-muted)]">{t('auditLog.status')}: </span>
-                {selected.statusCode}
-              </div>
+              {selected.statusCode >= 400 && (
+                <div>
+                  <span className="text-[var(--text-muted)]">{t('auditLog.status')}: </span>
+                  {selected.statusCode}
+                </div>
+              )}
             </div>
 
-            {(selected.oldValues || selected.newValues) && (
+            {/* Only the meaningful fields, in Arabic, with names instead of ids (prepared by the server). */}
+            {!!selected.details?.length && (
               <div>
-                <h4 className="mb-2 font-semibold">{t('auditLog.changes')}</h4>
+                <h4 className="mb-2 font-semibold">
+                  {selected.actionType === 'CREATE' ? t('auditLog.data') : selected.actionType === 'DELETE' ? t('auditLog.deletedData') : t('auditLog.changes')}
+                </h4>
                 <div className="overflow-x-auto">
                   <table className="app-table">
                     <thead>
                       <tr>
                         <th>{t('auditLog.field')}</th>
-                        <th>{t('auditLog.oldValue')}</th>
-                        <th>{t('auditLog.newValue')}</th>
+                        {selected.actionType !== 'CREATE' && <th>{selected.actionType === 'DELETE' ? t('auditLog.value') : t('auditLog.oldValue')}</th>}
+                        {selected.actionType !== 'DELETE' && <th>{selected.actionType === 'CREATE' ? t('auditLog.value') : t('auditLog.newValue')}</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {changedKeys(selected).map((k) => (
-                        <tr key={k}>
-                          <td className="font-medium">{t(`auditLog.fields.${k}`, k)}</td>
-                          <td className="text-red-600">{fmtValue(selected.oldValues?.[k])}</td>
-                          <td className="text-green-600">{fmtValue(selected.newValues?.[k])}</td>
+                      {selected.details.map((d) => (
+                        <tr key={d.label}>
+                          <td className="font-medium">{d.label}</td>
+                          {selected.actionType !== 'CREATE' && <td className={selected.actionType === 'DELETE' ? '' : 'text-red-600'} style={{ whiteSpace: 'pre-line' }}>{d.old}</td>}
+                          {selected.actionType !== 'DELETE' && <td className={selected.actionType === 'CREATE' ? '' : 'text-green-600'} style={{ whiteSpace: 'pre-line' }}>{d.new}</td>}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
-
-            {selected.requestBody && !selected.oldValues && !selected.newValues && (
-              <div>
-                <h4 className="mb-2 font-semibold">{t('auditLog.requestData')}</h4>
-                <pre dir="ltr" className="max-h-60 overflow-auto rounded-lg bg-black/5 p-3 text-xs dark:bg-white/5">
-                  {JSON.stringify(selected.requestBody, null, 2)}
-                </pre>
               </div>
             )}
           </div>

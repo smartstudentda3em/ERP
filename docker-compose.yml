@@ -39,10 +39,13 @@ services:
       JWT_ACCESS_EXPIRES_IN: 15m
       JWT_REFRESH_EXPIRES_IN: 7d
       CORS_ORIGIN: "http://localhost:5173"
+      BACKUP_STORAGE_DIR: /app/backups
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
     ports:
       - "3000:3000"
     volumes:
       - erp_uploads:/app/uploads
+      - erp_backups:/app/backups
     command: sh -c "npm run schema:sync && npm run seed && node dist/main.js"
 
   frontend:
@@ -61,3 +64,4 @@ services:
 volumes:
   erp_pgdata:
   erp_uploads:
+  erp_backups:

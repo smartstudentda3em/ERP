@@ -351,13 +351,13 @@ export function TreasuryTransactionsPage() {
         <div
           className={`mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 print:hidden ${isAirConditioning || isPrintingPress ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}
         >
-          <Card>
+          <Card onClick={() => setAccountTab(accountTab === 'BANK' ? 'ALL' : 'BANK')} className={`cursor-pointer transition hover:shadow-md ${accountTab === 'BANK' ? 'ring-2 ring-primary-500' : ''}`}>
             <div className="text-xs text-[var(--text-muted)]">{t('treasury.bankBalance')}</div>
             <div className="mt-1 text-2xl font-semibold">
               {summaryQuery.data ? money(summaryQuery.data.bankBalance) : '—'}
             </div>
           </Card>
-          <Card>
+          <Card onClick={() => setAccountTab(accountTab === 'CASH' ? 'ALL' : 'CASH')} className={`cursor-pointer transition hover:shadow-md ${accountTab === 'CASH' ? 'ring-2 ring-primary-500' : ''}`}>
             <div className="text-xs text-[var(--text-muted)]">{t('treasury.cashBalance')}</div>
             <div className="mt-1 text-2xl font-semibold">
               {summaryQuery.data ? money(summaryQuery.data.cashBalance) : '—'}
@@ -379,7 +379,7 @@ export function TreasuryTransactionsPage() {
               <div className="mt-1 text-2xl font-semibold">{money(repTreasuryTotal)}</div>
             </Card>
           )}
-          <Card>
+          <Card onClick={() => setAccountTab('ALL')} className={`cursor-pointer transition hover:shadow-md ${accountTab === 'ALL' ? 'ring-2 ring-primary-500' : ''}`}>
             <div className="text-xs text-[var(--text-muted)]">{t('treasury.totalBalance')}</div>
             <div className="mt-1 text-2xl font-semibold">{money(currentBalance)}</div>
           </Card>
@@ -392,18 +392,8 @@ export function TreasuryTransactionsPage() {
       )}
 
       {showAccountSplit && (
-        <div className="mb-3 flex flex-wrap gap-2 text-sm print:hidden">
-          {(['ALL', 'CASH', 'BANK'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              className={`rounded-lg px-4 py-1.5 ${accountTab === tab ? 'bg-primary-600 text-white' : 'border border-[var(--border)]'}`}
-              onClick={() => setAccountTab(tab)}
-            >
-              {t(`treasury.accountTabs.${tab}`)}
-              {tab !== 'ALL' && summaryQuery.data ? ` — ${money(tab === 'CASH' ? summaryQuery.data.cashBalance : summaryQuery.data.bankBalance)}` : ''}
-            </button>
-          ))}
+        <div className="mb-2 text-xs text-[var(--text-muted)] print:hidden">
+          {t('treasury.showingAccount', { account: t(`treasury.accountTabs.${accountTab}`) })}
         </div>
       )}
 

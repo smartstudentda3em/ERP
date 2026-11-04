@@ -927,6 +927,7 @@
     "movementType": "Movement Type",
     "party": "Customer / Supplier",
     "paymentAccount": "Account",
+    "showingAccount": "Showing: {{account}} — click a balance card to switch (Bank / Cash / Total)",
     "accountTabs": {
       "ALL": "All",
       "CASH": "Cash",

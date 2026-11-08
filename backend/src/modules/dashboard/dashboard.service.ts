@@ -68,6 +68,7 @@ export class DashboardService {
       bankBalance,
       todaySalesRows,
       incomeStatement,
+      monthlyRawPurchasesRow,
     ] = await Promise.all([
       (() => {
         const qb = this.dataSource
@@ -165,6 +166,20 @@ export class DashboardService {
         this.logger.error(`getExpenseReport failed for company ${companyId}: ${err?.message ?? err}`, err?.stack);
         return null;
       }),
+      // Printing Press only: the Expenses screen's grand total ("إجمالي المصروفات الكلي") counts the
+      // month's raw-material purchases alongside operating expenses, salaries and payouts — so the
+      // dashboard card must add them too, or the two screens show different numbers for the same month.
+      (() => {
+        if (!isPress) return Promise.resolve({ total: 0 });
+        const qb = this.dataSource
+          .createQueryBuilder()
+          .select('COALESCE(SUM(r."totalAmount"),0)', 'total')
+          .from('purchase_receipts', 'r')
+          .where('r."companyId" = :companyId', { companyId })
+          .andWhere('r."receiptDate" >= :from AND r."receiptDate" <= :to', { from: monthStartDate, to: todayDate });
+        if (branchId) qb.andWhere('r."branchId" = :branchId', { branchId });
+        return qb.getRawOne();
+      })(),
     ]);
 
     const profitToday = Number(todaySalesRows?.revenue ?? 0) - Number(todaySalesRows?.cogs ?? 0);
@@ -176,7 +191,7 @@ export class DashboardService {
       bankBalance,
       profitToday,
       monthlyRevenue: Number(monthlyRevenueRow?.total ?? 0),
-      monthlyExpenses: incomeStatement?.totalExpenses ?? 0,
+      monthlyExpenses: (incomeStatement?.totalExpenses ?? 0) + Number(monthlyRawPurchasesRow?.total ?? 0),
       outstandingCustomerBalances: Number(outstandingCustomerRow?.total ?? 0),
       inventoryValue: Number(inventoryValueRow?.total ?? 0),
     };

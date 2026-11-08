@@ -127,6 +127,9 @@ export function SalesInvoicesPage() {
   const [invoiceDate, setInvoiceDate] = useState(localToday());
   const [lines, setLines] = useState<SalesLineForm[]>([emptyLine()]);
   const [paidAmount, setPaidAmount] = useState('0');
+  // Printing Press: the paid amount follows the invoice total (a sale is paid in full by default) until
+  // the user types a different amount; from then on his figure is kept.
+  const [paidManual, setPaidManual] = useState(false);
   // Printing Press only — every other company's upfront payment always settles into CASH (see
   // sales-invoices.service.ts, which defaults to CASH when this is omitted).
   const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK'>('CASH');
@@ -148,8 +151,9 @@ export function SalesInvoicesPage() {
   const [editError, setEditError] = useState<string | null>(null);
 
   const grandTotal = computeGrandTotal(lines);
-  const paidAmountNumber = Number(paidAmount || 0);
-  const remainingAmount = grandTotal - paidAmountNumber;
+  const pressAutoPaid = isPrintingPress && !paidManual;
+  const paidAmountNumber = pressAutoPaid ? grandTotal : Number(paidAmount || 0);
+  const remainingAmount = Math.max(0, grandTotal - paidAmountNumber);
   const paymentStatusKey =
     paidAmountNumber <= 0 ? 'UNPAID' : paidAmountNumber >= grandTotal ? 'PAID' : 'PARTIALLY_PAID';
   const paymentStatusColor =
@@ -347,7 +351,8 @@ export function SalesInvoicesPage() {
         paidAmount: isAirConditioning && acSaleType === 'CASH' ? grandTotal : paidAmountNumber,
         paymentAccount: requiresPaymentAccount ? paymentAccount : undefined,
         branchId: isPrintingPress || (isAirConditioning && isAdmin) ? branchId || undefined : undefined,
-        customerName: isPrintingPress ? customerName || undefined : isAirConditioning ? acCustomerName || undefined : undefined,
+        // Press: a blank customer name is saved as "عميل" rather than blocking the invoice.
+        customerName: isPrintingPress ? customerName.trim() || 'عميل' : isAirConditioning ? acCustomerName || undefined : undefined,
         customerPhone: isPrintingPress ? customerPhone || undefined : isAirConditioning ? acCustomerPhone || undefined : undefined,
         customerAddress: isAirConditioning ? acCustomerAddress || undefined : undefined,
         notes: isPrintingPress ? invoiceNotes.trim() || undefined : undefined,
@@ -389,6 +394,7 @@ export function SalesInvoicesPage() {
       setAssistingRepId('');
       setLines([emptyLine()]);
       setPaidAmount('0');
+      setPaidManual(false);
       setPaymentAccount('CASH');
       setError(null);
     },
@@ -643,7 +649,7 @@ export function SalesInvoicesPage() {
                 </CardHeader>
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label={t('fields.customerName')}>
-                    <Input required value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                    <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="عميل" />
                   </FormField>
                   <FormField label={t('fields.phone')}>
                     <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
@@ -1010,8 +1016,12 @@ export function SalesInvoicesPage() {
                     type="number"
                     step="0.01"
                     min="0"
-                    value={paidAmount}
-                    onChange={(e) => setPaidAmount(e.target.value)}
+                    value={pressAutoPaid ? String(Math.round(grandTotal * 100) / 100) : paidAmount}
+                    onChange={(e) => {
+                      setPaidManual(true);
+                      // never more than the invoice total
+                      setPaidAmount(Number(e.target.value) > grandTotal ? String(grandTotal) : e.target.value);
+                    }}
                   />
                 </FormField>
                 <FormField label={t('fields.remainingAmount')}>

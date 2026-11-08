@@ -6,12 +6,17 @@ import { Breadcrumbs } from './Breadcrumbs';
 import { ScrollToTopButton } from './ScrollToTopButton';
 import { useSidebarStore } from '../../store/sidebar-store';
 import { reportPrintEvent } from '../../lib/audit-events';
+import { useActiveCompany } from '../../lib/use-active-company';
+import { setCashAccountName } from '../../i18n';
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Content only reserves the sidebar's width while it's pinned — unpinned, the sidebar floats
   // over the content on hover instead of pushing it (see Sidebar.tsx).
   const pinned = useSidebarStore((s) => s.pinned);
+  // Applied during render (idempotent) so every screen below already sees the right account name.
+  const { isPrintingPress, isStationery } = useActiveCompany();
+  setCashAccountName(isPrintingPress || isStationery);
 
   // Every browser print (button or Ctrl+P) is reported to the activity log.
   useEffect(() => {

@@ -84,6 +84,8 @@ export function TreasuryTransactionsPage() {
   const { isPrintingPress, isAirConditioning, isStationery } = useActiveCompany();
   const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   const showAccountSplit = isPrintingPress || isAirConditioning || isStationery;
+  // Press and Stationery call their cash account "الكاش مكروم" everywhere on this screen.
+  const cashLabel = isPrintingPress || isStationery ? t('salesInvoice.cashMakroum') : t('treasury.paymentAccounts.CASH');
   const navigate = useNavigate();
   const printRef = useRef<HTMLDivElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -248,7 +250,7 @@ export function TreasuryTransactionsPage() {
     },
     { header: t('table.documentNumber'), accessor: (r) => r.documentNumber },
     { header: t('treasury.party'), accessor: (r) => r.partyName ?? '—' },
-    { header: t('treasury.paymentAccount'), accessor: (r) => t(`treasury.paymentAccounts.${r.paymentAccount}`) },
+    { header: t('treasury.paymentAccount'), accessor: (r) => (r.paymentAccount === 'CASH' ? cashLabel : t(`treasury.paymentAccounts.${r.paymentAccount}`)) },
     { header: t('treasury.debit'), accessor: (r) => (r.debit > 0 ? money(r.debit) : '—'), align: 'right' },
     { header: t('treasury.credit'), accessor: (r) => (r.credit > 0 ? money(r.credit) : '—'), align: 'right' },
     { header: t('treasury.description'), accessor: (r) => r.description ?? '—' },
@@ -358,7 +360,7 @@ export function TreasuryTransactionsPage() {
             </div>
           </Card>
           <Card onClick={() => setAccountTab(accountTab === 'CASH' ? 'ALL' : 'CASH')} className={`cursor-pointer transition hover:shadow-md ${accountTab === 'CASH' ? 'ring-2 ring-primary-500' : ''}`}>
-            <div className="text-xs text-[var(--text-muted)]">{t('treasury.cashBalance')}</div>
+            <div className="text-xs text-[var(--text-muted)]">{isPrintingPress || isStationery ? cashLabel : t('treasury.cashBalance')}</div>
             <div className="mt-1 text-2xl font-semibold">
               {summaryQuery.data ? money(summaryQuery.data.cashBalance) : '—'}
             </div>
@@ -393,7 +395,7 @@ export function TreasuryTransactionsPage() {
 
       {showAccountSplit && (
         <div className="mb-2 text-xs text-[var(--text-muted)] print:hidden">
-          {t('treasury.showingAccount', { account: t(`treasury.accountTabs.${accountTab}`) })}
+          {t('treasury.showingAccount', { account: accountTab === 'CASH' ? cashLabel : t(`treasury.accountTabs.${accountTab}`) })}
         </div>
       )}
 
@@ -463,7 +465,7 @@ export function TreasuryTransactionsPage() {
           </FormField>
           <FormField label={t('treasury.paymentAccount')}>
             <Select value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })}>
-              <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+              <option value="CASH">{cashLabel}</option>
               <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
             </Select>
           </FormField>
@@ -529,7 +531,7 @@ export function TreasuryTransactionsPage() {
                   }));
                 }}
               >
-                <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+                <option value="CASH">{cashLabel}</option>
                 <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
                 {!isPrintingPress && <option value="REP_TREASURY">{t('treasury.paymentAccounts.REP_TREASURY')}</option>}
               </Select>
@@ -543,7 +545,7 @@ export function TreasuryTransactionsPage() {
                   .filter((acc) => acc !== transferForm.fromAccount)
                   .map((acc) => (
                     <option key={acc} value={acc}>
-                      {t(`treasury.paymentAccounts.${acc}`)}
+                      {acc === 'CASH' ? cashLabel : t(`treasury.paymentAccounts.${acc}`)}
                     </option>
                   ))}
               </Select>

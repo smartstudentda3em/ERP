@@ -211,7 +211,7 @@ export function DashboardPage() {
             to: '/treasury/transactions',
           },
           {
-            label: t('dashboard.cashTreasuryBalance'),
+            label: isStationery ? t('salesInvoice.cashMakroum') : t('dashboard.cashTreasuryBalance'),
             value: money(s?.cashBalance ?? 0),
             icon: '🪙',
             tone: 'teal',
@@ -242,7 +242,7 @@ export function DashboardPage() {
           // that's always zero for this tenant.
           isPrintingPress
             ? {
-                label: t('dashboard.printingPressCashTreasury'),
+                label: t('salesInvoice.cashMakroum'),
                 value: money(s?.cashBalance ?? 0),
                 icon: '🪙',
                 tone: 'teal',

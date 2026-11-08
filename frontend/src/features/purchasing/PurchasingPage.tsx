@@ -135,6 +135,9 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
   // Stationery/AC must also explicitly pick a بنك/كاش account for the paid-now amount, same as
   // Press — see PurchaseReceiptsService's paymentAccount requirement whenever paidAmount > 0.
   const requiresPaymentAccount = isPrintingPress || isStationery || isAirConditioning;
+  // Press and Stationery: the bank is the default (and first) paying account; the cash one is "الكاش مكروم".
+  const bankFirst = isPrintingPress || isStationery;
+  const defaultPaymentAccount: 'CASH' | 'BANK' = bankFirst ? 'BANK' : 'CASH';
   const queryClient = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
@@ -144,7 +147,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
 
   const [search, setSearch] = useState('');
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<typeof emptyForm>({ ...emptyForm, paymentAccount: defaultPaymentAccount });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
   // Filters the receipts table itself (supplier/item name) — separate from `search` above, which
@@ -322,7 +325,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
     setEditingId(null);
     setSelectedProductId(null);
     setSearch('');
-    setForm(emptyForm);
+    setForm({ ...emptyForm, paymentAccount: defaultPaymentAccount });
   }
 
   function startEdit(receipt: PurchaseReceipt) {
@@ -866,7 +869,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
                   >
                     <span>💵</span>
                     <span>
-                      {t('treasury.paymentAccounts.CASH')}: {formatAmount(branchBalanceQuery.data?.cashBalance ?? 0)}
+                      {bankFirst ? t('salesInvoice.cashMakroum') : t('treasury.paymentAccounts.CASH')}: {formatAmount(branchBalanceQuery.data?.cashBalance ?? 0)}
                     </span>
                   </div>
                   {/* Air Conditioning only — "رصيد المورد": pays out of the selected supplier's own
@@ -895,8 +898,17 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
                     setForm({ ...form, paymentAccount: e.target.value as 'CASH' | 'BANK' | 'SUPPLIER_BALANCE' })
                   }
                 >
-                  <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
-                  <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                  {bankFirst ? (
+                    <>
+                      <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                      <option value="CASH">{t('salesInvoice.cashMakroum')}</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
+                      <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                    </>
+                  )}
                   {isAirConditioning && (
                     <option value="SUPPLIER_BALANCE">{t('purchasing.paymentSourceSupplierBalance')}</option>
                   )}

@@ -132,7 +132,7 @@ export function SalesInvoicesPage() {
   const [paidManual, setPaidManual] = useState(false);
   // Printing Press only — every other company's upfront payment always settles into CASH (see
   // sales-invoices.service.ts, which defaults to CASH when this is omitted).
-  const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK'>('CASH');
+  const [paymentAccount, setPaymentAccount] = useState<'CASH' | 'BANK'>(isPrintingPress ? 'BANK' : 'CASH');
   const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: '', to: '' });
   // Air Conditioning only — the list view's "الفرع" filter, working alongside dateRange above.
@@ -395,7 +395,7 @@ export function SalesInvoicesPage() {
       setLines([emptyLine()]);
       setPaidAmount('0');
       setPaidManual(false);
-      setPaymentAccount('CASH');
+      setPaymentAccount(isPrintingPress ? 'BANK' : 'CASH');
       setError(null);
     },
     onError: (err: any) => {
@@ -712,8 +712,8 @@ export function SalesInvoicesPage() {
                         value={paymentAccount}
                         onChange={(e) => setPaymentAccount(e.target.value as 'CASH' | 'BANK')}
                       >
-                        <option value="CASH">{t('treasury.paymentAccounts.CASH')}</option>
                         <option value="BANK">{t('treasury.paymentAccounts.BANK')}</option>
+                        <option value="CASH">{t('salesInvoice.cashMakroum')}</option>
                       </Select>
                     </FormField>
                   )}

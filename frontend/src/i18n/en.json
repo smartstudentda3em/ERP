@@ -369,9 +369,10 @@
     "performanceHealthTooltipAlert": "Above 50%: Warning (elevated material ratio or waste that needs review)",
     "currencyUnit": "KWD",
     "materialCostRatioAxisLabel": "Material Cost Ratio %",
+    "totalRawMaterials": "Total Raw Materials",
     "performanceChartTitle": "Quarterly Press Performance",
     "performanceChartSubtitle": "Revenue, consumed materials and net profit for each quarter of {{year}}, with the profit margin",
-    "chartMaterials": "Consumed Materials",
+    "chartMaterials": "Raw Materials",
     "chartAmountAxisLabel": "Amount",
     "profitMarginAxisLabel": "Profit Margin %"
   },

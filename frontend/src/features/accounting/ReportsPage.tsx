@@ -46,6 +46,7 @@ interface PerformanceTrendPeriod {
   quarter: number;
   revenue: number;
   consumedMaterials: number;
+  rawMaterials: number;
   netProfit: number;
   materialCostRatio: number;
 }
@@ -200,7 +201,7 @@ export function ReportsPage() {
       const row: Record<string, number | string> = { quarterLabel: t('salesRepresentativesReports.quarterShort', { quarter: q }) };
       const period = findTrendPeriod(year, q);
       row.revenue = period?.revenue ?? 0;
-      row.materials = period?.consumedMaterials ?? 0;
+      row.materials = period?.rawMaterials ?? 0;
       row.netProfit = period?.netProfit ?? 0;
       row.margin = period && period.revenue > 0 ? Number(((period.netProfit / period.revenue) * 100).toFixed(2)) : 0;
       return row;
@@ -209,7 +210,7 @@ export function ReportsPage() {
   }, [trendPeriods, tab, year]);
 
   const materialCostRatio = (profitQuery.data?.revenue ?? 0) > 0
-    ? ((profitQuery.data?.consumedMaterials ?? 0) / (profitQuery.data?.revenue ?? 1)) * 100
+    ? ((profitQuery.data?.cogs ?? 0) / (profitQuery.data?.revenue ?? 1)) * 100
     : 0;
   const performanceHealth = materialCostHealth(materialCostRatio);
 
@@ -481,8 +482,8 @@ export function ReportsPage() {
                 <div className="mt-1 text-lg font-semibold">{formatAmount(profitQuery.data?.revenue ?? 0)}</div>
               </Card>
               <Card>
-                <div className="text-xs text-[var(--text-muted)]">{t('accounting.totalConsumedMaterials')}</div>
-                <div className="mt-1 text-lg font-semibold">{formatAmount(profitQuery.data?.consumedMaterials ?? 0)}</div>
+                <div className="text-xs text-[var(--text-muted)]">{t('accounting.totalRawMaterials')}</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(profitQuery.data?.cogs ?? 0)}</div>
               </Card>
               <Card>
                 <div className="text-xs text-[var(--text-muted)]">{t('accounting.operatingExpenses')}</div>

@@ -1353,12 +1353,16 @@ export class CashMovementsService {
       periods.map(async (p) => {
         const { dateFrom, dateTo } = this.quarterDateRange(p.year, p.quarter);
         const report = await this.getProfitReport(companyId, dateFrom, dateTo, branchId);
-        const materialCostRatio = report.revenue > 0 ? (report.consumedMaterials / report.revenue) * 100 : 0;
+        // Raw materials = the month's raw-material purchases (report.cogs): the very figure the net profit
+        // deducts and the Expenses screen shows — not the stock-audit "consumed" value, which is 0 until an
+        // audit is approved and made this report disagree with both.
+        const materialCostRatio = report.revenue > 0 ? (report.cogs / report.revenue) * 100 : 0;
         return {
           year: p.year,
           quarter: p.quarter,
           revenue: round2(report.revenue),
           consumedMaterials: round2(report.consumedMaterials),
+          rawMaterials: round2(report.cogs),
           netProfit: round2(report.netProfit),
           materialCostRatio: round2(materialCostRatio),
         };

@@ -103,6 +103,10 @@ export class PurchaseReceipt extends BaseEntity {
   @Column({ type: "boolean", default: false })
   isFreeGoods: boolean;
 
+  /** Free-text note the user writes on the receipt (shown on its detail page). */
+  @Column({ type: "text", nullable: true })
+  notes: string | null;
+
   @Column("uuid")
   createdById: string;
 }

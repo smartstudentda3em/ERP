@@ -45,6 +45,7 @@ import { PartnersPage } from './features/partners/PartnersPage';
 import { UsersRolesPage } from './features/users-roles/UsersRolesPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { PurchasingPage } from './features/purchasing/PurchasingPage';
+import { PurchaseReceiptDetailPage } from './features/purchasing/PurchaseReceiptDetailPage';
 import { TreasuryTransactionsPage } from './features/treasury/TreasuryTransactionsPage';
 import { RepTreasuriesPage } from './features/treasury/RepTreasuriesPage';
 import { ExpensesPage } from './features/treasury/ExpensesPage';
@@ -297,6 +298,15 @@ export const router = createBrowserRouter([
                     <RequireNotPrintingPress>
                       <PurchasingPage />
                     </RequireNotPrintingPress>
+                  </RequirePermission>
+                ),
+              },
+              {
+                // One purchase receipt in full — opened by clicking its row in the purchases list (all companies).
+                path: '/purchasing/receipts/:id',
+                element: (
+                  <RequirePermission code="inventory.purchaseReceipt.view">
+                    <PurchaseReceiptDetailPage />
                   </RequirePermission>
                 ),
               },

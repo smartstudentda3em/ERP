@@ -67,6 +67,7 @@ const SPECS: Record<string, { fields: [string, string][]; skipIfPresent?: Record
       ['packagePurchasePrice', 'سعر شراء العبوة'],
       ['totalAmount', 'الإجمالي'],
       ['paidAmount', 'المدفوع'],
+      ['notes', 'ملاحظات'],
     ],
   },
   stock_levels: {

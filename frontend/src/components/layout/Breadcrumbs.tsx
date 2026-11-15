@@ -20,6 +20,7 @@ const SEGMENT_LABEL_KEYS: Record<string, string> = {
   invoices: 'nav.salesInvoices',
   payments: 'nav.salesPayments',
   purchasing: 'nav.purchasing',
+  receipts: 'imports.purchaseInvoiceTab',
   treasury: 'nav.treasuryGroup',
   transactions: 'nav.treasury',
   'rep-treasuries': 'treasury.repTreasuriesBalance',

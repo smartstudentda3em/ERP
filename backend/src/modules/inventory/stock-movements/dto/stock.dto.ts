@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -79,6 +80,8 @@ export class CreatePurchaseReceiptDto {
   /** Air Conditioning company only — see PurchaseReceiptsService.assertFreeGoodsAllowed for the
    * company gate and the packagePurchasePrice/paidAmount-must-be-0 enforcement. */
   @IsOptional() @IsBoolean() isFreeGoods?: boolean;
+  /** Free-text note on the receipt. */
+  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 
 // Deliberately not PartialType(CreatePurchaseReceiptDto): editing a receipt always resubmits the

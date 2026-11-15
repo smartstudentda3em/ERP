@@ -120,7 +120,24 @@ export class PurchaseReceiptsService {
     });
     if (!receipt) throw new NotFoundException('Purchase receipt not found');
     const [withSource] = await this.attachPaymentSources([receipt], companyId);
-    return withSource;
+    // Everything the detail page shows: who recorded it, and the payments posted against it.
+    const creator: { fullName: string }[] = await this.dataSource.query(`SELECT "fullName" FROM users WHERE id = $1`, [
+      receipt.createdById,
+    ]);
+    const movements = await this.dataSource.getRepository(CashMovement).find({
+      where: { companyId, sourceType: CashMovementSourceType.PURCHASE_RECEIPT, sourceId: id },
+      order: { createdAt: 'ASC' },
+    });
+    return {
+      ...withSource,
+      createdByName: creator[0]?.fullName ?? null,
+      payments: movements.map((m) => ({
+        date: m.movementDate,
+        documentNumber: m.documentNumber,
+        amount: Number(m.amount),
+        account: m.account,
+      })),
+    };
   }
 
   /**
@@ -228,6 +245,7 @@ export class PurchaseReceiptsService {
         packageSellingPrice: dto.packageSellingPrice ?? null,
         unitSellingPrice: dto.unitSellingPrice ?? null,
         isFreeGoods: dto.isFreeGoods ?? false,
+        notes: dto.notes?.trim() || null,
         createdById,
       });
       const savedReceipt = await manager.getRepository(PurchaseReceipt).save(receipt);
@@ -414,6 +432,7 @@ export class PurchaseReceiptsService {
         packageSellingPrice: dto.packageSellingPrice ?? null,
         unitSellingPrice: dto.unitSellingPrice ?? null,
         isFreeGoods: dto.isFreeGoods ?? false,
+        notes: dto.notes?.trim() || null,
       });
       const savedReceipt = await manager.getRepository(PurchaseReceipt).save(existing);
 

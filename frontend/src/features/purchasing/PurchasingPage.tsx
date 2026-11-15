@@ -11,6 +11,7 @@ import { Modal } from '../../components/ui/Modal';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { useToast } from '../../components/ui/Toast';
 import { useConfirm } from '../../components/ui/ConfirmDialog';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth-store';
 import { DateRangeFilter, DateRange, inDateRange } from '../../components/ui/DateRangeFilter';
 import { localToday } from '../../lib/date-utils';
@@ -83,6 +84,7 @@ interface PurchaseReceipt {
   totalAmount: number;
   paidAmount: number;
   isFreeGoods?: boolean;
+  notes?: string | null;
   product?: Product;
   warehouse?: Warehouse;
   supplier?: Supplier;
@@ -102,6 +104,7 @@ const emptyForm = {
   packagePurchasePrice: '',
   packageSellingPrice: '',
   unitSellingPrice: '',
+  notes: '',
   paidAmount: '',
   // Printing Press only — every other company's payment always settles into BANK (see saveMutation).
   // 'SUPPLIER_BALANCE' is Air Conditioning only (see the payment-source field below and
@@ -131,6 +134,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
 ) {
   const { t } = useTranslation();
   const { isPrintingPress, isStationery, isAirConditioning } = useActiveCompany();
+  const navigate = useNavigate();
   const { hideBranchUi: hidePressBranchUi, singleBranchId } = usePressBranch();
   // Stationery/AC must also explicitly pick a بنك/كاش account for the paid-now amount, same as
   // Press — see PurchaseReceiptsService's paymentAccount requirement whenever paidAmount > 0.
@@ -341,6 +345,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
       packagePurchasePrice: String(receipt.packagePurchasePrice),
       packageSellingPrice: receipt.packageSellingPrice != null ? String(receipt.packageSellingPrice) : '',
       unitSellingPrice: receipt.unitSellingPrice != null ? String(receipt.unitSellingPrice) : '',
+      notes: receipt.notes ?? '',
       paidAmount: String(receipt.paidAmount ?? 0),
       // Pre-filled with the receipt's REAL current source (see the PurchaseReceipt.paymentSource
       // comment) — not persisted as its own column, so the backend derives it from whichever
@@ -385,6 +390,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
         packagePurchasePrice: Number(form.packagePurchasePrice),
         packageSellingPrice: form.packageSellingPrice ? Number(form.packageSellingPrice) : undefined,
         unitSellingPrice: form.unitSellingPrice ? Number(form.unitSellingPrice) : undefined,
+        notes: form.notes.trim() || undefined,
         paidAmount: paidAmount > 0 ? paidAmount : undefined,
         // Printing Press only: the user picks Cash Treasury vs. Bank Account explicitly (see the
         // form field below). Every other company keeps the prior fixed behavior — settled through
@@ -780,6 +786,14 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
           <FormField label={t('fields.unitCost')}>
             <Input disabled value={unitCost !== null ? unitCost.toFixed(4) : ''} placeholder="—" />
           </FormField>
+          <FormField label={t('purchasing.notes')}>
+            <textarea
+              rows={2}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </FormField>
 
           {/* Air Conditioning only — a supplier's in-kind/target-discount goods: real quantity
               enters stock as usual, but the price/paid-now fields above and below are forced to 0
@@ -805,20 +819,20 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
             </div>
           )}
 
-          <FormField label={t('purchasing.packageSellingPriceOptional')}>
-            <Input
-              type="number"
-              step="0.01"
-              value={form.packageSellingPrice}
-              onChange={(e) => setForm({ ...form, packageSellingPrice: e.target.value })}
-            />
-          </FormField>
           <FormField label={t('purchasing.unitSellingPriceOptional')}>
             <Input
               type="number"
               step="0.01"
               value={form.unitSellingPrice}
               onChange={(e) => setForm({ ...form, unitSellingPrice: e.target.value })}
+            />
+          </FormField>
+          <FormField label={t('purchasing.packageSellingPriceOptional')}>
+            <Input
+              type="number"
+              step="0.01"
+              value={form.packageSellingPrice}
+              onChange={(e) => setForm({ ...form, packageSellingPrice: e.target.value })}
             />
           </FormField>
 
@@ -994,6 +1008,7 @@ export const PurchasingTab = forwardRef<PurchasingTabHandle, PurchasingTabProps>
             isLoading={receiptsQuery.isLoading}
             searchable={false}
             pageSize={Math.max(filteredReceipts.length, 1)}
+            onRowClick={(r) => navigate(`/purchasing/receipts/${r.id}`)}
           />
         </div>
       </Card>

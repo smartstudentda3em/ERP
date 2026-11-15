@@ -41,6 +41,8 @@ interface SalesInvoice {
   branch: { nameAr?: string | null; nameEn?: string | null } | null;
   createdById: string;
   createdByName: string;
+  /** The products sold on this invoice, comma-joined — see SalesInvoicesService.findAll(). */
+  productNames?: string;
   notes: string | null;
 }
 interface Customer {
@@ -517,6 +519,10 @@ export function SalesInvoicesPage() {
       header: isPrintingPress ? t('fields.customerName') : t('nav.customers'),
       accessor: (r) => r.customerName || r.customer?.name || '—',
     },
+    // Printing Press: what was sold on the invoice (e.g. طباعة، ورق).
+    ...(isPrintingPress
+      ? [{ header: t('salesInvoice.productColumn'), accessor: (r: SalesInvoice) => r.productNames || '—' } as Column<SalesInvoice>]
+      : []),
     ...(requiresPaymentAccount
       ? [
           {

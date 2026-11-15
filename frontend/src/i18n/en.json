@@ -279,6 +279,7 @@
     "REVERSED": "Reversed"
   },
   "salesInvoice": {
+    "productColumn": "Product",
     "cashMakroum": "Cash (Makroum)",
     "saleType": "Sale Type",
     "saleTypes": {

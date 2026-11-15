@@ -279,6 +279,7 @@
     "REVERSED": "معكوس"
   },
   "salesInvoice": {
+    "productColumn": "المنتج",
     "cashMakroum": "الكاش مكروم",
     "saleType": "نوع البيع",
     "saleTypes": {

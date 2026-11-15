@@ -142,7 +142,31 @@ export class SalesInvoicesService {
       .from('users', 'u')
       .getRawMany();
     const nameById = new Map<string, string>(userRows.map((u) => [u.id, u.fullName]));
-    return invoices.map((inv) => ({ ...inv, createdByName: nameById.get(inv.createdById) ?? '—' }));
+
+    // What was sold on each invoice ("طباعة، ورق، خيط") — the product names of its lines, for the list's
+    // "المنتج" column.
+    const productRows = invoices.length
+      ? await this.dataSource
+          .createQueryBuilder()
+          .select('l."invoiceId"', 'invoiceId')
+          .addSelect('COALESCE(p."nameAr", p."nameEn")', 'name')
+          .from('sales_invoice_lines', 'l')
+          .innerJoin('products', 'p', 'p.id = l."productId"')
+          .where('l."invoiceId" IN (:...invoiceIds)', { invoiceIds: invoices.map((i) => i.id) })
+          .orderBy('l."createdAt"', 'ASC')
+          .getRawMany()
+      : [];
+    const namesByInvoice = new Map<string, string[]>();
+    for (const r of productRows) {
+      const list = namesByInvoice.get(r.invoiceId) ?? [];
+      if (!list.includes(r.name)) list.push(r.name);
+      namesByInvoice.set(r.invoiceId, list);
+    }
+    return invoices.map((inv) => ({
+      ...inv,
+      createdByName: nameById.get(inv.createdById) ?? '—',
+      productNames: (namesByInvoice.get(inv.id) ?? []).join('، '),
+    }));
   }
 
   /**

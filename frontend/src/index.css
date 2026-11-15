@@ -1,0 +1,1452 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Tells the browser which native-control palette this page is actually using. Without this,
+   * Chrome on Android (inside the TWA app) independently guesses a scheme for OS-rendered native
+   * widgets — the <select> popup for a two-option field like "نوع البيع" (package/unit) — based on
+   * the device's own dark-mode setting, regardless of our .dark class below. When the phone is in
+   * system dark mode but the app is in light mode, that guess picks a dark popup background while
+   * still computing option text color for a light one (or vice versa), rendering text invisible.
+   * Kept in sync with the .dark class toggle in theme-store.ts so the browser always renders native
+   * pickers in the same scheme the rest of the page is actually in. */
+  color-scheme: light;
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --table-header-bg: #eef1f6;
+  --table-stripe: rgba(15, 23, 42, 0.025);
+  --table-hover: rgba(15, 23, 42, 0.05);
+  --table-highlight-bg: #e3f2fd;
+  --table-highlight-border: #90caf9;
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: #0b1220;
+  --surface: #111827;
+  --text: #e5e7eb;
+  --text-muted: #94a3b8;
+  --border: #1f2937;
+  --table-header-bg: #1a2333;
+  --table-stripe: rgba(255, 255, 255, 0.02);
+  --table-hover: rgba(255, 255, 255, 0.06);
+  --table-highlight-bg: rgba(59, 130, 246, 0.16);
+  --table-highlight-border: rgba(96, 165, 250, 0.5);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+* {
+  border-color: var(--border);
+}
+
+.card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  transition: box-shadow 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+/*
+ * Global table design system (Global UI/CSS Style Guidelines): every data table in the app,
+ * whether rendered through the shared DataTable component or a hand-rolled <table>, applies this
+ * one class so grid lines, alignment, header styling, spacing, and row interaction stay identical
+ * across every screen.
+ */
+.app-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.app-table th,
+.app-table td {
+  border: 1px solid var(--border);
+  padding: 0.625rem 0.875rem;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.app-table thead th {
+  /* NOT position: sticky — the desktop table wrapper (.data-table-desktop) sets overflow-x: auto
+     for horizontal scroll on narrow viewports, which per the CSS overflow spec forces overflow-y
+     to compute as auto too even though the wrapper never actually needs to scroll vertically
+     (content fits). That alone makes the wrapper a sticky positioning containing block for its own
+     descendants — so a sticky <th> sticks 56px down from the WRAPPER's own top edge, not the page,
+     completely independent of whether the wrapper's content is tall enough for that to make sense.
+     On a short table (few rows) this pushes the header down over the first data row(s), hiding them
+     under an opaque header background — data-loss-looking, not just a cosmetic glitch. Confirmed
+     2026-08-24 on production (Suppliers/Users&Roles lists misread as "missing data"). Don't
+     reintroduce sticky here without first restructuring the wrapper so overflow-x doesn't sit on
+     the sticky <th>'s own containing block. */
+  background-color: var(--table-header-bg);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  border-bottom: 2px solid var(--border);
+}
+
+.app-table tbody tr {
+  transition: background-color 120ms ease;
+}
+
+.app-table tbody tr:nth-child(even) {
+  background-color: var(--table-stripe);
+}
+
+.app-table tbody tr:hover {
+  background-color: var(--table-hover);
+}
+
+.app-table tfoot td {
+  background-color: var(--table-header-bg);
+  font-weight: 700;
+}
+
+/* Opt-in per-column emphasis (Column.highlight in DataTable) — a light/dark-aware background plus
+   bold text and a distinct side border so a column stays visually identifiable at a glance while
+   scrolling a wide table, without needing its own bespoke styling per screen. */
+.app-table th.col-highlight,
+.app-table td.col-highlight {
+  background-color: var(--table-highlight-bg);
+  font-weight: 700;
+  color: var(--text);
+  border-inline: 1.5px solid var(--table-highlight-border);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 9999px;
+}
+
+/* Shared by every printable document (Sales Invoice, Quotation, Customer Statement) — an elegant
+   Arabic-first typeface for the whole letterhead/body/footer instead of the app's default UI font,
+   since these are formal exported documents, not screen chrome. Every themed color used inside it
+   (.card, text-[var(--text-muted)], the shared .app-table, etc.) reads from these CSS custom
+   properties, so redefining them here pins the WHOLE document to one fixed light palette
+   regardless of the app's own dark/light setting — a customer-facing document must always look
+   the same. Before this, a dark-mode capture baked a dark background + light text into the
+   "printed" invoice, which is what made it look unprofessional. */
+.printable-document {
+  font-family: 'Cairo', 'Tajawal', 'Segoe UI', Tahoma, sans-serif;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --table-header-bg: #eef1f6;
+  --table-stripe: rgba(15, 23, 42, 0.025);
+  --table-hover: transparent;
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+/* Printable documents (Sales Invoice, Quotation, Customer Statement) target A4 with consistent
+   margins. The letterhead/footer are asserted visible defensively — belt-and-suspenders on top of
+   the print:hidden-on-chrome pattern already used everywhere — and the footer is kept from being
+   split across a page break. */
+@page {
+  size: A4;
+  margin: 10mm;
+}
+
+/* Global print reset — applies to every printed page/table in the app, not just one report.
+   AppLayout itself has no fixed-height/overflow-hidden wrapper (min-h-screen, content grows
+   naturally), so nothing here needs to fight a clipped container; this instead fixes the two
+   things that were only ever applied to a handful of the ~15 individual report print blocks:
+   long tables repeating their header row on every page, and rows never being split mid-row
+   across a page break. Chrome hiding (sidebar/topbar/buttons/pagination) is already handled
+   globally via Tailwind's print:hidden utility (Sidebar.tsx, Topbar.tsx, PageHeader.tsx, and
+   every page's own action bar) — not duplicated here as a separate .no-print class. */
+@media print {
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tr {
+    break-inside: avoid;
+    break-after: auto;
+  }
+
+  h1, h2, h3, h4, .section-title {
+    break-after: avoid;
+  }
+}
+
+/* The official letterhead/footer are formal print artifacts, not screen chrome — hidden while
+   browsing/editing on screen, and only switched on for an actual print or PDF export. */
+.document-letterhead,
+.document-footer {
+  display: none;
+}
+
+@media print {
+  .document-letterhead,
+  .document-footer {
+    display: block !important;
+    visibility: visible !important;
+  }
+}
+
+/* html2canvas (used for the "Download PDF" button) snapshots the live on-screen DOM and does not
+   honor @media print, so the page toggles this class onto the captured container just long enough
+   to render the letterhead/footer back in before the snapshot, then removes it. */
+.pdf-export-mode .document-letterhead,
+.pdf-export-mode .document-footer,
+.pdf-export-mode .cargo-print-header {
+  display: block !important;
+}
+
+/* Forces a fixed, desktop-proportioned width during capture regardless of the device's actual
+   viewport — without this, html2canvas snapshots whatever narrow phone-width reflow is currently
+   on screen (this app also runs as a phone-width Android app now) and the PDF stretches that
+   low-resolution, awkwardly-wrapped capture up to a full A4 page, which is what made an invoice
+   PDF generated from a phone look badly formatted and blurry compared to the same export from a
+   desktop screen. Positioned off-screen (not display:none — html2canvas needs real layout) so
+   this never visibly disrupts what the user is looking at; the class is only on for the instant
+   of the capture itself. Applies to every letterhead-style document (Sales Invoice, Quotation,
+   Customer Statement) since they all share .printable-document. */
+.printable-document.pdf-export-mode {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 794px;
+}
+
+/* Raw Materials report (المواد الخام) print/PDF — unlike invoices/statements, this export shows
+   only a plain title and the table, nothing else (no company letterhead, no stats cards, no
+   footer), per the raw-materials print spec. */
+.raw-materials-print-header {
+  display: none;
+}
+@media print {
+  .raw-materials-print-header {
+    display: block !important;
+  }
+  .raw-materials-print-summary {
+    display: none !important;
+  }
+}
+.pdf-export-mode .raw-materials-print-header {
+  display: block !important;
+}
+.pdf-export-mode .raw-materials-print-summary {
+  display: none !important;
+}
+
+/* الإجراءات (edit/delete) — meaningless once printed, so it's dropped for both the native print
+   path (@media print) and the html2canvas PDF path (.pdf-export-mode, which doesn't honor
+   @media print at all). */
+@media print {
+  .raw-materials-print th:last-child,
+  .raw-materials-print td:last-child {
+    display: none !important;
+  }
+}
+.raw-materials-print.pdf-export-mode th:last-child,
+.raw-materials-print.pdf-export-mode td:last-child {
+  display: none !important;
+}
+
+/* DataTable.tsx's Column.hideOnPrint — marks an arbitrary, non-contiguous column (position not
+   known in advance, unlike the fixed-last-column case above) as useful on screen but never shown
+   in the printed page or exported PDF. Same @media print / .pdf-export-mode pairing as above,
+   since html2canvas doesn't honor @media print at all. */
+@media print {
+  .print-pdf-hidden-col {
+    display: none !important;
+  }
+}
+.pdf-export-mode .print-pdf-hidden-col {
+  display: none !important;
+}
+
+/* DataTable.tsx splits into a desktop table (.data-table-desktop, shown via `md:block`) and a
+   stacked phone-card list (.data-table-mobile, shown via `md:hidden`) purely off screen viewport
+   width. Print media's own viewport-width computation isn't reliable enough to trust the same
+   breakpoint (confirmed live: printing/exporting a DataTable was silently falling back to the
+   unstyled stacked-card layout instead of the real table), so print and PDF export both force the
+   desktop table unconditionally regardless of which one the on-screen breakpoint picked. */
+@media print {
+  .data-table-desktop {
+    display: block !important;
+  }
+  .data-table-mobile {
+    display: none !important;
+  }
+}
+.pdf-export-mode .data-table-desktop {
+  display: block !important;
+}
+.pdf-export-mode .data-table-mobile {
+  display: none !important;
+}
+/* The search box (.data-table-search) already carries Tailwind's print:hidden for real browser
+   printing — html2canvas doesn't honor that media query at all, so PDF export needs this same
+   .pdf-export-mode pairing to drop it too. */
+.pdf-export-mode .data-table-search {
+  display: none !important;
+}
+
+/* Guideline Prices detail page (الأسعار الاسترشادية) print/PDF — reuses the exact navy-header +
+   light zebra-stripe theme cargo-print-report already established elsewhere in the app, so the
+   two "professional colored table export" screens share one visual identity instead of each
+   inventing its own palette. Kept on its own class for the same reason cargo-print-report is: so
+   these rules can never leak onto some unrelated table elsewhere in the app. */
+@page guideline-price-report {
+  size: A4 portrait;
+  /* Real browser printing honors @page natively — vertical 15mm, horizontal 18mm keeps the table
+     comfortably clear of the paper edge on this path with no extra CSS needed. */
+  margin: 15mm 18mm;
+}
+
+/* Column order is fixed by GuidelinePriceDetailPage.tsx's own `columns` array, not
+   user-configurable, so targeting these exact positions is as reliable as the :last-child
+   convention used elsewhere in this file — nth-child 1/2/3/4/10 are the only ones still visible
+   (hideOnPrint hides 5/6/7/8 cost columns and 9 factory selling price, all via display:none):
+   1 القدرة, 2 الماركة, 3 رمز الصنف, 4 اسم الصنف, 10 سعر البيع المتوقع. Narrower shares for
+   capacity/brand/sku (short values) leave the item-name and price columns the room they actually
+   need instead of five equal-width columns. */
+@media print {
+  .guideline-price-print {
+    page: guideline-price-report;
+  }
+  .guideline-price-print .overflow-x-auto {
+    overflow: visible;
+  }
+  .guideline-price-print .app-table {
+    width: 100%;
+    table-layout: fixed;
+  }
+  /* Every row stays on one line (no wrapping to a second line); if a value is still too long for
+     its fixed column width, it's clipped with an ellipsis instead of visually spilling out past
+     the cell's own border. vertical-align:middle keeps every cell's text equidistant from the top
+     and bottom of its row box regardless of that row's own line-height/font-size mix. */
+  .guideline-price-print th,
+  .guideline-price-print td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  /* Letterhead's company-name row (which for التكييفات shows just "التكييفات" as the Arabic
+     name) and its address/phone contact bar are dropped from this one page's print/PDF only —
+     DocumentLetterhead.tsx is shared by every other printable document, so this stays scoped to
+     .guideline-price-print instead of touching the component's own default output. Only the
+     title badge ("أسعار استرشادية") and its subtitle line stay. */
+  .guideline-price-print .letterhead-name-row,
+  .guideline-price-print .letterhead-contact-bar {
+    display: none !important;
+  }
+  .guideline-price-print th {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .guideline-price-print td {
+    font-size: 12px;
+    padding: 6px 6px;
+  }
+  .guideline-price-print .app-table th:nth-child(1),
+  .guideline-price-print .app-table td:nth-child(1) {
+    width: 10%;
+    font-size: 11px;
+  }
+  .guideline-price-print .app-table th:nth-child(2),
+  .guideline-price-print .app-table td:nth-child(2) {
+    width: 13%;
+    font-size: 11px;
+  }
+  .guideline-price-print .app-table th:nth-child(3),
+  .guideline-price-print .app-table td:nth-child(3) {
+    width: 15%;
+    font-size: 11px;
+  }
+  .guideline-price-print .app-table th:nth-child(4),
+  .guideline-price-print .app-table td:nth-child(4) {
+    width: 35%;
+  }
+  .guideline-price-print .app-table th:nth-child(10),
+  .guideline-price-print .app-table td:nth-child(10) {
+    width: 27%;
+    text-align: center;
+  }
+  .guideline-price-print .app-table thead th {
+    background-color: #1e3a5f !important;
+    color: #ffffff !important;
+    border: 1px solid #14293f !important;
+  }
+  .guideline-price-print .app-table th,
+  .guideline-price-print .app-table td {
+    border: 1px solid #94a3b8 !important;
+  }
+  .guideline-price-print .app-table tbody tr:nth-child(even) td {
+    background-color: #eef2f7 !important;
+  }
+}
+
+/* html2canvas captures the live screen DOM, not the browser's print layout engine — it never sees
+   @page at all, so without its own margin the PDF path was rendering the table flush against the
+   captured canvas's edges (and, since the footer note sits right after the table with nothing
+   reserving space below it, pushed hard against the bottom too). Padding on the captured container
+   itself is the only way to give this path the same breathing room @page gives real printing —
+   values in mm still convert to real page-proportional space once pdf-export.ts scales the
+   captured canvas down to A4 width. */
+.guideline-price-print.pdf-export-mode {
+  padding: 15mm 18mm;
+}
+.guideline-price-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+.guideline-price-print.pdf-export-mode .app-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.guideline-price-print.pdf-export-mode th,
+.guideline-price-print.pdf-export-mode td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.guideline-price-print.pdf-export-mode .letterhead-name-row,
+.guideline-price-print.pdf-export-mode .letterhead-contact-bar {
+  display: none !important;
+}
+.guideline-price-print.pdf-export-mode th {
+  font-size: 17px;
+  font-weight: 700;
+  padding: 10px 6px;
+}
+.guideline-price-print.pdf-export-mode td {
+  font-size: 17px;
+  padding: 8px 6px;
+}
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(1),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(1) {
+  width: 10%;
+  font-size: 15px;
+}
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(2),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(2) {
+  width: 13%;
+  font-size: 15px;
+}
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(3),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(3) {
+  width: 15%;
+  font-size: 15px;
+}
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(4),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(4) {
+  width: 35%;
+}
+.guideline-price-print.pdf-export-mode .app-table th:nth-child(10),
+.guideline-price-print.pdf-export-mode .app-table td:nth-child(10) {
+  width: 27%;
+  text-align: center;
+}
+.guideline-price-print.pdf-export-mode .app-table thead th {
+  background-color: #1e3a5f !important;
+  color: #ffffff !important;
+  border: 1px solid #14293f !important;
+}
+.guideline-price-print.pdf-export-mode .app-table th,
+.guideline-price-print.pdf-export-mode .app-table td {
+  border: 1px solid #94a3b8 !important;
+}
+.guideline-price-print.pdf-export-mode .app-table tbody tr:nth-child(even) td {
+  background-color: #eef2f7 !important;
+}
+.guideline-price-print.pdf-export-mode .section-title {
+  margin-bottom: 4mm;
+}
+
+/* Generic screen↔print/PDF content swap — .screen-only shows normally and disappears from both
+   print output paths; .print-only is the reverse. Used where an interactive control (e.g. an
+   <input>) needs to become plain text on the document: html2canvas clones the DOM to capture it,
+   and a cloned <input> doesn't carry over its live JS `.value` (only the initial `value`
+   attribute, which React controlled inputs never set), so form fields routinely render blank or
+   stale in the exported PDF — swapping to a plain text node for print/PDF sidesteps that
+   entirely, not just here but wherever else this pattern is needed. */
+/* No base rule here on purpose — the element keeps its natural display (inline-block for an
+   <input>, block for a <div>, etc.) on screen; only print/PDF override it to display:none. Setting
+   display:inline unconditionally here would have silently broken width/padding on any block-level
+   or inline-block element (e.g. an <input>'s w-full) that opts into this class. */
+@media print {
+  .screen-only {
+    display: none !important;
+  }
+}
+.pdf-export-mode .screen-only {
+  display: none !important;
+}
+.print-only {
+  display: none;
+}
+@media print {
+  .print-only {
+    display: inline !important;
+  }
+}
+.pdf-export-mode .print-only {
+  display: inline !important;
+}
+
+/* Printing should never inherit the dark theme's colors — force light/print-safe values for every
+   CSS-variable-driven surface (background, text, borders, table header) regardless of which theme
+   was active on screen when the user printed. */
+@media print {
+  :root,
+  .dark {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --text: #000000;
+    --text-muted: #374151;
+    --border: #9ca3af;
+    --table-header-bg: #e5e7eb;
+    --table-stripe: transparent;
+    --table-hover: transparent;
+  }
+}
+
+/* Import Cargo report (شحنات الاستيراد / البضاعة) — a wide data-table export, kept on its own
+   class rather than reusing .printable-document/.app-table globally, so these rules can never
+   accidentally hide the last column of some unrelated table elsewhere in the app. Deliberately
+   given a colored, bordered, zebra-striped theme distinct from the plain black-and-white treatment
+   other printable documents (invoices, statements) intentionally keep. */
+.cargo-print-header {
+  display: none;
+}
+
+/* Portrait A4 for this report, matching every other printable document in the app (named page,
+   applied only via `page: cargo-report` below). The column-width rules further down are tuned to
+   fit this report's 7 visible columns into portrait's narrower width. */
+@page cargo-report {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
+.cargo-print-header-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  align-items: start;
+  /* Forces the grid's three columns into a fixed physical left/center/right order regardless of
+     the app's RTL layout — the Arabic text inside each column still shapes/reads correctly, only
+     the columns' left-to-right placement is pinned. */
+  direction: ltr;
+}
+.cargo-print-header-side {
+  padding-top: 6px;
+}
+.cargo-print-header-center {
+  text-align: center;
+}
+/* Physical top-right corner, above where "اسم الشحنة" (the table's first/rightmost column in
+   RTL) begins — deliberately NOT inside .cargo-print-header-center, so it can never crowd or
+   overlap the report title directly below it. */
+.cargo-print-header-date {
+  padding-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4b5563;
+  text-align: right;
+}
+
+/* Pushed below the header (margin-top) rather than sharing its row, and styled as a standalone
+   badge rather than plain text, so it reads as an independent summary element instead of crowding
+   the header block above it or the table below it. */
+.cargo-print-summary {
+  display: none;
+}
+.cargo-print-summary-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border: 1px solid #1e3a5f;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 17px;
+  font-weight: 800;
+  color: #1e3a5f;
+  white-space: nowrap;
+}
+
+@media print {
+  .cargo-print-header {
+    display: block !important;
+    margin-bottom: 4px;
+  }
+  .cargo-print-summary {
+    display: flex;
+    justify-content: center;
+    text-align: center;
+    gap: 10px;
+    margin: 14px auto 12px;
+  }
+  .cargo-print-report {
+    page: cargo-report;
+  }
+  /* The table wrapper otherwise scrolls internally on screen (overflow-x-auto) — during print
+     that would clip whatever doesn't fit in the visible scroll area instead of reflowing it. */
+  .cargo-print-report .overflow-x-auto {
+    overflow: visible;
+  }
+  .cargo-print-report table {
+    width: 94%;
+    margin: 0 auto;
+    table-layout: fixed;
+  }
+  .cargo-print-report th:last-child,
+  .cargo-print-report td:last-child {
+    display: none !important;
+  }
+  .cargo-print-report th,
+  .cargo-print-report td {
+    overflow-wrap: break-word;
+    white-space: normal;
+    vertical-align: middle;
+  }
+  .cargo-print-report th {
+    font-size: 13px;
+    font-weight: 700;
+    padding: 6px 6px;
+    line-height: 1.2;
+  }
+  .cargo-print-report td {
+    font-size: 11px;
+    padding: 4px 6px;
+    line-height: 1.2;
+  }
+  .cargo-print-report .app-table thead th {
+    background-color: #1e3a5f !important;
+    color: #ffffff !important;
+    border: 1px solid #14293f !important;
+  }
+  .cargo-print-report .app-table th,
+  .cargo-print-report .app-table td {
+    border: 1px solid #94a3b8 !important;
+  }
+  .cargo-print-report .app-table tbody tr:nth-child(even) td {
+    background-color: #eef2f7 !important;
+  }
+}
+
+.cargo-print-report.pdf-export-mode .cargo-print-header {
+  margin-bottom: 4px;
+}
+.cargo-print-report.pdf-export-mode .cargo-print-summary {
+  display: flex;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+  margin: 14px auto 12px;
+}
+.cargo-print-report.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+.cargo-print-report.pdf-export-mode table {
+  width: 94%;
+  margin: 0 auto;
+  table-layout: fixed;
+}
+.cargo-print-report.pdf-export-mode th:last-child,
+.cargo-print-report.pdf-export-mode td:last-child {
+  display: none !important;
+}
+.cargo-print-report.pdf-export-mode th,
+.cargo-print-report.pdf-export-mode td {
+  overflow-wrap: break-word;
+  white-space: normal;
+  vertical-align: middle;
+}
+.cargo-print-report.pdf-export-mode th {
+  font-size: 19px;
+  font-weight: 700;
+  padding: 10px 6px;
+}
+.cargo-print-report.pdf-export-mode td {
+  font-size: 17px;
+  padding: 8px 6px;
+}
+.cargo-print-report.pdf-export-mode .app-table thead th {
+  background-color: #1e3a5f !important;
+  color: #ffffff !important;
+  border: 1px solid #14293f !important;
+}
+.cargo-print-report.pdf-export-mode .app-table th,
+.cargo-print-report.pdf-export-mode .app-table td {
+  border: 1px solid #94a3b8 !important;
+}
+.cargo-print-report.pdf-export-mode .app-table tbody tr:nth-child(even) td {
+  background-color: #eef2f7 !important;
+}
+
+/* Balanced column widths under table-layout: fixed — without these every column would split the
+   row equally regardless of content, squeezing name/product columns while wasting space on short
+   numeric ones. The 8th (actions) column is excluded: it's hidden via :last-child above. Mirrors
+   the on-screen DataTable column widths in ImportCargoTab.tsx: product widened, quantity and
+   السعر النهائي narrowed relative to the other price columns. */
+.cargo-print-report table th:nth-child(1),
+.cargo-print-report table td:nth-child(1) {
+  width: 24%;
+}
+.cargo-print-report table th:nth-child(2),
+.cargo-print-report table td:nth-child(2) {
+  width: 7%;
+}
+.cargo-print-report table th:nth-child(3),
+.cargo-print-report table td:nth-child(3) {
+  width: 13%;
+}
+.cargo-print-report table th:nth-child(4),
+.cargo-print-report table td:nth-child(4) {
+  width: 12%;
+}
+.cargo-print-report table th:nth-child(5),
+.cargo-print-report table td:nth-child(5) {
+  width: 12%;
+}
+.cargo-print-report table th:nth-child(6),
+.cargo-print-report table td:nth-child(6) {
+  width: 11%;
+}
+.cargo-print-report table th:nth-child(7),
+.cargo-print-report table td:nth-child(7) {
+  width: 13%;
+}
+.cargo-print-report table th:nth-child(8),
+.cargo-print-report table td:nth-child(8) {
+  width: 8%;
+}
+
+/* Explicit defensive hide for the Import section's tab navigation during print, on top of the
+   print:hidden Tailwind utility already applied to the header bar it lives in. */
+@media print {
+  .import-nav-tabs {
+    display: none !important;
+  }
+}
+
+/* Sales report (المبيعات) print/PDF — same A4-fit approach as the Import Cargo report (named
+   landscape page, table-layout: fixed, balanced column widths, wrapper overflow neutralized) so a
+   9-column table can't repeat that report's original off-page clipping bug. Kept on its own class
+   rather than reusing .cargo-print-report so a future change to one report can never silently
+   affect the other. */
+.sales-report-print-header {
+  display: none;
+}
+
+@page sales-report {
+  size: A4 landscape;
+  margin: 12mm;
+}
+
+@media print {
+  .sales-report-print-header {
+    display: block !important;
+  }
+  .sales-report-print {
+    page: sales-report;
+  }
+  .sales-report-print .overflow-x-auto {
+    overflow: visible;
+  }
+  .sales-report-print table {
+    width: 100%;
+    table-layout: fixed;
+  }
+  .sales-report-print th,
+  .sales-report-print td {
+    overflow-wrap: break-word;
+    white-space: normal;
+    vertical-align: middle;
+  }
+  .sales-report-print th {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .sales-report-print td {
+    font-size: 13px;
+    padding: 6px 5px;
+  }
+}
+
+.sales-report-print.pdf-export-mode .sales-report-print-header {
+  display: block !important;
+}
+.sales-report-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+.sales-report-print.pdf-export-mode table {
+  width: 100%;
+  table-layout: fixed;
+}
+.sales-report-print.pdf-export-mode th,
+.sales-report-print.pdf-export-mode td {
+  overflow-wrap: break-word;
+  white-space: normal;
+  vertical-align: middle;
+}
+.sales-report-print.pdf-export-mode th {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 6px;
+}
+.sales-report-print.pdf-export-mode td {
+  font-size: 13px;
+  padding: 6px 5px;
+}
+
+/* Balanced column widths under table-layout: fixed — 9 columns, no hidden actions column here. */
+.sales-report-print table th:nth-child(1),
+.sales-report-print table td:nth-child(1) {
+  width: 9%;
+}
+.sales-report-print table th:nth-child(2),
+.sales-report-print table td:nth-child(2) {
+  width: 13%;
+}
+.sales-report-print table th:nth-child(3),
+.sales-report-print table td:nth-child(3) {
+  width: 15%;
+}
+.sales-report-print table th:nth-child(4),
+.sales-report-print table td:nth-child(4) {
+  width: 10%;
+}
+.sales-report-print table th:nth-child(5),
+.sales-report-print table td:nth-child(5) {
+  width: 12%;
+}
+.sales-report-print table th:nth-child(6),
+.sales-report-print table td:nth-child(6) {
+  width: 10%;
+}
+.sales-report-print table th:nth-child(7),
+.sales-report-print table td:nth-child(7) {
+  width: 11%;
+}
+.sales-report-print table th:nth-child(8),
+.sales-report-print table td:nth-child(8) {
+  width: 10%;
+}
+.sales-report-print table th:nth-child(9),
+.sales-report-print table td:nth-child(9) {
+  width: 10%;
+}
+
+/* Sales payments report (المقبوضات) print/PDF — same A4-fit approach as the other reports above. */
+.sales-payments-print-header {
+  display: none;
+}
+
+@page sales-payments-report {
+  size: A4 landscape;
+  margin: 12mm;
+}
+
+@media print {
+  .sales-payments-print-header {
+    display: block !important;
+  }
+  .sales-payments-print {
+    page: sales-payments-report;
+  }
+  .sales-payments-print .overflow-x-auto {
+    overflow: visible;
+  }
+  .sales-payments-print table {
+    width: 100%;
+    table-layout: fixed;
+  }
+  .sales-payments-print th,
+  .sales-payments-print td {
+    overflow-wrap: break-word;
+    white-space: normal;
+    vertical-align: middle;
+  }
+  .sales-payments-print th {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .sales-payments-print td {
+    font-size: 13px;
+    padding: 6px 5px;
+  }
+}
+
+.sales-payments-print.pdf-export-mode .sales-payments-print-header {
+  display: block !important;
+}
+.sales-payments-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+.sales-payments-print.pdf-export-mode table {
+  width: 100%;
+  table-layout: fixed;
+}
+.sales-payments-print.pdf-export-mode th,
+.sales-payments-print.pdf-export-mode td {
+  overflow-wrap: break-word;
+  white-space: normal;
+  vertical-align: middle;
+}
+.sales-payments-print.pdf-export-mode th {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 6px;
+}
+.sales-payments-print.pdf-export-mode td {
+  font-size: 13px;
+  padding: 6px 5px;
+}
+
+/* Balanced column widths under table-layout: fixed — 8 columns, no hidden actions column here. */
+.sales-payments-print table th:nth-child(1),
+.sales-payments-print table td:nth-child(1) {
+  width: 12%;
+}
+.sales-payments-print table th:nth-child(2),
+.sales-payments-print table td:nth-child(2) {
+  width: 10%;
+}
+.sales-payments-print table th:nth-child(3),
+.sales-payments-print table td:nth-child(3) {
+  width: 15%;
+}
+.sales-payments-print table th:nth-child(4),
+.sales-payments-print table td:nth-child(4) {
+  width: 14%;
+}
+.sales-payments-print table th:nth-child(5),
+.sales-payments-print table td:nth-child(5) {
+  width: 11%;
+}
+.sales-payments-print table th:nth-child(6),
+.sales-payments-print table td:nth-child(6) {
+  width: 12%;
+}
+.sales-payments-print table th:nth-child(7),
+.sales-payments-print table td:nth-child(7) {
+  width: 16%;
+}
+.sales-payments-print table th:nth-child(8),
+.sales-payments-print table td:nth-child(8) {
+  width: 10%;
+}
+
+/* Recent receiving vouchers report (أحدث إذون الاستلام، Purchasing page) print/PDF — same A4-fit
+   approach as the other reports above. */
+.purchasing-print-header {
+  display: none;
+}
+
+@page purchasing-report {
+  size: A4 landscape;
+  margin: 12mm;
+}
+
+@media print {
+  .purchasing-print-header {
+    display: block !important;
+  }
+  .purchasing-print {
+    page: purchasing-report;
+  }
+  .purchasing-print .overflow-x-auto {
+    overflow: visible;
+  }
+  .purchasing-print table {
+    width: 100%;
+    table-layout: fixed;
+  }
+  .purchasing-print th,
+  .purchasing-print td {
+    overflow-wrap: break-word;
+    white-space: normal;
+    vertical-align: middle;
+  }
+  .purchasing-print th {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .purchasing-print td {
+    font-size: 13px;
+    padding: 6px 5px;
+  }
+  /* الإجراءات (edit/delete) — meaningless once printed. */
+  .purchasing-print th:last-child,
+  .purchasing-print td:last-child {
+    display: none !important;
+  }
+}
+
+.purchasing-print.pdf-export-mode .purchasing-print-header {
+  display: block !important;
+}
+.purchasing-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+.purchasing-print.pdf-export-mode table {
+  width: 100%;
+  table-layout: fixed;
+}
+.purchasing-print.pdf-export-mode th,
+.purchasing-print.pdf-export-mode td {
+  overflow-wrap: break-word;
+  white-space: normal;
+  vertical-align: middle;
+}
+.purchasing-print.pdf-export-mode th {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 6px;
+}
+.purchasing-print.pdf-export-mode td {
+  font-size: 13px;
+  padding: 6px 5px;
+}
+.purchasing-print.pdf-export-mode th:last-child,
+.purchasing-print.pdf-export-mode td:last-child {
+  display: none !important;
+}
+
+/* Balanced column widths under table-layout: fixed — 6 data columns (الإجراءات is hidden above). */
+.purchasing-print table th:nth-child(1),
+.purchasing-print table td:nth-child(1) {
+  width: 14%;
+}
+.purchasing-print table th:nth-child(2),
+.purchasing-print table td:nth-child(2) {
+  width: 12%;
+}
+.purchasing-print table th:nth-child(3),
+.purchasing-print table td:nth-child(3) {
+  width: 18%;
+}
+.purchasing-print table th:nth-child(4),
+.purchasing-print table td:nth-child(4) {
+  width: 20%;
+}
+.purchasing-print table th:nth-child(5),
+.purchasing-print table td:nth-child(5) {
+  width: 16%;
+}
+.purchasing-print table th:nth-child(6),
+.purchasing-print table td:nth-child(6) {
+  width: 20%;
+}
+
+/* Treasury transactions report (حركة الخزينة) print/PDF — same A4-fit approach as the other
+   reports above, plus a totals footer and (PDF only — see handleDownloadPdf) page numbers, since
+   this report's dataset can run to many rows regardless of the on-screen table's own pagination.
+   Unlike the other reports, this printRef holds a SEPARATE, deliberately unpaginated DataTable
+   instance (the on-screen one stays paginated) — so the whole container, not just its header/
+   footer, must default to hidden or it would permanently show a second, duplicate table on screen. */
+.treasury-print {
+  display: none;
+}
+
+@page treasury-report {
+  size: A4 landscape;
+  margin: 12mm;
+}
+
+@media print {
+  .treasury-print {
+    display: block !important;
+    page: treasury-report;
+  }
+  .treasury-print .overflow-x-auto {
+    overflow: visible;
+  }
+  .treasury-print table {
+    width: 100%;
+    table-layout: fixed;
+  }
+  .treasury-print th,
+  .treasury-print td {
+    overflow-wrap: break-word;
+    white-space: normal;
+    vertical-align: middle;
+  }
+  .treasury-print th {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 8px 6px;
+  }
+  .treasury-print td {
+    font-size: 13px;
+    padding: 6px 5px;
+  }
+  /* Browser-native pagination equivalent of the row-boundary-aware slicing the PDF export does
+     manually — keeps a transaction row from being split across two printed pages. */
+  .treasury-print tr {
+    break-inside: avoid;
+  }
+}
+
+.treasury-print.pdf-export-mode {
+  display: block !important;
+}
+.treasury-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+.treasury-print.pdf-export-mode table {
+  width: 100%;
+  table-layout: fixed;
+}
+.treasury-print.pdf-export-mode th,
+.treasury-print.pdf-export-mode td {
+  overflow-wrap: break-word;
+  white-space: normal;
+  vertical-align: middle;
+}
+.treasury-print.pdf-export-mode th {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 6px;
+}
+.treasury-print.pdf-export-mode td {
+  font-size: 13px;
+  padding: 6px 5px;
+}
+
+.treasury-print-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 2px solid #1e3a5f;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+
+/* Balanced column widths under table-layout: fixed — 9 columns, no hidden actions column here. */
+.treasury-print table th:nth-child(1),
+.treasury-print table td:nth-child(1) {
+  width: 9%;
+}
+.treasury-print table th:nth-child(2),
+.treasury-print table td:nth-child(2) {
+  width: 12%;
+}
+.treasury-print table th:nth-child(3),
+.treasury-print table td:nth-child(3) {
+  width: 11%;
+}
+.treasury-print table th:nth-child(4),
+.treasury-print table td:nth-child(4) {
+  width: 14%;
+}
+.treasury-print table th:nth-child(5),
+.treasury-print table td:nth-child(5) {
+  width: 10%;
+}
+.treasury-print table th:nth-child(6),
+.treasury-print table td:nth-child(6) {
+  width: 11%;
+}
+.treasury-print table th:nth-child(7),
+.treasury-print table td:nth-child(7) {
+  width: 11%;
+}
+.treasury-print table th:nth-child(8),
+.treasury-print table td:nth-child(8) {
+  width: 12%;
+}
+.treasury-print table th:nth-child(9),
+.treasury-print table td:nth-child(9) {
+  width: 10%;
+}
+
+/* Comprehensive financial report (التقارير المالية) print/PDF — combines the Expenses and Profit
+   tabs into one document regardless of which tab is active on screen, so (like the treasury
+   report) the whole printRef container is a separate, always-hidden-on-screen block rather than
+   the currently-visible tab content. Portrait, not landscape — both sections are simple two-column
+   line-item tables, not wide multi-column data grids like the other reports. */
+.financial-report-print {
+  display: none;
+}
+
+@media print {
+  .financial-report-print {
+    display: block !important;
+  }
+  .financial-report-print .overflow-x-auto {
+    overflow: visible;
+  }
+  /* No forced break between the two sections — they should flow together naturally, breaking
+     only where the content itself runs long enough to need a new page. */
+  .financial-report-print-section-title {
+    break-after: avoid;
+  }
+  .financial-report-print tr {
+    break-inside: avoid;
+  }
+}
+
+.financial-report-print.pdf-export-mode {
+  display: block !important;
+}
+.financial-report-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+
+.financial-report-print-section {
+  margin-top: 18px;
+}
+.financial-report-print-section:first-of-type {
+  margin-top: 12px;
+}
+.financial-report-print-section-title {
+  margin-bottom: 8px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #1e3a5f;
+  border-bottom: 2px solid #1e3a5f;
+  padding-bottom: 4px;
+}
+.financial-report-print-total {
+  margin-top: 6px;
+  text-align: end;
+  font-size: 17px;
+  font-weight: 800;
+  color: #1e3a5f;
+}
+
+/* Partners & contributions report (الشركاء) print/PDF — combines the partner-balance table and
+   the dividends summary/history into one document, deliberately excluding the contributions log
+   table and the Assets tab entirely (see PartnersPage.tsx). Must fit a single A4 page (handled by
+   the fit-to-page scaling in handleDownloadPdf for the PDF path; @media print gets a compact,
+   smaller-font layout with no forced break between sections to make that realistic for real
+   printing too). Like the treasury/financial reports, the whole printRef container defaults to
+   hidden since it duplicates the screen content in a different shape. */
+.partners-report-print {
+  display: none;
+}
+
+@media print {
+  .partners-report-print {
+    display: block !important;
+  }
+  .partners-report-print .overflow-x-auto {
+    overflow: visible;
+  }
+  /* This report's whole layout is designed to fit one A4 page (see the block comment above), so
+     it gets a smaller proportional bump than the other reports rather than the full th/td scale —
+     a bigger jump here risks pushing it onto a second page. */
+  .partners-report-print,
+  .partners-report-print th,
+  .partners-report-print td {
+    font-size: 11px;
+  }
+  .partners-report-print th {
+    font-weight: 700;
+  }
+  .partners-report-print th,
+  .partners-report-print td {
+    padding: 4px 6px;
+  }
+  /* No forced break between sections — they should flow together on the one page. */
+  .partners-report-print-section-title {
+    break-after: avoid;
+  }
+  .partners-report-print tr {
+    break-inside: avoid;
+  }
+}
+
+.partners-report-print.pdf-export-mode {
+  display: block !important;
+}
+.partners-report-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+
+.partners-report-print-header {
+  margin-bottom: 10px;
+}
+.partners-report-print-total-card {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 14px;
+  border: 1px solid #1e3a5f;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e3a5f;
+}
+.partners-report-print-section {
+  margin-top: 16px;
+}
+.partners-report-print-section:first-of-type {
+  margin-top: 10px;
+}
+.partners-report-print-section-title {
+  margin-bottom: 6px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e3a5f;
+  border-bottom: 2px solid #1e3a5f;
+  padding-bottom: 3px;
+}
+.partners-report-print-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.partners-report-print-total {
+  margin-top: 6px;
+  text-align: end;
+  font-size: 14px;
+  font-weight: 800;
+  color: #1e3a5f;
+}
+
+/* Shipment detail (تفاصيل الشحنة) print/PDF — a short single-shipment report, so portrait A4
+   with the on-screen layout largely as-is; only the print-only header block and hiding the
+   actions column need the usual hidden-by-default / shown-via-print-or-pdf-export-mode pair. */
+.shipment-print-header {
+  display: none;
+}
+
+@media print {
+  .shipment-print-header {
+    display: block !important;
+    margin-bottom: 10px;
+  }
+  .shipment-print .overflow-x-auto {
+    overflow: visible;
+  }
+  .shipment-print th:last-child,
+  .shipment-print td:last-child {
+    display: none !important;
+  }
+}
+
+.shipment-print.pdf-export-mode .shipment-print-header {
+  display: block !important;
+  margin-bottom: 10px;
+}
+.shipment-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+.shipment-print.pdf-export-mode th:last-child,
+.shipment-print.pdf-export-mode td:last-child {
+  display: none !important;
+}
+
+/* Stock audit detail (تفاصيل الجرد) print/PDF — same short single-document pattern as the
+   shipment detail print above. */
+.stock-audit-print-header {
+  display: none;
+}
+
+@media print {
+  .stock-audit-print-header {
+    display: block !important;
+    margin-bottom: 10px;
+  }
+  .stock-audit-print .overflow-x-auto {
+    overflow: visible;
+  }
+}
+
+.stock-audit-print.pdf-export-mode .stock-audit-print-header {
+  display: block !important;
+  margin-bottom: 10px;
+}
+.stock-audit-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+
+/* Employee salary slip (مسند الراتب) print/PDF — rendered as a sibling of the interactive
+   Employee Detail modal (see EmployeeDetailModal.tsx), never as its child, since the modal itself
+   is print:hidden (Modal.tsx) and a hidden ancestor would take this block down with it. Hidden by
+   default like every other print-only fragment in this file; shown only for an actual print or the
+   html2canvas PDF snapshot. */
+.employee-salary-print {
+  display: none;
+}
+
+@media print {
+  .employee-salary-print {
+    display: block !important;
+  }
+  .employee-salary-print .overflow-x-auto {
+    overflow: visible;
+  }
+  .employee-salary-print tr {
+    break-inside: avoid;
+  }
+}
+
+.employee-salary-print.pdf-export-mode {
+  display: block !important;
+}
+.employee-salary-print.pdf-export-mode .overflow-x-auto {
+  overflow: visible;
+}
+
+.employee-salary-print-header {
+  margin-bottom: 14px;
+}
+.employee-salary-print-title {
+  font-size: 21px;
+  font-weight: 800;
+  color: #1e3a5f;
+  margin-bottom: 4px;
+}
+.employee-salary-print-meta {
+  font-size: 15px;
+  color: #374151;
+}
+.employee-salary-print-section {
+  margin-top: 16px;
+}
+.employee-salary-print-section-title {
+  margin-bottom: 6px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #1e3a5f;
+  border-bottom: 2px solid #1e3a5f;
+  padding-bottom: 3px;
+}
